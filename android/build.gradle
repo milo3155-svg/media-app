@@ -1,18 +1,40 @@
-allprojects {
-    repositories {
-        google()
-        mavenCentral()
+plugins {
+    // Estas líneas deben coincidir con settings.gradle
+    id "com.android.application"
+    id "org.jetbrains.kotlin.android"
+    // Esta es la nueva forma de cargar Flutter:
+    id "dev.flutter.flutter-gradle-plugin"
+}
+
+android {
+    namespace "com.example.media_app"
+    compileSdkVersion 34
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+
+    kotlinOptions {
+        jvmTarget = '1.8'
+    }
+
+    defaultConfig {
+        applicationId "com.example.media_app"
+        minSdkVersion 21
+        targetSdkVersion 34
+        versionCode 1
+        versionName "1.0"
+    }
+
+    buildTypes {
+        release {
+            signingConfig signingConfigs.debug
+        }
     }
 }
 
-rootProject.buildDir = '../build'
-subprojects {
-    project.buildDir = "${rootProject.buildDir}/${project.name}"
-}
-subprojects {
-    project.evaluationDependsOn(':app')
-}
-
-tasks.register("clean", Delete) {
-    delete rootProject.buildDir
+// Bloque de Flutter también actualizado
+flutter {
+    source '../..'
 }
