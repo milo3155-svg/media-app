@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
-import 'package:youtube_explode_dart/youtube_explode_dart' as yt_exp;
+import 'package:youtube_explode_dart/youtube_explode_dart.dart' as yt_exp;
 import 'package:video_player/video_player.dart';
 import 'package:just_audio/just_audio.dart' as ja;
 
@@ -637,7 +637,7 @@ class _SearchTabState extends State<SearchTab> with AutomaticKeepAliveClientMixi
 }
 
 // ==========================================
-// REPRODUCTOR HÍBRIDO (VIDEO / AHORRO DE DATOS Y PANTALLA BLOQUEABLE)
+// REPRODUCTOR HÍBRIDO (VIDEO / PANTALLA BLOQUEABLE)
 // ==========================================
 class PlayerScreen extends StatefulWidget {
   final String videoId;
@@ -690,12 +690,10 @@ class _PlayerScreenState extends State<PlayerScreen> {
       await _audioPlayer.stop();
 
       if (_isAudioOnly) {
-        // MODO SOLO AUDIO: Extrae solo el stream de audio e inicia just_audio (Resistente al bloqueo de pantalla)
         final audioStream = manifest.audioOnly.withHighestBitrate();
         await _audioPlayer.setUrl(audioStream.url.toString());
         _audioPlayer.play();
       } else {
-        // MODO VIDEO
         final muxedStreams = manifest.muxed.toList();
         String? streamUrl;
 
