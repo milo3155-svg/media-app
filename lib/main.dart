@@ -55,7 +55,7 @@ class VaultProvider extends ChangeNotifier {
 }
 
 // ==========================================
-// TEMAS
+// TEMAS Y COLORES
 // ==========================================
 class ThemeProvider extends ChangeNotifier {
   Color _primaryColor = Colors.deepPurple;
@@ -76,7 +76,7 @@ class ThemeProvider extends ChangeNotifier {
 }
 
 // ==========================================
-// APP PRINCIPAL
+// APLICACIÓN PRINCIPAL
 // ==========================================
 class MediaApp extends StatelessWidget {
   const MediaApp({super.key});
@@ -106,7 +106,7 @@ class MediaApp extends StatelessWidget {
 }
 
 // ==========================================
-// NAVEGACIÓN CON DRAWER
+// NAVEGACIÓN PRINCIPAL CON DRAWER
 // ==========================================
 class MainNavigationScreen extends StatefulWidget {
   const MainNavigationScreen({super.key});
@@ -413,7 +413,7 @@ class SportsTab extends StatelessWidget {
 }
 
 // ==========================================
-// PESTAÑA BUSCADOR DUAL
+// PESTAÑA BUSCADOR
 // ==========================================
 class SearchTab extends StatefulWidget {
   final String searchMode;
@@ -634,7 +634,7 @@ class _SearchTabState extends State<SearchTab> with AutomaticKeepAliveClientMixi
 }
 
 // ==========================================
-// REPRODUCTOR ROBUSTO Y GARANTIZADO
+// REPRODUCTOR ROBUSTO
 // ==========================================
 class PlayerScreen extends StatefulWidget {
   final String videoId;
@@ -643,7 +643,7 @@ class PlayerScreen extends StatefulWidget {
   final String thumbnailUrl;
 
   const PlayerScreen({
-    super,
+    super.key,
     required this.videoId,
     required this.title,
     required this.author,
@@ -677,7 +677,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
     try {
       final manifest = await _yt.videos.streamsClient.getManifest(widget.videoId);
       
-      // Busca primero los streams muxed (audio y video unidos)
       final muxedStreams = manifest.muxed.toList();
       String? streamUrl;
 
@@ -703,7 +702,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
       setState(() {
         _isLoading = false;
         _hasError = true;
-        _statusMessage = 'No se pudo reproducir directamente este elemento. Prueba con otro resultado.';
+        _statusMessage = 'No se pudo reproducir este elemento. Prueba con otro resultado.';
       });
     }
   }
