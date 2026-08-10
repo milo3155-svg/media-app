@@ -262,7 +262,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
 class HomeTab extends StatelessWidget {
   final Function(String mode) onNavigateToSearch;
 
-  const HomeTab({super, required this.onNavigateToSearch});
+  const HomeTab({super.key, required this.onNavigateToSearch});
 
   @override
   Widget build(BuildContext context) {
@@ -450,7 +450,7 @@ class SportsTab extends StatelessWidget {
 class SearchTab extends StatefulWidget {
   final String searchMode;
 
-  const SearchTab({super, this.searchMode = 'YouTube'});
+  const SearchTab({super.key, this.searchMode = 'YouTube'});
 
   @override
   State<SearchTab> createState() => _SearchTabState();
@@ -679,7 +679,7 @@ class PlayerScreen extends StatefulWidget {
   final bool isAudioOnlyDefault;
 
   const PlayerScreen({
-    super,
+    super.key,
     required this.videoId,
     required this.title,
     required this.author,
