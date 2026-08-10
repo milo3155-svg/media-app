@@ -414,7 +414,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
     }
   }
 
-  // Cambia el modo visual instantáneamente sin tocar la conexión
   void _toggleBackgroundMode(bool value) {
     setState(() {
       _isBackgroundMode = value;
@@ -558,7 +557,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
 class VaultTab extends StatelessWidget {
   const VaultTab({super.key});
 
-  @value
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('👍 Mi Bóveda')),
