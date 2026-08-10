@@ -2,9 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart' as yt_exp;
-import 'package:video_player/video_player.dart';
-import 'package:chewie/chewie.dart';
-import 'package:just_audio/just_audio.dart' as ja;
+import 'package:youtube_player_flutter/youtube_player_flutter.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -20,7 +18,7 @@ void main() {
 }
 
 // ==========================================
-// PROVEEDOR DE BÓVEDA (FAVORITOS)
+// BÓVEDA: FAVORITOS (PULGAR ARRIBA 👍)
 // ==========================================
 class MediaItem {
   final String id;
@@ -57,7 +55,7 @@ class VaultProvider extends ChangeNotifier {
 }
 
 // ==========================================
-// PROVEEDOR DE TEMAS Y COLORES
+// TEMAS Y COLORES
 // ==========================================
 class ThemeProvider extends ChangeNotifier {
   Color _primaryColor = Colors.deepPurple;
@@ -195,8 +193,8 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
             ),
             const Divider(),
             ListTile(
-              leading: const Icon(Icons.collections_bookmark_outlined),
-              title: const Text('Mi Bóveda / Biblioteca'),
+              leading: const Icon(Icons.thumb_up_alt_outlined),
+              title: const Text('Mi Bóveda (Favoritos 👍)'),
               selected: _currentIndex == 3,
               onTap: () => _selectTabFromDrawer(3),
             ),
@@ -206,11 +204,6 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
               selected: _currentIndex == 4,
               onTap: () => _selectTabFromDrawer(4),
             ),
-            const Spacer(),
-            const Padding(
-              padding: EdgeInsets.all(16.0),
-              child: Text('Versión 1.0.0 • Pixel Edition', style: TextStyle(color: Colors.grey, fontSize: 12)),
-            )
           ],
         ),
       ),
@@ -258,7 +251,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
 }
 
 // ==========================================
-// PESTAÑA INICIO (HOME)
+// PESTAÑA INICIO
 // ==========================================
 class HomeTab extends StatelessWidget {
   final Function(String mode) onNavigateToSearch;
@@ -399,16 +392,15 @@ class SportsTab extends StatelessWidget {
                         MaterialPageRoute(
                           builder: (_) => const PlayerScreen(
                             videoId: '148_s-5N0m4',
-                            title: 'Transmisión Deportiva en Vivo (Radio)',
+                            title: 'Transmisión Deportiva en Vivo',
                             author: 'Radio Deportes',
                             thumbnailUrl: 'https://img.youtube.com/vi/148_s-5N0m4/hqdefault.jpg',
-                            isAudioOnlyDefault: true,
                           ),
                         ),
                       );
                     },
-                    icon: const Icon(Icons.volume_up, color: Colors.black),
-                    label: const Text('Escuchar Transmisión (Solo Audio)', style: TextStyle(fontWeight: FontWeight.bold)),
+                    icon: const Icon(Icons.play_circle_fill, color: Colors.black),
+                    label: const Text('Sintonizar Transmisión', style: TextStyle(fontWeight: FontWeight.bold)),
                   )
                 ],
               ),
@@ -421,12 +413,12 @@ class SportsTab extends StatelessWidget {
 }
 
 // ==========================================
-// PESTAÑA BUSCADOR DUAL
+// PESTAÑA BUSCADOR
 // ==========================================
 class SearchTab extends StatefulWidget {
   final String searchMode;
 
-  const SearchTab({super.key, this.searchMode = 'YouTube'});
+  const SearchTab({super, this.searchMode = 'YouTube'});
 
   @override
   State<SearchTab> createState() => _SearchTabState();
@@ -469,8 +461,7 @@ class _SearchTabState extends State<SearchTab> with AutomaticKeepAliveClientMixi
     });
 
     try {
-      // BÚSQUEDA OPTIMIZADA: Evita Art Tracks restringidos en YT Music pidiendo versiones de audio limpias
-      final searchQuery = _currentMode == 'YouTube Music' ? '$query audio lyrics' : query;
+      final searchQuery = _currentMode == 'YouTube Music' ? '$query canción' : query;
       final results = await _yt.search.search(searchQuery);
       setState(() {
         _searchResults = results.take(15).toList();
@@ -540,7 +531,7 @@ class _SearchTabState extends State<SearchTab> with AutomaticKeepAliveClientMixi
                   child: TextField(
                     controller: _searchController,
                     decoration: InputDecoration(
-                      hintText: _currentMode == 'YouTube Music' ? 'Buscar canciones, artistas...' : 'Buscar videos...',
+                      hintText: _currentMode == 'YouTube Music' ? 'Buscar canciones...' : 'Buscar videos...',
                       prefixIcon: const Icon(Icons.search),
                       border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                     ),
@@ -563,7 +554,7 @@ class _SearchTabState extends State<SearchTab> with AutomaticKeepAliveClientMixi
                     children: [
                       CircularProgressIndicator(),
                       SizedBox(height: 12),
-                      Text('Consultando servidores...'),
+                      Text('Consultando YouTube...'),
                     ],
                   ),
                 ),
@@ -623,7 +614,6 @@ class _SearchTabState extends State<SearchTab> with AutomaticKeepAliveClientMixi
                                       title: video.title,
                                       author: video.author,
                                       thumbnailUrl: video.thumbnails.highResUrl,
-                                      isAudioOnlyDefault: _currentMode == 'YouTube Music',
                                     ),
                                   ),
                                 );
@@ -644,14 +634,13 @@ class _SearchTabState extends State<SearchTab> with AutomaticKeepAliveClientMixi
 }
 
 // ==========================================
-// REPRODUCTOR HÍBRIDO (VIDEO Y AUDIO DE SEGUNDO PLANO)
+// REPRODUCTOR OFICIAL INFALIBLE
 // ==========================================
 class PlayerScreen extends StatefulWidget {
   final String videoId;
   final String title;
   final String author;
   final String thumbnailUrl;
-  final bool isAudioOnlyDefault;
 
   const PlayerScreen({
     super.key,
@@ -659,7 +648,6 @@ class PlayerScreen extends StatefulWidget {
     required this.title,
     required this.author,
     required this.thumbnailUrl,
-    this.isAudioOnlyDefault = false,
   });
 
   @override
@@ -667,84 +655,25 @@ class PlayerScreen extends StatefulWidget {
 }
 
 class _PlayerScreenState extends State<PlayerScreen> {
-  final yt_exp.YoutubeExplode _yt = yt_exp.YoutubeExplode();
-  VideoPlayerController? _videoPlayerController;
-  ChewieController? _chewieController;
-  final ja.AudioPlayer _audioPlayer = ja.AudioPlayer();
-
-  bool _isLoading = true;
-  bool _isAudioOnly = false;
-  String _statusMessage = 'Obteniendo flujos...';
-  bool _hasError = false;
+  late YoutubePlayerController _controller;
 
   @override
   void initState() {
     super.initState();
-    _isAudioOnly = widget.isAudioOnlyDefault;
-    _initializePlayer();
-  }
-
-  Future<void> _initializePlayer() async {
-    setState(() {
-      _isLoading = true;
-      _hasError = false;
-      _statusMessage = _isAudioOnly ? 'Iniciando audio en segundo plano...' : 'Cargando video...';
-    });
-
-    try {
-      final manifest = await _yt.videos.streamsClient.getManifest(widget.videoId);
-
-      _videoPlayerController?.dispose();
-      _chewieController?.dispose();
-      await _audioPlayer.stop();
-
-      if (_isAudioOnly) {
-        // MODO SOLO AUDIO: Usa just_audio para resistir el bloqueo de pantalla de Android
-        final audioStream = manifest.audioOnly.withHighestBitrate();
-        await _audioPlayer.setUrl(audioStream.url.toString());
-        _audioPlayer.play();
-      } else {
-        // MODO VIDEO
-        final muxedStream = manifest.muxed.withHighestBitrate();
-        _videoPlayerController = VideoPlayerController.networkUrl(Uri.parse(muxedStream.url.toString()));
-        await _videoPlayerController!.initialize();
-
-        _chewieController = ChewieController(
-          videoPlayerController: _videoPlayerController!,
-          autoPlay: true,
-          looping: false,
-          aspectRatio: _videoPlayerController!.value.aspectRatio,
-          allowFullScreen: true,
-          showControls: true,
-        );
-      }
-
-      setState(() {
-        _isLoading = false;
-      });
-    } catch (e) {
-      setState(() {
-        _isLoading = false;
-        _hasError = true;
-        _statusMessage = 'Servidor ocupado. Toca reintentar o selecciona otra versión.';
-      });
-    }
-  }
-
-  void _toggleAudioOnly(bool value) {
-    if (_isAudioOnly == value) return;
-    setState(() {
-      _isAudioOnly = value;
-    });
-    _initializePlayer();
+    _controller = YoutubePlayerController(
+      initialVideoId: widget.videoId,
+      flags: const YoutubePlayerFlags(
+        autoPlay: true,
+        mute: false,
+        enableCaption: false,
+        isLive: false,
+      ),
+    );
   }
 
   @override
   void dispose() {
-    _yt.close();
-    _videoPlayerController?.dispose();
-    _chewieController?.dispose();
-    _audioPlayer.dispose();
+    _controller.dispose();
     super.dispose();
   }
 
@@ -753,134 +682,83 @@ class _PlayerScreenState extends State<PlayerScreen> {
     final vault = Provider.of<VaultProvider>(context);
     final isFav = vault.isFavorite(widget.videoId);
 
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(_isAudioOnly ? '📻 Solo Audio (Fondo)' : '🎬 Modo Video'),
-        actions: [
-          IconButton(
-            icon: Icon(
-              isFav ? Icons.thumb_up : Icons.thumb_up_outlined,
-              color: isFav ? Theme.of(context).colorScheme.primary : null,
-            ),
-            onPressed: () {
-              vault.toggleFavorite(
-                MediaItem(
-                  id: widget.videoId,
-                  title: widget.title,
-                  author: widget.author,
-                  thumbnailUrl: widget.thumbnailUrl,
-                ),
-              );
-            },
-          )
-        ],
+    return YoutubePlayerBuilder(
+      player: YoutubePlayer(
+        controller: _controller,
+        showVideoProgressIndicator: true,
+        progressIndicatorColor: Theme.of(context).colorScheme.primary,
+        progressColors: ProgressBarColors(
+          playedColor: Theme.of(context).colorScheme.primary,
+          handleColor: Theme.of(context).colorScheme.primary,
+        ),
       ),
-      body: Column(
-        children: [
-          AspectRatio(
-            aspectRatio: 16 / 9,
-            child: Container(
-              color: Colors.black,
-              child: _isLoading
-                  ? Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          const CircularProgressIndicator(),
-                          const SizedBox(height: 12),
-                          Text(_statusMessage, style: const TextStyle(color: Colors.white70)),
-                        ],
-                      ),
-                    )
-                  : _hasError
-                      ? Padding(
-                          padding: const EdgeInsets.all(16.0),
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              const Icon(Icons.info_outline, color: Colors.orangeAccent, size: 48),
-                              const SizedBox(height: 12),
-                              Text(_statusMessage, textAlign: TextAlign.center, style: const TextStyle(color: Colors.white70)),
-                              const SizedBox(height: 12),
-                              ElevatedButton(
-                                onPressed: _initializePlayer,
-                                child: const Text('Reintentar'),
-                              )
-                            ],
-                          ),
-                        )
-                      : _isAudioOnly
-                          ? Stack(
-                              children: [
-                                Positioned.fill(
-                                  child: Image.network(
-                                    widget.thumbnailUrl,
-                                    fit: BoxFit.cover,
-                                    errorBuilder: (_, __, ___) => const SizedBox(),
-                                  ),
-                                ),
-                                Positioned.fill(
-                                  child: Container(color: Colors.black.withOpacity(0.8)),
-                                ),
-                                Center(
-                                  child: Column(
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    children: [
-                                      const Icon(Icons.graphic_eq, size: 56, color: Colors.purpleAccent),
-                                      const SizedBox(height: 8),
-                                      const Text('Modo Fondo Activo (Pantalla Bloqueable)',
-                                          style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-                                      const SizedBox(height: 16),
-                                      StreamBuilder<ja.PlayerState>(
-                                        stream: _audioPlayer.playerStateStream,
-                                        builder: (context, snapshot) {
-                                          final isPlaying = snapshot.data?.playing ?? false;
-                                          return IconButton(
-                                            icon: Icon(
-                                              isPlaying ? Icons.pause_circle_filled : Icons.play_circle_filled,
-                                              size: 64,
-                                              color: Colors.white,
-                                            ),
-                                            onPressed: () {
-                                              isPlaying ? _audioPlayer.pause() : _audioPlayer.play();
-                                            },
-                                          );
-                                        },
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ],
-                            )
-                          : Chewie(controller: _chewieController!),
-            ),
+      builder: (context, player) {
+        return Scaffold(
+          appBar: AppBar(
+            title: const Text('🎬 Reproduciendo'),
+            actions: [
+              IconButton(
+                icon: Icon(
+                  isFav ? Icons.thumb_up : Icons.thumb_up_outlined,
+                  color: isFav ? Theme.of(context).colorScheme.primary : null,
+                ),
+                onPressed: () {
+                  vault.toggleFavorite(
+                    MediaItem(
+                      id: widget.videoId,
+                      title: widget.title,
+                      author: widget.author,
+                      thumbnailUrl: widget.thumbnailUrl,
+                    ),
+                  );
+                },
+              )
+            ],
           ),
-          Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(widget.title, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                const SizedBox(height: 4),
-                Text(widget.author, style: const TextStyle(color: Colors.grey)),
-                const Divider(height: 32),
-                SwitchListTile(
-                  title: const Text('Modo Solo Audio (Fondo Activo)'),
-                  subtitle: const Text('Permite bloquear el teléfono sin interrumpir el sonido'),
-                  value: _isAudioOnly,
-                  onChanged: _toggleAudioOnly,
+          body: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              player,
+              Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(widget.title, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 4),
+                    Text(widget.author, style: const TextStyle(color: Colors.grey)),
+                    const Divider(height: 32),
+                    ListTile(
+                      leading: Icon(
+                        isFav ? Icons.thumb_up : Icons.thumb_up_outlined,
+                        color: isFav ? Theme.of(context).colorScheme.primary : null,
+                      ),
+                      title: Text(isFav ? 'Guardado en Favoritos (👍)' : 'Añadir a Favoritos (👍)'),
+                      subtitle: const Text('Disponible en tu Bóveda para escuchar cuando quieras'),
+                      onTap: () {
+                        vault.toggleFavorite(
+                          MediaItem(
+                            id: widget.videoId,
+                            title: widget.title,
+                            author: widget.author,
+                            thumbnailUrl: widget.thumbnailUrl,
+                          ),
+                        );
+                      },
+                    ),
+                  ],
                 ),
-              ],
-            ),
-          )
-        ],
-      ),
+              )
+            ],
+          ),
+        );
+      },
     );
   }
 }
 
 // ==========================================
-// BÓVEDA Y AJUSTES
+// BÓVEDA (FAVORITOS REGISTRADOS)
 // ==========================================
 class VaultTab extends StatelessWidget {
   const VaultTab({super.key});
@@ -890,11 +768,14 @@ class VaultTab extends StatelessWidget {
     final vault = Provider.of<VaultProvider>(context);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('👍 Mi Bóveda / Biblioteca')),
+      appBar: AppBar(title: const Text('👍 Mi Bóveda (Favoritos)')),
       body: vault.favorites.isEmpty
           ? const Center(
-              child: Text('No tienes elementos guardados aún.\n¡Dale a 👍 en los resultados!',
-                  textAlign: TextAlign.center, style: TextStyle(color: Colors.grey)),
+              child: Text(
+                'No tienes canciones o videos guardados aún.\n¡Dale a 👍 en los resultados para agregarlos a tu lista!',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Colors.grey),
+              ),
             )
           : ListView.builder(
               itemCount: vault.favorites.length,
@@ -910,7 +791,7 @@ class VaultTab extends StatelessWidget {
                   title: Text(item.title, maxLines: 1, overflow: TextOverflow.ellipsis),
                   subtitle: Text(item.author),
                   trailing: IconButton(
-                    icon: const Icon(Icons.play_circle_fill),
+                    icon: const Icon(Icons.play_circle_fill, size: 36),
                     onPressed: () {
                       Navigator.push(
                         context,
