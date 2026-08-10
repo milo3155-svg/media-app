@@ -3,7 +3,6 @@ import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart' as yt_exp;
 import 'package:video_player/video_player.dart';
-import 'package:just_audio/just_audio.dart' as ja;
 import 'package:audio_session/audio_session.dart';
 
 void main() async {
@@ -108,7 +107,7 @@ class MediaApp extends StatelessWidget {
 }
 
 // ==========================================
-// NAVEGACIÓN PRINCIPAL CON DRAWER
+// NAVEGACIÓN PRINCIPAL
 // ==========================================
 class MainNavigationScreen extends StatefulWidget {
   const MainNavigationScreen({super.key});
@@ -264,10 +263,9 @@ class _SearchTabState extends State<SearchTab> with AutomaticKeepAliveClientMixi
   @override
   Widget build(BuildContext context) {
     super.build(context);
-    final vault = Provider.of<VaultProvider>(context);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('🔍 Buscador de Prueba')),
+      appBar: AppBar(title: const Text('🔍 Buscador')),
       body: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
@@ -303,7 +301,6 @@ class _SearchTabState extends State<SearchTab> with AutomaticKeepAliveClientMixi
                   itemCount: _searchResults.length,
                   itemBuilder: (context, index) {
                     final video = _searchResults[index];
-                    final isFav = vault.isFavorite(video.id.value);
 
                     return Card(
                       margin: const EdgeInsets.symmetric(vertical: 6),
@@ -345,7 +342,7 @@ class _SearchTabState extends State<SearchTab> with AutomaticKeepAliveClientMixi
 }
 
 // ==========================================
-// REPRODUCTOR ESPECÍFICO PARA SEGUNDO PLANO
+// REPRODUCTOR FLUIDO CON CONMUTACIÓN SIN INTERRUPCIÓN
 // ==========================================
 class PlayerScreen extends StatefulWidget {
   final String videoId;
@@ -368,11 +365,10 @@ class PlayerScreen extends StatefulWidget {
 class _PlayerScreenState extends State<PlayerScreen> {
   final yt_exp.YoutubeExplode _yt = yt_exp.YoutubeExplode();
   VideoPlayerController? _videoPlayerController;
-  final ja.AudioPlayer _audioPlayer = ja.AudioPlayer();
 
   bool _isLoading = true;
   bool _isBackgroundMode = false;
-  String _statusMessage = 'Cargando contenido...';
+  String _statusMessage = 'Cargando reproducción...';
   bool _hasError = false;
 
   @override
@@ -382,69 +378,59 @@ class _PlayerScreenState extends State<PlayerScreen> {
     _initializePlayer();
   }
 
-  // Configura a Android para priorizar el audio sobre la pantalla
+  // Registra la sesión de audio como servicio prioritario en Android
   Future<void> _configureAudioSession() async {
-    final session = await AudioSession.instance;
-    await session.configure(const AudioSessionConfiguration.music());
+    try {
+      final session = await AudioSession.instance;
+      await session.configure(const AudioSessionConfiguration.music());
+    } catch (_) {}
   }
 
   Future<void> _initializePlayer() async {
     setState(() {
       _isLoading = true;
       _hasError = false;
-      _statusMessage = _isBackgroundMode ? 'Activando servicio de fondo...' : 'Cargando video...';
+      _statusMessage = 'Obteniendo stream...';
     });
 
     try {
       final manifest = await _yt.videos.streamsClient.getManifest(widget.videoId);
+      final muxedStreams = manifest.muxed.toList();
+      String? streamUrl;
+
+      if (muxedStreams.isNotEmpty) {
+        streamUrl = muxedStreams.first.url.toString();
+      } else if (manifest.audioOnly.isNotEmpty) {
+        streamUrl = manifest.audioOnly.first.url.toString();
+      }
+
+      if (streamUrl == null) throw Exception("Stream no disponible");
 
       _videoPlayerController?.dispose();
-      await _audioPlayer.stop();
-
-      if (_isBackgroundMode) {
-        // MODO SEGUNDO PLANO: Usa únicamente el stream de audio directo en just_audio
-        final audioStream = manifest.audioOnly.withHighestBitrate();
-        await _audioPlayer.setUrl(audioStream.url.toString());
-        _audioPlayer.play();
-      } else {
-        // MODO VIDEO NORMAL
-        final muxedStreams = manifest.muxed.toList();
-        String? streamUrl;
-
-        if (muxedStreams.isNotEmpty) {
-          streamUrl = muxedStreams.first.url.toString();
-        } else if (manifest.audioOnly.isNotEmpty) {
-          streamUrl = manifest.audioOnly.first.url.toString();
-        }
-
-        if (streamUrl == null) throw Exception("Stream no disponible");
-
-        _videoPlayerController = VideoPlayerController.networkUrl(Uri.parse(streamUrl));
-        await _videoPlayerController!.initialize();
-        _videoPlayerController!.play();
-      }
+      _videoPlayerController = VideoPlayerController.networkUrl(Uri.parse(streamUrl));
+      await _videoPlayerController!.initialize();
+      _videoPlayerController!.play();
 
       setState(() => _isLoading = false);
     } catch (e) {
       setState(() {
         _isLoading = false;
         _hasError = true;
-        _statusMessage = 'Error al cargar el audio/video.';
+        _statusMessage = 'Error al cargar el contenido.';
       });
     }
   }
 
   void _toggleBackgroundMode(bool value) {
-    if (_isBackgroundMode == value) return;
-    setState(() => _isBackgroundMode = value);
-    _initializePlayer();
+    setState(() {
+      _isBackgroundMode = value;
+    });
   }
 
   @override
   void dispose() {
     _yt.close();
     _videoPlayerController?.dispose();
-    _audioPlayer.dispose();
     super.dispose();
   }
 
@@ -452,7 +438,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(_isBackgroundMode ? '📻 Modo 2do Plano (Bloqueable)' : '🎬 Modo Video'),
+        title: Text(_isBackgroundMode ? '📻 Modo 2do Plano' : '🎬 Modo Video'),
       ),
       body: Column(
         children: [
@@ -500,25 +486,23 @@ class _PlayerScreenState extends State<PlayerScreen> {
                                     const Icon(Icons.graphic_eq, size: 56, color: Colors.purpleAccent),
                                     const SizedBox(height: 8),
                                     const Text(
-                                      '¡Modo 2do Plano Activo!\nPrueba apagar la pantalla de tu Pixel',
+                                      '¡Modo 2do Plano Activo!\nPrueba apagar la pantalla o salir de la app',
                                       textAlign: TextAlign.center,
                                       style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
                                     ),
                                     const SizedBox(height: 16),
-                                    StreamBuilder<ja.PlayerState>(
-                                      stream: _audioPlayer.playerStateStream,
-                                      builder: (context, snapshot) {
-                                        final isPlaying = snapshot.data?.playing ?? false;
-                                        return IconButton(
-                                          icon: Icon(
-                                            isPlaying ? Icons.pause_circle_filled : Icons.play_circle_filled,
-                                            size: 64,
-                                            color: Colors.white,
-                                          ),
-                                          onPressed: () {
-                                            isPlaying ? _audioPlayer.pause() : _audioPlayer.play();
-                                          },
-                                        );
+                                    IconButton(
+                                      icon: Icon(
+                                        _videoPlayerController!.value.isPlaying ? Icons.pause_circle_filled : Icons.play_circle_filled,
+                                        size: 64,
+                                        color: Colors.white,
+                                      ),
+                                      onPressed: () {
+                                        setState(() {
+                                          _videoPlayerController!.value.isPlaying
+                                              ? _videoPlayerController!.pause()
+                                              : _videoPlayerController!.play();
+                                        });
                                       },
                                     ),
                                   ],
@@ -563,7 +547,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                   color: Colors.deepPurple.withOpacity(0.2),
                   child: SwitchListTile(
                     title: const Text('Activar Modo 2do Plano'),
-                    subtitle: const Text('Permite bloquear la pantalla o salir de la app sin detener la música'),
+                    subtitle: const Text('Mantiene la reproducción activa sin hacer peticiones extras'),
                     value: _isBackgroundMode,
                     onChanged: _toggleBackgroundMode,
                   ),
