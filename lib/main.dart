@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart' as yt_exp;
-import 'package:youtube_player_flutter/youtube_player_flutter.dart';
+import 'package:video_player/video_player.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -18,7 +18,7 @@ void main() {
 }
 
 // ==========================================
-// BÓVEDA: FAVORITOS (PULGAR ARRIBA 👍)
+// PROVEEDOR DE BÓVEDA
 // ==========================================
 class MediaItem {
   final String id;
@@ -55,7 +55,7 @@ class VaultProvider extends ChangeNotifier {
 }
 
 // ==========================================
-// TEMAS Y COLORES
+// TEMAS
 // ==========================================
 class ThemeProvider extends ChangeNotifier {
   Color _primaryColor = Colors.deepPurple;
@@ -76,7 +76,7 @@ class ThemeProvider extends ChangeNotifier {
 }
 
 // ==========================================
-// APLICACIÓN PRINCIPAL
+// APP PRINCIPAL
 // ==========================================
 class MediaApp extends StatelessWidget {
   const MediaApp({super.key});
@@ -106,7 +106,7 @@ class MediaApp extends StatelessWidget {
 }
 
 // ==========================================
-// NAVEGACIÓN PRINCIPAL CON DRAWER
+// NAVEGACIÓN CON DRAWER
 // ==========================================
 class MainNavigationScreen extends StatefulWidget {
   const MainNavigationScreen({super.key});
@@ -413,7 +413,7 @@ class SportsTab extends StatelessWidget {
 }
 
 // ==========================================
-// PESTAÑA BUSCADOR
+// PESTAÑA BUSCADOR DUAL
 // ==========================================
 class SearchTab extends StatefulWidget {
   final String searchMode;
@@ -461,7 +461,7 @@ class _SearchTabState extends State<SearchTab> with AutomaticKeepAliveClientMixi
     });
 
     try {
-      final searchQuery = _currentMode == 'YouTube Music' ? '$query canción' : query;
+      final searchQuery = _currentMode == 'YouTube Music' ? '$query video' : query;
       final results = await _yt.search.search(searchQuery);
       setState(() {
         _searchResults = results.take(15).toList();
@@ -634,7 +634,7 @@ class _SearchTabState extends State<SearchTab> with AutomaticKeepAliveClientMixi
 }
 
 // ==========================================
-// REPRODUCTOR OFICIAL INFALIBLE
+// REPRODUCTOR ROBUSTO Y GARANTIZADO
 // ==========================================
 class PlayerScreen extends StatefulWidget {
   final String videoId;
@@ -643,7 +643,7 @@ class PlayerScreen extends StatefulWidget {
   final String thumbnailUrl;
 
   const PlayerScreen({
-    super.key,
+    super,
     required this.videoId,
     required this.title,
     required this.author,
@@ -655,25 +655,63 @@ class PlayerScreen extends StatefulWidget {
 }
 
 class _PlayerScreenState extends State<PlayerScreen> {
-  late YoutubePlayerController _controller;
+  final yt_exp.YoutubeExplode _yt = yt_exp.YoutubeExplode();
+  VideoPlayerController? _videoPlayerController;
+  bool _isLoading = true;
+  String _statusMessage = 'Cargando reproducción...';
+  bool _hasError = false;
 
   @override
   void initState() {
     super.initState();
-    _controller = YoutubePlayerController(
-      initialVideoId: widget.videoId,
-      flags: const YoutubePlayerFlags(
-        autoPlay: true,
-        mute: false,
-        enableCaption: false,
-        isLive: false,
-      ),
-    );
+    _initializePlayer();
+  }
+
+  Future<void> _initializePlayer() async {
+    setState(() {
+      _isLoading = true;
+      _hasError = false;
+      _statusMessage = 'Obteniendo enlace directo...';
+    });
+
+    try {
+      final manifest = await _yt.videos.streamsClient.getManifest(widget.videoId);
+      
+      // Busca primero los streams muxed (audio y video unidos)
+      final muxedStreams = manifest.muxed.toList();
+      String? streamUrl;
+
+      if (muxedStreams.isNotEmpty) {
+        streamUrl = muxedStreams.first.url.toString();
+      } else if (manifest.audioOnly.isNotEmpty) {
+        streamUrl = manifest.audioOnly.first.url.toString();
+      }
+
+      if (streamUrl == null) {
+        throw Exception("Stream no disponible");
+      }
+
+      _videoPlayerController?.dispose();
+      _videoPlayerController = VideoPlayerController.networkUrl(Uri.parse(streamUrl));
+      await _videoPlayerController!.initialize();
+      _videoPlayerController!.play();
+
+      setState(() {
+        _isLoading = false;
+      });
+    } catch (e) {
+      setState(() {
+        _isLoading = false;
+        _hasError = true;
+        _statusMessage = 'No se pudo reproducir directamente este elemento. Prueba con otro resultado.';
+      });
+    }
   }
 
   @override
   void dispose() {
-    _controller.dispose();
+    _yt.close();
+    _videoPlayerController?.dispose();
     super.dispose();
   }
 
@@ -682,83 +720,125 @@ class _PlayerScreenState extends State<PlayerScreen> {
     final vault = Provider.of<VaultProvider>(context);
     final isFav = vault.isFavorite(widget.videoId);
 
-    return YoutubePlayerBuilder(
-      player: YoutubePlayer(
-        controller: _controller,
-        showVideoProgressIndicator: true,
-        progressIndicatorColor: Theme.of(context).colorScheme.primary,
-        progressColors: ProgressBarColors(
-          playedColor: Theme.of(context).colorScheme.primary,
-          handleColor: Theme.of(context).colorScheme.primary,
-        ),
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('🎬 Reproduciendo'),
+        actions: [
+          IconButton(
+            icon: Icon(
+              isFav ? Icons.thumb_up : Icons.thumb_up_outlined,
+              color: isFav ? Theme.of(context).colorScheme.primary : null,
+            ),
+            onPressed: () {
+              vault.toggleFavorite(
+                MediaItem(
+                  id: widget.videoId,
+                  title: widget.title,
+                  author: widget.author,
+                  thumbnailUrl: widget.thumbnailUrl,
+                ),
+              );
+            },
+          )
+        ],
       ),
-      builder: (context, player) {
-        return Scaffold(
-          appBar: AppBar(
-            title: const Text('🎬 Reproduciendo'),
-            actions: [
-              IconButton(
-                icon: Icon(
-                  isFav ? Icons.thumb_up : Icons.thumb_up_outlined,
-                  color: isFav ? Theme.of(context).colorScheme.primary : null,
-                ),
-                onPressed: () {
-                  vault.toggleFavorite(
-                    MediaItem(
-                      id: widget.videoId,
-                      title: widget.title,
-                      author: widget.author,
-                      thumbnailUrl: widget.thumbnailUrl,
-                    ),
-                  );
-                },
-              )
-            ],
-          ),
-          body: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              player,
-              Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(widget.title, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                    const SizedBox(height: 4),
-                    Text(widget.author, style: const TextStyle(color: Colors.grey)),
-                    const Divider(height: 32),
-                    ListTile(
-                      leading: Icon(
-                        isFav ? Icons.thumb_up : Icons.thumb_up_outlined,
-                        color: isFav ? Theme.of(context).colorScheme.primary : null,
+      body: Column(
+        children: [
+          AspectRatio(
+            aspectRatio: 16 / 9,
+            child: Container(
+              color: Colors.black,
+              child: _isLoading
+                  ? Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const CircularProgressIndicator(),
+                          const SizedBox(height: 12),
+                          Text(_statusMessage, style: const TextStyle(color: Colors.white70)),
+                        ],
                       ),
-                      title: Text(isFav ? 'Guardado en Favoritos (👍)' : 'Añadir a Favoritos (👍)'),
-                      subtitle: const Text('Disponible en tu Bóveda para escuchar cuando quieras'),
-                      onTap: () {
-                        vault.toggleFavorite(
-                          MediaItem(
-                            id: widget.videoId,
-                            title: widget.title,
-                            author: widget.author,
-                            thumbnailUrl: widget.thumbnailUrl,
+                    )
+                  : _hasError
+                      ? Padding(
+                          padding: const EdgeInsets.all(16.0),
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              const Icon(Icons.info_outline, color: Colors.orangeAccent, size: 48),
+                              const SizedBox(height: 12),
+                              Text(_statusMessage, textAlign: TextAlign.center, style: const TextStyle(color: Colors.white70)),
+                              const SizedBox(height: 12),
+                              ElevatedButton(
+                                onPressed: _initializePlayer,
+                                child: const Text('Reintentar'),
+                              )
+                            ],
                           ),
-                        );
-                      },
-                    ),
-                  ],
-                ),
-              )
-            ],
+                        )
+                      : Stack(
+                          alignment: Alignment.bottomCenter,
+                          children: [
+                            VideoPlayer(_videoPlayerController!),
+                            VideoProgressIndicator(_videoPlayerController!, allowScrubbing: true),
+                            Center(
+                              child: IconButton(
+                                icon: Icon(
+                                  _videoPlayerController!.value.isPlaying ? Icons.pause_circle_filled : Icons.play_circle_filled,
+                                  size: 64,
+                                  color: Colors.white.withOpacity(0.8),
+                                ),
+                                onPressed: () {
+                                  setState(() {
+                                    _videoPlayerController!.value.isPlaying
+                                        ? _videoPlayerController!.pause()
+                                        : _videoPlayerController!.play();
+                                  });
+                                },
+                              ),
+                            ),
+                          ],
+                        ),
+            ),
           ),
-        );
-      },
+          Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(widget.title, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                const SizedBox(height: 4),
+                Text(widget.author, style: const TextStyle(color: Colors.grey)),
+                const Divider(height: 32),
+                ListTile(
+                  leading: Icon(
+                    isFav ? Icons.thumb_up : Icons.thumb_up_outlined,
+                    color: isFav ? Theme.of(context).colorScheme.primary : null,
+                  ),
+                  title: Text(isFav ? 'Guardado en Favoritos (👍)' : 'Añadir a Favoritos (👍)'),
+                  subtitle: const Text('Disponible en tu Bóveda'),
+                  onTap: () {
+                    vault.toggleFavorite(
+                      MediaItem(
+                        id: widget.videoId,
+                        title: widget.title,
+                        author: widget.author,
+                        thumbnailUrl: widget.thumbnailUrl,
+                      ),
+                    );
+                  },
+                ),
+              ],
+            ),
+          )
+        ],
+      ),
     );
   }
 }
 
 // ==========================================
-// BÓVEDA (FAVORITOS REGISTRADOS)
+// BÓVEDA
 // ==========================================
 class VaultTab extends StatelessWidget {
   const VaultTab({super.key});
@@ -772,7 +852,7 @@ class VaultTab extends StatelessWidget {
       body: vault.favorites.isEmpty
           ? const Center(
               child: Text(
-                'No tienes canciones o videos guardados aún.\n¡Dale a 👍 en los resultados para agregarlos a tu lista!',
+                'No tienes elementos guardados aún.\n¡Dale a 👍 en los resultados para agregarlos!',
                 textAlign: TextAlign.center,
                 style: TextStyle(color: Colors.grey),
               ),
