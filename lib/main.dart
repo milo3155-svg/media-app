@@ -3,10 +3,25 @@ import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart' as yt_exp;
 import 'package:video_player/video_player.dart';
-import 'package:audio_session/audio_session.dart';
+import 'package:just_audio/just_audio.dart' as ja;
+import 'package:audio_service/audio_service.dart';
+
+late MyAudioHandler _audioHandler;
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  
+  // Inicialización del servicio multimedia en segundo plano de Android
+  _audioHandler = await AudioService.init(
+    builder: () => MyAudioHandler(),
+    config: const AudioServiceConfig(
+      androidNotificationChannelId: 'com.example.media_app.channel.audio',
+      androidNotificationChannelName: 'Reproducción Multimedia',
+      androidNotificationOngoing: true,
+      androidStopForegroundOnPause: true,
+    ),
+  );
+
   runApp(
     MultiProvider(
       providers: [
@@ -19,15 +34,77 @@ void main() async {
 }
 
 // ==========================================
+// SERVICIO DE AUDIO EN SEGUNDO PLANO
+// ==========================================
+class MyAudioHandler extends BaseAudioHandler {
+  final _player = ja.AudioPlayer();
+
+  MyAudioHandler() {
+    _player.playbackEventStream.map(_transformEvent).pipe(playbackState);
+  }
+
+  Future<void> playUrl(String url, String title, String artist, String artUri) async {
+    mediaItem.add(MediaItem(
+      id: url,
+      album: 'Media App Stream',
+      title: title,
+      artist: artist,
+      artUri: Uri.parse(artUri),
+    ));
+
+    await _player.setUrl(url);
+    _player.play();
+  }
+
+  @override
+  Future<void> play() => _player.play();
+
+  @override
+  Future<void> pause() => _player.pause();
+
+  @override
+  Future<void> stop() async {
+    await _player.stop();
+    await super.stop();
+  }
+
+  PlaybackState _transformEvent(ja.PlaybackEvent event) {
+    return PlaybackState(
+      controls: [
+        MediaControl.rewind,
+        if (_player.playing) MediaControl.pause else MediaControl.play,
+        MediaControl.fastForward,
+        MediaControl.stop,
+      ],
+      systemActions: const {
+        MediaAction.seek,
+      },
+      androidCompactActionIndices: const [0, 1, 2],
+      processingState: const {
+        ja.ProcessingState.idle: AudioProcessingState.idle,
+        ja.ProcessingState.loading: AudioProcessingState.loading,
+        ja.ProcessingState.buffering: AudioProcessingState.buffering,
+        ja.ProcessingState.ready: AudioProcessingState.ready,
+        ja.ProcessingState.completed: AudioProcessingState.completed,
+      }[_player.processingState]!,
+      playing: _player.playing,
+      updatePosition: _player.position,
+      bufferedPosition: _player.bufferedPosition,
+      speed: _player.speed,
+    );
+  }
+}
+
+// ==========================================
 // PROVEEDOR DE BÓVEDA
 // ==========================================
-class MediaItem {
+class MediaItemModel {
   final String id;
   final String title;
   final String author;
   final String thumbnailUrl;
 
-  MediaItem({
+  MediaItemModel({
     required this.id,
     required this.title,
     required this.author,
@@ -36,15 +113,15 @@ class MediaItem {
 }
 
 class VaultProvider extends ChangeNotifier {
-  final List<MediaItem> _favorites = [];
+  final List<MediaItemModel> _favorites = [];
 
-  List<MediaItem> get favorites => _favorites;
+  List<MediaItemModel> get favorites => _favorites;
 
   bool isFavorite(String id) {
     return _favorites.any((item) => item.id == id);
   }
 
-  void toggleFavorite(MediaItem item) {
+  void toggleFavorite(MediaItemModel item) {
     final index = _favorites.indexWhere((element) => element.id == item.id);
     if (index >= 0) {
       _favorites.removeAt(index);
@@ -56,7 +133,7 @@ class VaultProvider extends ChangeNotifier {
 }
 
 // ==========================================
-// TEMAS Y COLORES
+// TEMAS
 // ==========================================
 class ThemeProvider extends ChangeNotifier {
   Color _primaryColor = Colors.deepPurple;
@@ -107,7 +184,7 @@ class MediaApp extends StatelessWidget {
 }
 
 // ==========================================
-// NAVEGACIÓN PRINCIPAL
+// NAVEGACIÓN
 // ==========================================
 class MainNavigationScreen extends StatefulWidget {
   const MainNavigationScreen({super.key});
@@ -176,7 +253,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
 }
 
 // ==========================================
-// PESTAÑA INICIO
+// PESTAÑAS VISTA
 // ==========================================
 class HomeTab extends StatelessWidget {
   final VoidCallback onNavigateToSearch;
@@ -198,9 +275,6 @@ class HomeTab extends StatelessWidget {
   }
 }
 
-// ==========================================
-// PESTAÑA DEPORTES
-// ==========================================
 class SportsTab extends StatelessWidget {
   const SportsTab({super.key});
 
@@ -213,9 +287,6 @@ class SportsTab extends StatelessWidget {
   }
 }
 
-// ==========================================
-// PESTAÑA BUSCADOR
-// ==========================================
 class SearchTab extends StatefulWidget {
   const SearchTab({super.key});
 
@@ -342,7 +413,7 @@ class _SearchTabState extends State<SearchTab> with AutomaticKeepAliveClientMixi
 }
 
 // ==========================================
-// REPRODUCTOR FLUIDO CON CONMUTACIÓN SIN INTERRUPCIÓN
+// REPRODUCTOR CON AUDIO_SERVICE
 // ==========================================
 class PlayerScreen extends StatefulWidget {
   final String videoId;
@@ -374,16 +445,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
   @override
   void initState() {
     super.initState();
-    _configureAudioSession();
     _initializePlayer();
-  }
-
-  // Registra la sesión de audio como servicio prioritario en Android
-  Future<void> _configureAudioSession() async {
-    try {
-      final session = await AudioSession.instance;
-      await session.configure(const AudioSessionConfiguration.music());
-    } catch (_) {}
   }
 
   Future<void> _initializePlayer() async {
@@ -395,21 +457,24 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
     try {
       final manifest = await _yt.videos.streamsClient.getManifest(widget.videoId);
+      
+      final audioStream = manifest.audioOnly.withHighestBitrate();
       final muxedStreams = manifest.muxed.toList();
-      String? streamUrl;
+      String? videoUrl = muxedStreams.isNotEmpty ? muxedStreams.first.url.toString() : audioStream.url.toString();
 
-      if (muxedStreams.isNotEmpty) {
-        streamUrl = muxedStreams.first.url.toString();
-      } else if (manifest.audioOnly.isNotEmpty) {
-        streamUrl = manifest.audioOnly.first.url.toString();
-      }
-
-      if (streamUrl == null) throw Exception("Stream no disponible");
-
+      // 1. Inicializa video player local
       _videoPlayerController?.dispose();
-      _videoPlayerController = VideoPlayerController.networkUrl(Uri.parse(streamUrl));
+      _videoPlayerController = VideoPlayerController.networkUrl(Uri.parse(videoUrl));
       await _videoPlayerController!.initialize();
       _videoPlayerController!.play();
+
+      // 2. Registra en el servicio nativo de segundo plano
+      await _audioHandler.playUrl(
+        audioStream.url.toString(),
+        widget.title,
+        widget.author,
+        widget.thumbnailUrl,
+      );
 
       setState(() => _isLoading = false);
     } catch (e) {
@@ -438,7 +503,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(_isBackgroundMode ? '📻 Modo 2do Plano' : '🎬 Modo Video'),
+        title: Text(_isBackgroundMode ? '📻 Modo 2do Plano Activo' : '🎬 Modo Video'),
       ),
       body: Column(
         children: [
@@ -486,23 +551,25 @@ class _PlayerScreenState extends State<PlayerScreen> {
                                     const Icon(Icons.graphic_eq, size: 56, color: Colors.purpleAccent),
                                     const SizedBox(height: 8),
                                     const Text(
-                                      '¡Modo 2do Plano Activo!\nPrueba apagar la pantalla o salir de la app',
+                                      '¡Servicio Nativo de Fondo Activo!\nPrueba salir de la app o bloquear la pantalla',
                                       textAlign: TextAlign.center,
                                       style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
                                     ),
                                     const SizedBox(height: 16),
-                                    IconButton(
-                                      icon: Icon(
-                                        _videoPlayerController!.value.isPlaying ? Icons.pause_circle_filled : Icons.play_circle_filled,
-                                        size: 64,
-                                        color: Colors.white,
-                                      ),
-                                      onPressed: () {
-                                        setState(() {
-                                          _videoPlayerController!.value.isPlaying
-                                              ? _videoPlayerController!.pause()
-                                              : _videoPlayerController!.play();
-                                        });
+                                    StreamBuilder<PlaybackState>(
+                                      stream: _audioHandler.playbackState,
+                                      builder: (context, snapshot) {
+                                        final playing = snapshot.data?.playing ?? false;
+                                        return IconButton(
+                                          icon: Icon(
+                                            playing ? Icons.pause_circle_filled : Icons.play_circle_filled,
+                                            size: 64,
+                                            color: Colors.white,
+                                          ),
+                                          onPressed: () {
+                                            playing ? _audioHandler.pause() : _audioHandler.play();
+                                          },
+                                        );
                                       },
                                     ),
                                   ],
@@ -546,8 +613,8 @@ class _PlayerScreenState extends State<PlayerScreen> {
                 Card(
                   color: Colors.deepPurple.withOpacity(0.2),
                   child: SwitchListTile(
-                    title: const Text('Activar Modo 2do Plano'),
-                    subtitle: const Text('Mantiene la reproducción activa sin hacer peticiones extras'),
+                    title: const Text('Activar Modo 2do Plano Nativo'),
+                    subtitle: const Text('Crea la notificación multimedia y evita que Android cierre la música'),
                     value: _isBackgroundMode,
                     onChanged: _toggleBackgroundMode,
                   ),
@@ -561,9 +628,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
   }
 }
 
-// ==========================================
-// BÓVEDA Y AJUSTES
-// ==========================================
 class VaultTab extends StatelessWidget {
   const VaultTab({super.key});
 
