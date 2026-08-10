@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
-import 'package:youtube_explode_dart/youtube_explode_dart.dart' as yt_exp;
+import 'package:youtube_explode_dart/youtube_explode_dart' as yt_exp;
 import 'package:video_player/video_player.dart';
+import 'package:just_audio/just_audio.dart' as ja;
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -395,12 +396,13 @@ class SportsTab extends StatelessWidget {
                             title: 'Transmisión Deportiva en Vivo',
                             author: 'Radio Deportes',
                             thumbnailUrl: 'https://img.youtube.com/vi/148_s-5N0m4/hqdefault.jpg',
+                            isAudioOnlyDefault: true,
                           ),
                         ),
                       );
                     },
-                    icon: const Icon(Icons.play_circle_fill, color: Colors.black),
-                    label: const Text('Sintonizar Transmisión', style: TextStyle(fontWeight: FontWeight.bold)),
+                    icon: const Icon(Icons.radio, color: Colors.black),
+                    label: const Text('Escuchar Transmisión (Solo Audio)', style: TextStyle(fontWeight: FontWeight.bold)),
                   )
                 ],
               ),
@@ -461,7 +463,7 @@ class _SearchTabState extends State<SearchTab> with AutomaticKeepAliveClientMixi
     });
 
     try {
-      final searchQuery = _currentMode == 'YouTube Music' ? '$query video' : query;
+      final searchQuery = _currentMode == 'YouTube Music' ? '$query canción' : query;
       final results = await _yt.search.search(searchQuery);
       setState(() {
         _searchResults = results.take(15).toList();
@@ -614,6 +616,7 @@ class _SearchTabState extends State<SearchTab> with AutomaticKeepAliveClientMixi
                                       title: video.title,
                                       author: video.author,
                                       thumbnailUrl: video.thumbnails.highResUrl,
+                                      isAudioOnlyDefault: _currentMode == 'YouTube Music',
                                     ),
                                   ),
                                 );
@@ -634,13 +637,14 @@ class _SearchTabState extends State<SearchTab> with AutomaticKeepAliveClientMixi
 }
 
 // ==========================================
-// REPRODUCTOR ROBUSTO
+// REPRODUCTOR HÍBRIDO (VIDEO / AHORRO DE DATOS Y PANTALLA BLOQUEABLE)
 // ==========================================
 class PlayerScreen extends StatefulWidget {
   final String videoId;
   final String title;
   final String author;
   final String thumbnailUrl;
+  final bool isAudioOnlyDefault;
 
   const PlayerScreen({
     super.key,
@@ -648,6 +652,7 @@ class PlayerScreen extends StatefulWidget {
     required this.title,
     required this.author,
     required this.thumbnailUrl,
+    this.isAudioOnlyDefault = false,
   });
 
   @override
@@ -657,13 +662,17 @@ class PlayerScreen extends StatefulWidget {
 class _PlayerScreenState extends State<PlayerScreen> {
   final yt_exp.YoutubeExplode _yt = yt_exp.YoutubeExplode();
   VideoPlayerController? _videoPlayerController;
+  final ja.AudioPlayer _audioPlayer = ja.AudioPlayer();
+
   bool _isLoading = true;
+  bool _isAudioOnly = false;
   String _statusMessage = 'Cargando reproducción...';
   bool _hasError = false;
 
   @override
   void initState() {
     super.initState();
+    _isAudioOnly = widget.isAudioOnlyDefault;
     _initializePlayer();
   }
 
@@ -671,29 +680,37 @@ class _PlayerScreenState extends State<PlayerScreen> {
     setState(() {
       _isLoading = true;
       _hasError = false;
-      _statusMessage = 'Obteniendo enlace directo...';
+      _statusMessage = _isAudioOnly ? 'Obteniendo señal de audio liviana...' : 'Cargando video...';
     });
 
     try {
       final manifest = await _yt.videos.streamsClient.getManifest(widget.videoId);
-      
-      final muxedStreams = manifest.muxed.toList();
-      String? streamUrl;
-
-      if (muxedStreams.isNotEmpty) {
-        streamUrl = muxedStreams.first.url.toString();
-      } else if (manifest.audioOnly.isNotEmpty) {
-        streamUrl = manifest.audioOnly.first.url.toString();
-      }
-
-      if (streamUrl == null) {
-        throw Exception("Stream no disponible");
-      }
 
       _videoPlayerController?.dispose();
-      _videoPlayerController = VideoPlayerController.networkUrl(Uri.parse(streamUrl));
-      await _videoPlayerController!.initialize();
-      _videoPlayerController!.play();
+      await _audioPlayer.stop();
+
+      if (_isAudioOnly) {
+        // MODO SOLO AUDIO: Extrae solo el stream de audio e inicia just_audio (Resistente al bloqueo de pantalla)
+        final audioStream = manifest.audioOnly.withHighestBitrate();
+        await _audioPlayer.setUrl(audioStream.url.toString());
+        _audioPlayer.play();
+      } else {
+        // MODO VIDEO
+        final muxedStreams = manifest.muxed.toList();
+        String? streamUrl;
+
+        if (muxedStreams.isNotEmpty) {
+          streamUrl = muxedStreams.first.url.toString();
+        } else if (manifest.audioOnly.isNotEmpty) {
+          streamUrl = manifest.audioOnly.first.url.toString();
+        }
+
+        if (streamUrl == null) throw Exception("Stream no disponible");
+
+        _videoPlayerController = VideoPlayerController.networkUrl(Uri.parse(streamUrl));
+        await _videoPlayerController!.initialize();
+        _videoPlayerController!.play();
+      }
 
       setState(() {
         _isLoading = false;
@@ -702,15 +719,24 @@ class _PlayerScreenState extends State<PlayerScreen> {
       setState(() {
         _isLoading = false;
         _hasError = true;
-        _statusMessage = 'No se pudo reproducir este elemento. Prueba con otro resultado.';
+        _statusMessage = 'No se pudo cargar este elemento. Prueba con otra versión.';
       });
     }
+  }
+
+  void _toggleAudioMode(bool value) {
+    if (_isAudioOnly == value) return;
+    setState(() {
+      _isAudioOnly = value;
+    });
+    _initializePlayer();
   }
 
   @override
   void dispose() {
     _yt.close();
     _videoPlayerController?.dispose();
+    _audioPlayer.dispose();
     super.dispose();
   }
 
@@ -721,7 +747,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('🎬 Reproduciendo'),
+        title: Text(_isAudioOnly ? '📻 Solo Audio (Bloqueable)' : '🎬 Modo Video'),
         actions: [
           IconButton(
             icon: Icon(
@@ -775,29 +801,74 @@ class _PlayerScreenState extends State<PlayerScreen> {
                             ],
                           ),
                         )
-                      : Stack(
-                          alignment: Alignment.bottomCenter,
-                          children: [
-                            VideoPlayer(_videoPlayerController!),
-                            VideoProgressIndicator(_videoPlayerController!, allowScrubbing: true),
-                            Center(
-                              child: IconButton(
-                                icon: Icon(
-                                  _videoPlayerController!.value.isPlaying ? Icons.pause_circle_filled : Icons.play_circle_filled,
-                                  size: 64,
-                                  color: Colors.white.withOpacity(0.8),
+                      : _isAudioOnly
+                          ? Stack(
+                              alignment: Alignment.center,
+                              children: [
+                                Positioned.fill(
+                                  child: Image.network(
+                                    widget.thumbnailUrl,
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (_, __, ___) => const SizedBox(),
+                                  ),
                                 ),
-                                onPressed: () {
-                                  setState(() {
-                                    _videoPlayerController!.value.isPlaying
-                                        ? _videoPlayerController!.pause()
-                                        : _videoPlayerController!.play();
-                                  });
-                                },
-                              ),
+                                Positioned.fill(
+                                  child: Container(color: Colors.black.withOpacity(0.82)),
+                                ),
+                                Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    const Icon(Icons.graphic_eq, size: 56, color: Colors.purpleAccent),
+                                    const SizedBox(height: 8),
+                                    const Text(
+                                      'Modo Solo Audio Activo\n(Puedes bloquear la pantalla libremente)',
+                                      textAlign: TextAlign.center,
+                                      style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                                    ),
+                                    const SizedBox(height: 16),
+                                    StreamBuilder<ja.PlayerState>(
+                                      stream: _audioPlayer.playerStateStream,
+                                      builder: (context, snapshot) {
+                                        final isPlaying = snapshot.data?.playing ?? false;
+                                        return IconButton(
+                                          icon: Icon(
+                                            isPlaying ? Icons.pause_circle_filled : Icons.play_circle_filled,
+                                            size: 64,
+                                            color: Colors.white,
+                                          ),
+                                          onPressed: () {
+                                            isPlaying ? _audioPlayer.pause() : _audioPlayer.play();
+                                          },
+                                        );
+                                      },
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            )
+                          : Stack(
+                              alignment: Alignment.bottomCenter,
+                              children: [
+                                VideoPlayer(_videoPlayerController!),
+                                VideoProgressIndicator(_videoPlayerController!, allowScrubbing: true),
+                                Center(
+                                  child: IconButton(
+                                    icon: Icon(
+                                      _videoPlayerController!.value.isPlaying ? Icons.pause_circle_filled : Icons.play_circle_filled,
+                                      size: 64,
+                                      color: Colors.white.withOpacity(0.8),
+                                    ),
+                                    onPressed: () {
+                                      setState(() {
+                                        _videoPlayerController!.value.isPlaying
+                                            ? _videoPlayerController!.pause()
+                                            : _videoPlayerController!.play();
+                                      });
+                                    },
+                                  ),
+                                ),
+                              ],
                             ),
-                          ],
-                        ),
             ),
           ),
           Padding(
@@ -809,23 +880,11 @@ class _PlayerScreenState extends State<PlayerScreen> {
                 const SizedBox(height: 4),
                 Text(widget.author, style: const TextStyle(color: Colors.grey)),
                 const Divider(height: 32),
-                ListTile(
-                  leading: Icon(
-                    isFav ? Icons.thumb_up : Icons.thumb_up_outlined,
-                    color: isFav ? Theme.of(context).colorScheme.primary : null,
-                  ),
-                  title: Text(isFav ? 'Guardado en Favoritos (👍)' : 'Añadir a Favoritos (👍)'),
-                  subtitle: const Text('Disponible en tu Bóveda'),
-                  onTap: () {
-                    vault.toggleFavorite(
-                      MediaItem(
-                        id: widget.videoId,
-                        title: widget.title,
-                        author: widget.author,
-                        thumbnailUrl: widget.thumbnailUrl,
-                      ),
-                    );
-                  },
+                SwitchListTile(
+                  title: const Text('Modo Solo Audio (Pantalla Bloqueable)'),
+                  subtitle: const Text('Descarga solo el sonido y permite apagar la pantalla'),
+                  value: _isAudioOnly,
+                  onChanged: _toggleAudioMode,
                 ),
               ],
             ),
