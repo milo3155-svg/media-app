@@ -418,7 +418,7 @@ class SportsTab extends StatelessWidget {
 class SearchTab extends StatefulWidget {
   final String searchMode;
 
-  const SearchTab({super, this.searchMode = 'YouTube'});
+  const SearchTab({super.key, this.searchMode = 'YouTube'});
 
   @override
   State<SearchTab> createState() => _SearchTabState();
