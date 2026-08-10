@@ -1,17 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
-import 'package:youtube_explode_dart/youtube_explode_dart.dart' as yt_exp;
-import 'package:video_player/video_player.dart';
+import 'package:youtube_explode_dart/youtube_explode_dart' as yt_exp;
+import 'package:just_audio/just_audio.dart' as ja;
+import 'package:audio_session/audio_session.dart';
 
-void main() {
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   runApp(
     MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (_) => ThemeProvider()),
         ChangeNotifierProvider(create: (_) => VaultProvider()),
-        ChangeNotifierProvider(create: (_) => GlobalPlayerProvider()),
+        ChangeNotifierProvider(create: (_) => YMusicPlayerProvider()),
       ],
       child: const MediaApp(),
     ),
@@ -19,123 +20,121 @@ void main() {
 }
 
 // ==========================================
-// GESTOR GLOBAL DE REPRODUCCIÓN (MANTIENE EL SONIDO AL NAVEGAR)
+// ELEMENTO MULTIMEDIA
 // ==========================================
-class GlobalMediaItem {
+class MediaItemModel {
   final String id;
   final String title;
   final String author;
   final String thumbnailUrl;
+  final String duration;
 
-  GlobalMediaItem({
+  MediaItemModel({
     required this.id,
     required this.title,
     required this.author,
     required this.thumbnailUrl,
+    required this.duration,
   });
 }
 
-class GlobalPlayerProvider extends ChangeNotifier {
+// ==========================================
+// GESTOR ESTILO YMUSIC (AUDIO PURO EN SEGUNDO PLANO)
+// ==========================================
+class YMusicPlayerProvider extends ChangeNotifier {
   final yt_exp.YoutubeExplode _yt = yt_exp.YoutubeExplode();
-  VideoPlayerController? _videoPlayerController;
-  GlobalMediaItem? _currentItem;
+  final ja.AudioPlayer _audioPlayer = ja.AudioPlayer();
+  MediaItemModel? _currentItem;
 
   bool _isLoading = false;
   bool _hasError = false;
   bool _isPlaying = false;
+  String _errorMessage = '';
 
-  GlobalMediaItem? get currentItem => _currentItem;
-  VideoPlayerController? get controller => _videoPlayerController;
+  MediaItemModel? get currentItem => _currentItem;
+  ja.AudioPlayer get audioPlayer => _audioPlayer;
   bool get isLoading => _isLoading;
   bool get hasError => _hasError;
   bool get isPlaying => _isPlaying;
+  String get errorMessage => _errorMessage;
 
-  Future<void> playItem(GlobalMediaItem item) async {
+  YMusicPlayerProvider() {
+    _initAudioSession();
+    _audioPlayer.playerStateStream.listen((state) {
+      _isPlaying = state.playing;
+      notifyListeners();
+    });
+  }
+
+  Future<void> _initAudioSession() async {
+    try {
+      final session = await AudioSession.instance;
+      await session.configure(const AudioSessionConfiguration.music());
+    } catch (_) {}
+  }
+
+  Future<void> playItem(MediaItemModel item) async {
     _currentItem = item;
     _isLoading = true;
     _hasError = false;
+    _errorMessage = '';
     notifyListeners();
 
     try {
+      await _audioPlayer.stop();
+
+      // Extrae solo la pista de audio liviana (Estilo YMusic)
       final manifest = await _yt.videos.streamsClient.getManifest(item.id);
-      final muxedStreams = manifest.muxed.toList();
-      String? streamUrl;
+      final audioStream = manifest.audioOnly.withHighestBitrate();
 
-      if (muxedStreams.isNotEmpty) {
-        streamUrl = muxedStreams.first.url.toString();
-      } else if (manifest.audioOnly.isNotEmpty) {
-        streamUrl = manifest.audioOnly.first.url.toString();
-      }
+      await _audioPlayer.setUrl(audioStream.url.toString());
+      _audioPlayer.play();
 
-      if (streamUrl == null) throw Exception("Stream no disponible");
-
-      await _videoPlayerController?.dispose();
-      _videoPlayerController = VideoPlayerController.networkUrl(Uri.parse(streamUrl));
-      await _videoPlayerController!.initialize();
-      _videoPlayerController!.play();
-
-      _videoPlayerController!.addListener(() {
-        if (_videoPlayerController != null) {
-          final isControllerPlaying = _videoPlayerController!.value.isPlaying;
-          if (_isPlaying != isControllerPlaying) {
-            _isPlaying = isControllerPlaying;
-            notifyListeners();
-          }
-        }
-      });
-
-      _isPlaying = true;
       _isLoading = false;
       notifyListeners();
     } catch (e) {
       _isLoading = false;
       _hasError = true;
+      _errorMessage = 'No se pudo obtener la pista de audio.';
       notifyListeners();
     }
   }
 
   void togglePlayPause() {
-    if (_videoPlayerController != null && _videoPlayerController!.value.isInitialized) {
-      if (_videoPlayerController!.value.isPlaying) {
-        _videoPlayerController!.pause();
-        _isPlaying = false;
-      } else {
-        _videoPlayerController!.play();
-        _isPlaying = true;
-      }
-      notifyListeners();
+    if (_audioPlayer.playing) {
+      _audioPlayer.pause();
+    } else {
+      _audioPlayer.play();
     }
   }
 
   void closePlayer() {
-    _videoPlayerController?.dispose();
-    _videoPlayerController = null;
+    _audioPlayer.stop();
     _currentItem = null;
-    _isPlaying = false;
     notifyListeners();
   }
 
   @override
   void dispose() {
     _yt.close();
-    _videoPlayerController?.dispose();
+    _audioPlayer.dispose();
     super.dispose();
   }
 }
 
 // ==========================================
-// PROVEEDOR DE BÓVEDA
+// BÓVEDA (FAVORITOS 👍)
 // ==========================================
 class VaultProvider extends ChangeNotifier {
-  final List<GlobalMediaItem> _favorites = [];
+  final List<MediaItemModel> _favorites = [];
 
-  List<GlobalMediaItem> get favorites => _favorites;
+  List<MediaItemModel> get favorites => _favorites;
 
   bool isFavorite(String id) {
     return _favorites.any((item) => item.id == id);
   }
 
-  void toggleFavorite(GlobalMediaItem item) {
+  void toggleFavorite(MediaItemModel item) {
     final index = _favorites.indexWhere((element) => element.id == item.id);
     if (index >= 0) {
       _favorites.removeAt(index);
@@ -147,7 +146,7 @@ class VaultProvider extends ChangeNotifier {
 }
 
 // ==========================================
-// TEMAS
+// TEMAS Y COLORES
 // ==========================================
 class ThemeProvider extends ChangeNotifier {
   Color _primaryColor = Colors.deepPurple;
@@ -155,11 +154,6 @@ class ThemeProvider extends ChangeNotifier {
 
   Color get primaryColor => _primaryColor;
   bool get isDarkMode => _isDarkMode;
-
-  void setPrimaryColor(Color color) {
-    _primaryColor = color;
-    notifyListeners();
-  }
 
   void toggleThemeMode() {
     _isDarkMode = !_isDarkMode;
@@ -179,7 +173,7 @@ class MediaApp extends StatelessWidget {
 
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      title: 'Media App',
+      title: 'Media Stream Hub',
       themeMode: themeProvider.isDarkMode ? ThemeMode.dark : ThemeMode.light,
       theme: ThemeData(
         useMaterial3: true,
@@ -198,7 +192,7 @@ class MediaApp extends StatelessWidget {
 }
 
 // ==========================================
-// NAVEGACIÓN CON MINI-REPRODUCTOR PERSISTENTE
+// NAVEGACIÓN PRINCIPAL
 // ==========================================
 class MainNavigationScreen extends StatefulWidget {
   const MainNavigationScreen({super.key});
@@ -212,12 +206,10 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final playerProvider = Provider.of<GlobalPlayerProvider>(context);
+    final playerProvider = Provider.of<YMusicPlayerProvider>(context);
 
     final List<Widget> tabs = [
-      HomeTab(onNavigateToSearch: () {
-        setState(() => _currentIndex = 2);
-      }),
+      HomeTab(onNavigateToSearch: () => setState(() => _currentIndex = 2)),
       const SportsTab(),
       const SearchTab(),
       const VaultTab(),
@@ -233,13 +225,13 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
               children: tabs,
             ),
           ),
-          // MINI-BARRA REPRODUCTORA INFERIOR
+          // MINI-BARRA ESTILO YMUSIC AL NAVEGAR
           if (playerProvider.currentItem != null)
             GestureDetector(
               onTap: () {
                 Navigator.push(
                   context,
-                  MaterialPageRoute(builder: (_) => const PlayerDetailScreen()),
+                  MaterialPageRoute(builder: (_) => const YMusicPlayerDetailScreen()),
                 );
               },
               child: Container(
@@ -338,7 +330,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
 }
 
 // ==========================================
-// PESTAÑAS
+// PESTAÑA INICIO
 // ==========================================
 class HomeTab extends StatelessWidget {
   final VoidCallback onNavigateToSearch;
@@ -353,25 +345,104 @@ class HomeTab extends StatelessWidget {
         child: ElevatedButton.icon(
           onPressed: onNavigateToSearch,
           icon: const Icon(Icons.search),
-          label: const Text('Ir al Buscador'),
+          label: const Text('Explorar Música y Videos'),
         ),
       ),
     );
   }
 }
 
+// ==========================================
+// PESTAÑA DEPORTES (MANTENIDA Y MEJORADA)
+// ==========================================
 class SportsTab extends StatelessWidget {
   const SportsTab({super.key});
 
   @override
   Widget build(BuildContext context) {
+    final primaryColor = Theme.of(context).colorScheme.primary;
+
     return Scaffold(
-      appBar: AppBar(title: const Text('⚽ Deportes')),
-      body: const Center(child: Text('Sección Deportes')),
+      appBar: AppBar(title: const Text('⚽ Deportes & Radio en Vivo')),
+      body: ListView(
+        padding: const EdgeInsets.all(16.0),
+        children: [
+          Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [primaryColor.withOpacity(0.8), primaryColor.withOpacity(0.3)],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(20.0),
+              child: Column(
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: Colors.red,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: const Row(
+                          children: [
+                            Icon(Icons.circle, color: Colors.white, size: 8),
+                            SizedBox(width: 6),
+                            Text('EN VIVO', style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold)),
+                          ],
+                        ),
+                      ),
+                      const Text('Fútbol en Vivo', style: TextStyle(color: Colors.white70, fontWeight: FontWeight.bold)),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  const Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                    children: [
+                      Text('Equipo Local', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
+                      Text('VS', style: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold)),
+                      Text('Visitante', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
+                    ],
+                  ),
+                  const SizedBox(height: 20),
+                  ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      minimumSize: const Size(double.infinity, 48),
+                      backgroundColor: Colors.white,
+                      foregroundColor: Colors.black,
+                    ),
+                    onPressed: () {
+                      final playerProvider = Provider.of<YMusicPlayerProvider>(context, listen: false);
+                      final item = MediaItemModel(
+                        id: '148_s-5N0m4',
+                        title: 'Transmisión Deportiva Radio en Vivo',
+                        author: 'Radio Deportes Hub',
+                        thumbnailUrl: 'https://img.youtube.com/vi/148_s-5N0m4/hqdefault.jpg',
+                        duration: 'EN VIVO',
+                      );
+                      playerProvider.playItem(item);
+                    },
+                    icon: const Icon(Icons.radio, color: Colors.black),
+                    label: const Text('Escuchar Radio Deportiva (Audio 2do Plano)', style: TextStyle(fontWeight: FontWeight.bold)),
+                  )
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
 
+// ==========================================
+// PESTAÑA BUSCADOR
+// ==========================================
 class SearchTab extends StatefulWidget {
   const SearchTab({super.key});
 
@@ -419,10 +490,11 @@ class _SearchTabState extends State<SearchTab> with AutomaticKeepAliveClientMixi
   @override
   Widget build(BuildContext context) {
     super.build(context);
-    final playerProvider = Provider.of<GlobalPlayerProvider>(context, listen: false);
+    final playerProvider = Provider.of<YMusicPlayerProvider>(context, listen: false);
+    final vault = Provider.of<VaultProvider>(context);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('🔍 Buscador')),
+      appBar: AppBar(title: const Text('🔍 Buscador Multimedia')),
       body: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
@@ -433,7 +505,7 @@ class _SearchTabState extends State<SearchTab> with AutomaticKeepAliveClientMixi
                   child: TextField(
                     controller: _searchController,
                     decoration: InputDecoration(
-                      hintText: 'Buscar un video o canción...',
+                      hintText: 'Buscar canción o artista...',
                       prefixIcon: const Icon(Icons.search),
                       border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                     ),
@@ -451,42 +523,54 @@ class _SearchTabState extends State<SearchTab> with AutomaticKeepAliveClientMixi
             if (_isLoading)
               const Expanded(child: Center(child: CircularProgressIndicator()))
             else if (_searchResults.isEmpty)
-              const Expanded(child: Center(child: Text('Escribe algo arriba para buscar')))
+              const Expanded(child: Center(child: Text('Escribe algo arriba para buscar', style: TextStyle(color: Colors.grey))))
             else
               Expanded(
                 child: ListView.builder(
                   itemCount: _searchResults.length,
                   itemBuilder: (context, index) {
                     final video = _searchResults[index];
+                    final mediaItem = MediaItemModel(
+                      id: video.id.value,
+                      title: video.title,
+                      author: video.author,
+                      thumbnailUrl: video.thumbnails.highResUrl,
+                      duration: '${video.duration?.inMinutes ?? 0} min',
+                    );
+                    final isFav = vault.isFavorite(video.id.value);
 
                     return Card(
                       margin: const EdgeInsets.symmetric(vertical: 6),
                       child: ListTile(
                         leading: Image.network(
                           video.thumbnails.lowResUrl,
-                          width: 80,
+                          width: 60,
                           fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) => const Icon(Icons.play_arrow),
+                          errorBuilder: (_, __, ___) => const Icon(Icons.music_note),
                         ),
                         title: Text(video.title, maxLines: 2, overflow: TextOverflow.ellipsis),
-                        subtitle: Text('${video.author} • ${video.duration?.inMinutes ?? 0} min'),
-                        trailing: IconButton(
-                          icon: const Icon(Icons.play_circle_fill, size: 36, color: Colors.deepPurple),
-                          onPressed: () {
-                            final mediaItem = GlobalMediaItem(
-                              id: video.id.value,
-                              title: video.title,
-                              author: video.author,
-                              thumbnailUrl: video.thumbnails.highResUrl,
-                            );
-
-                            playerProvider.playItem(mediaItem);
-
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(builder: (_) => const PlayerDetailScreen()),
-                            );
-                          },
+                        subtitle: Text('${video.author} • ${mediaItem.duration}'),
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            IconButton(
+                              icon: Icon(
+                                isFav ? Icons.thumb_up : Icons.thumb_up_outlined,
+                                color: isFav ? Theme.of(context).colorScheme.primary : null,
+                              ),
+                              onPressed: () => vault.toggleFavorite(mediaItem),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.play_circle_fill, size: 36, color: Colors.deepPurple),
+                              onPressed: () {
+                                playerProvider.playItem(mediaItem);
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(builder: (_) => const YMusicPlayerDetailScreen()),
+                                );
+                              },
+                            ),
+                          ],
                         ),
                       ),
                     );
@@ -501,94 +585,181 @@ class _SearchTabState extends State<SearchTab> with AutomaticKeepAliveClientMixi
 }
 
 // ==========================================
-// PANTALLA DETALLADA DEL REPRODUCTOR
+// REPRODUCTOR ESTILO YMUSIC (PANTALLA COMPLETA)
 // ==========================================
-class PlayerDetailScreen extends StatelessWidget {
-  const PlayerDetailScreen({super.key});
+class YMusicPlayerDetailScreen extends StatelessWidget {
+  const YMusicPlayerDetailScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
-    final playerProvider = Provider.of<GlobalPlayerProvider>(context);
+    final playerProvider = Provider.of<YMusicPlayerProvider>(context);
+    final vault = Provider.of<VaultProvider>(context);
     final item = playerProvider.currentItem;
 
     if (item == null) {
       return Scaffold(
         appBar: AppBar(),
-        body: const Center(child: Text('No hay contenido en reproducción')),
+        body: const Center(child: Text('No hay contenido seleccionado')),
       );
     }
 
+    final isFav = vault.isFavorite(item.id);
+
     return Scaffold(
       appBar: AppBar(
-        title: const Text('🎬 Reproduciendo'),
-      ),
-      body: Column(
-        children: [
-          AspectRatio(
-            aspectRatio: 16 / 9,
-            child: Container(
-              color: Colors.black,
-              child: playerProvider.isLoading
-                  ? const Center(child: CircularProgressIndicator())
-                  : playerProvider.hasError
-                      ? const Center(child: Text('Error al cargar la transmisión', style: TextStyle(color: Colors.white)))
-                      : Stack(
-                          alignment: Alignment.bottomCenter,
-                          children: [
-                            VideoPlayer(playerProvider.controller!),
-                            VideoProgressIndicator(playerProvider.controller!, allowScrubbing: true),
-                            Center(
-                              child: IconButton(
-                                icon: Icon(
-                                  playerProvider.isPlaying ? Icons.pause_circle_filled : Icons.play_circle_filled,
-                                  size: 64,
-                                  color: Colors.white.withOpacity(0.8),
-                                ),
-                                onPressed: playerProvider.togglePlayPause,
-                              ),
-                            ),
-                          ],
-                        ),
+        title: const Text('📻 Reproductor YMusic'),
+        actions: [
+          IconButton(
+            icon: Icon(
+              isFav ? Icons.thumb_up : Icons.thumb_up_outlined,
+              color: isFav ? Theme.of(context).colorScheme.primary : null,
             ),
+            onPressed: () => vault.toggleFavorite(item),
           ),
-          Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(item.title, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                const SizedBox(height: 4),
-                Text(item.author, style: const TextStyle(color: Colors.grey)),
-                const Divider(height: 32),
-                const Row(
-                  children: [
-                    Icon(Icons.info_outline, color: Colors.deepPurple),
-                    SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        'Puedes presionar la flecha ← para regresar. La música seguirá sonando en la mini-barra inferior.',
-                        style: TextStyle(fontSize: 13, color: Colors.white70),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          )
         ],
+      ),
+      body: Padding(
+        padding: const EdgeInsets.all(24.0),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            // Portada grande estilo reproductor de música
+            ClipRRect(
+              borderRadius: BorderRadius.circular(20),
+              child: Image.network(
+                item.thumbnailUrl,
+                width: double.infinity,
+                height: 280,
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => Container(
+                  height: 280,
+                  color: Colors.grey[900],
+                  child: const Icon(Icons.music_note, size: 80, color: Colors.white70),
+                ),
+              ),
+            ),
+            const SizedBox(height: 28),
+            Text(
+              item.title,
+              textAlign: TextAlign.center,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              item.author,
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 15, color: Colors.grey),
+            ),
+            const SizedBox(height: 32),
+            if (playerProvider.isLoading)
+              const Column(
+                children: [
+                  CircularProgressIndicator(),
+                  SizedBox(height: 12),
+                  Text('Obteniendo audio ligero...', style: TextStyle(color: Colors.grey)),
+                ],
+              )
+            else if (playerProvider.hasError)
+              Column(
+                children: [
+                  Text(playerProvider.errorMessage, style: const TextStyle(color: Colors.orangeAccent)),
+                  const SizedBox(height: 12),
+                  ElevatedButton(
+                    onPressed: () => playerProvider.playItem(item),
+                    child: const Text('Reintentar'),
+                  ),
+                ],
+              )
+            else
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  IconButton(
+                    icon: Icon(
+                      playerProvider.isPlaying ? Icons.pause_circle_filled : Icons.play_circle_filled,
+                      size: 72,
+                      color: Theme.of(context).colorScheme.primary,
+                    ),
+                    onPressed: playerProvider.togglePlayPause,
+                  ),
+                ],
+              ),
+            const SizedBox(height: 24),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              decoration: BoxDecoration(
+                color: Colors.purple.withOpacity(0.15),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.headset, color: Colors.purpleAccent, size: 20),
+                  SizedBox(width: 8),
+                  Text('Modo 2do Plano Activo • Puedes bloquear el móvil', style: TextStyle(fontSize: 12)),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
 }
 
+// ==========================================
+// BÓVEDA (FAVORITOS 👍)
+// ==========================================
 class VaultTab extends StatelessWidget {
   const VaultTab({super.key});
 
   @override
   Widget build(BuildContext context) {
+    final vault = Provider.of<VaultProvider>(context);
+    final playerProvider = Provider.of<YMusicPlayerProvider>(context, listen: false);
+
     return Scaffold(
-      appBar: AppBar(title: const Text('👍 Mi Bóveda')),
-      body: const Center(child: Text('Bóveda')),
+      appBar: AppBar(title: const Text('👍 Mi Bóveda (Favoritos)')),
+      body: vault.favorites.isEmpty
+          ? const Center(
+              child: Text(
+                'Aún no tienes canciones favoritas.\n¡Presiona 👍 en el buscador para agregarlas!',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Colors.grey),
+              ),
+            )
+          : ListView.builder(
+              itemCount: vault.favorites.length,
+              itemBuilder: (context, index) {
+                final item = vault.favorites[index];
+                return ListTile(
+                  leading: ClipRRect(
+                    borderRadius: BorderRadius.circular(6),
+                    child: Image.network(
+                      item.thumbnailUrl,
+                      width: 50,
+                      height: 50,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => const Icon(Icons.music_note),
+                    ),
+                  ),
+                  title: Text(item.title, maxLines: 1, overflow: TextOverflow.ellipsis),
+                  subtitle: Text(item.author),
+                  trailing: IconButton(
+                    icon: const Icon(Icons.play_circle_fill, size: 36),
+                    onPressed: () {
+                      playerProvider.playItem(item);
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const YMusicPlayerDetailScreen()),
+                      );
+                    },
+                  ),
+                );
+              },
+            ),
     );
   }
 }
@@ -598,9 +769,25 @@ class SettingsTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final themeProvider = Provider.of<ThemeProvider>(context);
+
     return Scaffold(
       appBar: AppBar(title: const Text('🎨 Ajustes')),
-      body: const Center(child: Text('Ajustes')),
+      body: ListView(
+        padding: const EdgeInsets.all(16.0),
+        children: [
+          SwitchListTile(
+            title: const Text('Modo Oscuro'),
+            value: themeProvider.isDarkMode,
+            onChanged: (val) => themeProvider.toggleThemeMode(),
+          ),
+          ListTile(
+            leading: const Icon(Icons.share),
+            title: const Text('Compartir App'),
+            onTap: () => Share.share('¡Prueba mi app multimedia YMusic Hub!'),
+          ),
+        ],
+      ),
     );
   }
 }
