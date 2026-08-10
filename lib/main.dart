@@ -4,8 +4,9 @@ import 'package:share_plus/share_plus.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart' as yt_exp;
 import 'package:video_player/video_player.dart';
 import 'package:just_audio/just_audio.dart' as ja;
+import 'package:audio_session/audio_session.dart';
 
-void main() {
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   runApp(
     MultiProvider(
@@ -118,96 +119,20 @@ class MainNavigationScreen extends StatefulWidget {
 
 class _MainNavigationScreenState extends State<MainNavigationScreen> {
   int _currentIndex = 0;
-  String _searchMode = 'YouTube';
-
-  void _selectTabFromDrawer(int index, {String? searchMode}) {
-    setState(() {
-      _currentIndex = index;
-      if (searchMode != null) {
-        _searchMode = searchMode;
-      }
-    });
-    Navigator.pop(context);
-  }
 
   @override
   Widget build(BuildContext context) {
-    final primaryColor = Theme.of(context).colorScheme.primary;
-
     final List<Widget> tabs = [
-      HomeTab(onNavigateToSearch: (mode) {
-        setState(() {
-          _searchMode = mode;
-          _currentIndex = 2;
-        });
+      HomeTab(onNavigateToSearch: () {
+        setState(() => _currentIndex = 2);
       }),
       const SportsTab(),
-      SearchTab(searchMode: _searchMode),
+      const SearchTab(),
       const VaultTab(),
       const SettingsTab(),
     ];
 
     return Scaffold(
-      drawer: Drawer(
-        width: MediaQuery.of(context).size.width * 0.75,
-        child: Column(
-          children: [
-            UserAccountsDrawerHeader(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [primaryColor, primaryColor.withOpacity(0.6)],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
-              ),
-              currentAccountPicture: const CircleAvatar(
-                backgroundColor: Colors.white,
-                child: Icon(Icons.play_arrow_rounded, size: 40, color: Colors.deepPurple),
-              ),
-              accountName: const Text('Media Hub Stream', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
-              accountEmail: const Text('Tu Centro Multimedia Personal', style: TextStyle(color: Colors.white70)),
-            ),
-            ListTile(
-              leading: const Icon(Icons.home_outlined),
-              title: const Text('Inicio'),
-              selected: _currentIndex == 0,
-              onTap: () => _selectTabFromDrawer(0),
-            ),
-            const Divider(),
-            ListTile(
-              leading: const Icon(Icons.video_library_outlined, color: Colors.redAccent),
-              title: const Text('YouTube Videos'),
-              selected: _currentIndex == 2 && _searchMode == 'YouTube',
-              onTap: () => _selectTabFromDrawer(2, searchMode: 'YouTube'),
-            ),
-            ListTile(
-              leading: const Icon(Icons.music_note_outlined, color: Colors.red),
-              title: const Text('YouTube Music'),
-              selected: _currentIndex == 2 && _searchMode == 'YouTube Music',
-              onTap: () => _selectTabFromDrawer(2, searchMode: 'YouTube Music'),
-            ),
-            ListTile(
-              leading: const Icon(Icons.sports_soccer_outlined),
-              title: const Text('Deportes & Radio'),
-              selected: _currentIndex == 1,
-              onTap: () => _selectTabFromDrawer(1),
-            ),
-            const Divider(),
-            ListTile(
-              leading: const Icon(Icons.thumb_up_alt_outlined),
-              title: const Text('Mi Bóveda (Favoritos 👍)'),
-              selected: _currentIndex == 3,
-              onTap: () => _selectTabFromDrawer(3),
-            ),
-            ListTile(
-              leading: const Icon(Icons.palette_outlined),
-              title: const Text('Ajustes y Temas'),
-              selected: _currentIndex == 4,
-              onTap: () => _selectTabFromDrawer(4),
-            ),
-          ],
-        ),
-      ),
       body: IndexedStack(
         index: _currentIndex,
         children: tabs,
@@ -255,69 +180,20 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
 // PESTAÑA INICIO
 // ==========================================
 class HomeTab extends StatelessWidget {
-  final Function(String mode) onNavigateToSearch;
+  final VoidCallback onNavigateToSearch;
 
   const HomeTab({super.key, required this.onNavigateToSearch});
 
   @override
   Widget build(BuildContext context) {
-    final primaryColor = Theme.of(context).colorScheme.primary;
-
     return Scaffold(
       appBar: AppBar(title: const Text('🏠 Inicio')),
-      body: ListView(
-        padding: const EdgeInsets.all(16.0),
-        children: [
-          const Text('¿Qué quieres explorar hoy?', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              Expanded(
-                child: GestureDetector(
-                  onTap: () => onNavigateToSearch('YouTube'),
-                  child: Container(
-                    padding: const EdgeInsets.all(20),
-                    decoration: BoxDecoration(
-                      color: Colors.red.withOpacity(0.15),
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: Colors.red.withOpacity(0.4)),
-                    ),
-                    child: const Column(
-                      children: [
-                        Icon(Icons.play_circle_fill, size: 48, color: Colors.red),
-                        SizedBox(height: 8),
-                        Text('YouTube', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                        Text('Videos y Clips', style: TextStyle(fontSize: 12, color: Colors.grey)),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: GestureDetector(
-                  onTap: () => onNavigateToSearch('YouTube Music'),
-                  child: Container(
-                    padding: const EdgeInsets.all(20),
-                    decoration: BoxDecoration(
-                      color: primaryColor.withOpacity(0.15),
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: primaryColor.withOpacity(0.4)),
-                    ),
-                    child: Column(
-                      children: [
-                        Icon(Icons.music_note, size: 48, color: primaryColor),
-                        const SizedBox(height: 8),
-                        const Text('YT Music', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                        const Text('Música y Audio', style: TextStyle(fontSize: 12, color: Colors.grey)),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ],
+      body: Center(
+        child: ElevatedButton.icon(
+          onPressed: onNavigateToSearch,
+          icon: const Icon(Icons.search),
+          label: const Text('Ir al Buscador'),
+        ),
       ),
     );
   }
@@ -331,85 +207,9 @@ class SportsTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final primaryColor = Theme.of(context).colorScheme.primary;
-
     return Scaffold(
-      appBar: AppBar(title: const Text('⚽ Deportes & Radio')),
-      body: ListView(
-        padding: const EdgeInsets.all(16.0),
-        children: [
-          Container(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [primaryColor.withOpacity(0.8), primaryColor.withOpacity(0.3)],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: Padding(
-              padding: const EdgeInsets.all(20.0),
-              child: Column(
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: Colors.red,
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: const Row(
-                          children: [
-                            Icon(Icons.circle, color: Colors.white, size: 8),
-                            SizedBox(width: 6),
-                            Text('EN VIVO', style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold)),
-                          ],
-                        ),
-                      ),
-                      const Text('Champions League', style: TextStyle(color: Colors.white70, fontWeight: FontWeight.bold)),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-                  const Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                    children: [
-                      Text('Real Madrid', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
-                      Text('2 - 1', style: TextStyle(color: Colors.white, fontSize: 28, fontWeight: FontWeight.bold)),
-                      Text('Barcelona', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
-                    ],
-                  ),
-                  const SizedBox(height: 20),
-                  ElevatedButton.icon(
-                    style: ElevatedButton.styleFrom(
-                      minimumSize: const Size(double.infinity, 48),
-                      backgroundColor: Colors.white,
-                      foregroundColor: Colors.black,
-                    ),
-                    onPressed: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => const PlayerScreen(
-                            videoId: '148_s-5N0m4',
-                            title: 'Transmisión Deportiva en Vivo',
-                            author: 'Radio Deportes',
-                            thumbnailUrl: 'https://img.youtube.com/vi/148_s-5N0m4/hqdefault.jpg',
-                            isAudioOnlyDefault: true,
-                          ),
-                        ),
-                      );
-                    },
-                    icon: const Icon(Icons.radio, color: Colors.black),
-                    label: const Text('Escuchar Transmisión (Solo Audio)', style: TextStyle(fontWeight: FontWeight.bold)),
-                  )
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
+      appBar: AppBar(title: const Text('⚽ Deportes')),
+      body: const Center(child: Text('Sección Deportes')),
     );
   }
 }
@@ -418,9 +218,7 @@ class SportsTab extends StatelessWidget {
 // PESTAÑA BUSCADOR
 // ==========================================
 class SearchTab extends StatefulWidget {
-  final String searchMode;
-
-  const SearchTab({super.key, this.searchMode = 'YouTube'});
+  const SearchTab({super.key});
 
   @override
   State<SearchTab> createState() => _SearchTabState();
@@ -431,40 +229,17 @@ class _SearchTabState extends State<SearchTab> with AutomaticKeepAliveClientMixi
   final yt_exp.YoutubeExplode _yt = yt_exp.YoutubeExplode();
   List<yt_exp.Video> _searchResults = [];
   bool _isLoading = false;
-  late String _currentMode;
 
   @override
   bool get wantKeepAlive => true;
 
-  @override
-  void initState() {
-    super.initState();
-    _currentMode = widget.searchMode;
-  }
-
-  @override
-  void didUpdateWidget(SearchTab oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.searchMode != widget.searchMode) {
-      setState(() {
-        _currentMode = widget.searchMode;
-      });
-      if (_searchController.text.isNotEmpty) {
-        _performSearch(_searchController.text);
-      }
-    }
-  }
-
   Future<void> _performSearch(String query) async {
     if (query.trim().isEmpty) return;
 
-    setState(() {
-      _isLoading = true;
-    });
+    setState(() => _isLoading = true);
 
     try {
-      final searchQuery = _currentMode == 'YouTube Music' ? '$query canción' : query;
-      final results = await _yt.search.search(searchQuery);
+      final results = await _yt.search.search(query);
       setState(() {
         _searchResults = results.take(15).toList();
       });
@@ -475,11 +250,7 @@ class _SearchTabState extends State<SearchTab> with AutomaticKeepAliveClientMixi
         );
       }
     } finally {
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
-      }
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -496,44 +267,18 @@ class _SearchTabState extends State<SearchTab> with AutomaticKeepAliveClientMixi
     final vault = Provider.of<VaultProvider>(context);
 
     return Scaffold(
-      appBar: AppBar(title: Text('🔍 Buscador $_currentMode')),
+      appBar: AppBar(title: const Text('🔍 Buscador de Prueba')),
       body: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
           children: [
             Row(
               children: [
-                ChoiceChip(
-                  label: const Text('YouTube'),
-                  selected: _currentMode == 'YouTube',
-                  onSelected: (selected) {
-                    if (selected) {
-                      setState(() => _currentMode = 'YouTube');
-                      _performSearch(_searchController.text);
-                    }
-                  },
-                ),
-                const SizedBox(width: 8),
-                ChoiceChip(
-                  label: const Text('YT Music'),
-                  selected: _currentMode == 'YouTube Music',
-                  onSelected: (selected) {
-                    if (selected) {
-                      setState(() => _currentMode = 'YouTube Music');
-                      _performSearch(_searchController.text);
-                    }
-                  },
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
                 Expanded(
                   child: TextField(
                     controller: _searchController,
                     decoration: InputDecoration(
-                      hintText: _currentMode == 'YouTube Music' ? 'Buscar canciones...' : 'Buscar videos...',
+                      hintText: 'Buscar un video o canción...',
                       prefixIcon: const Icon(Icons.search),
                       border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                     ),
@@ -549,24 +294,9 @@ class _SearchTabState extends State<SearchTab> with AutomaticKeepAliveClientMixi
             ),
             const SizedBox(height: 16),
             if (_isLoading)
-              const Expanded(
-                child: Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      CircularProgressIndicator(),
-                      SizedBox(height: 12),
-                      Text('Consultando YouTube...'),
-                    ],
-                  ),
-                ),
-              )
+              const Expanded(child: Center(child: CircularProgressIndicator()))
             else if (_searchResults.isEmpty)
-              const Expanded(
-                child: Center(
-                  child: Text('Escribe algo arriba para buscar', style: TextStyle(color: Colors.grey)),
-                ),
-              )
+              const Expanded(child: Center(child: Text('Escribe algo arriba para buscar')))
             else
               Expanded(
                 child: ListView.builder(
@@ -586,43 +316,21 @@ class _SearchTabState extends State<SearchTab> with AutomaticKeepAliveClientMixi
                         ),
                         title: Text(video.title, maxLines: 2, overflow: TextOverflow.ellipsis),
                         subtitle: Text('${video.author} • ${video.duration?.inMinutes ?? 0} min'),
-                        trailing: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            IconButton(
-                              icon: Icon(
-                                isFav ? Icons.thumb_up : Icons.thumb_up_outlined,
-                                color: isFav ? Theme.of(context).colorScheme.primary : null,
+                        trailing: IconButton(
+                          icon: const Icon(Icons.play_circle_fill, size: 36, color: Colors.deepPurple),
+                          onPressed: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => PlayerScreen(
+                                  videoId: video.id.value,
+                                  title: video.title,
+                                  author: video.author,
+                                  thumbnailUrl: video.thumbnails.highResUrl,
+                                ),
                               ),
-                              onPressed: () {
-                                vault.toggleFavorite(
-                                  MediaItem(
-                                    id: video.id.value,
-                                    title: video.title,
-                                    author: video.author,
-                                    thumbnailUrl: video.thumbnails.lowResUrl,
-                                  ),
-                                );
-                              },
-                            ),
-                            IconButton(
-                              icon: const Icon(Icons.play_circle_fill, size: 32),
-                              onPressed: () {
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) => PlayerScreen(
-                                      videoId: video.id.value,
-                                      title: video.title,
-                                      author: video.author,
-                                      thumbnailUrl: video.thumbnails.highResUrl,
-                                      isAudioOnlyDefault: _currentMode == 'YouTube Music',
-                                    ),
-                                  ),
-                                );
-                              },
-                            ),
-                          ],
+                            );
+                          },
                         ),
                       ),
                     );
@@ -637,14 +345,13 @@ class _SearchTabState extends State<SearchTab> with AutomaticKeepAliveClientMixi
 }
 
 // ==========================================
-// REPRODUCTOR HÍBRIDO (VIDEO / PANTALLA BLOQUEABLE)
+// REPRODUCTOR ESPECÍFICO PARA SEGUNDO PLANO
 // ==========================================
 class PlayerScreen extends StatefulWidget {
   final String videoId;
   final String title;
   final String author;
   final String thumbnailUrl;
-  final bool isAudioOnlyDefault;
 
   const PlayerScreen({
     super.key,
@@ -652,7 +359,6 @@ class PlayerScreen extends StatefulWidget {
     required this.title,
     required this.author,
     required this.thumbnailUrl,
-    this.isAudioOnlyDefault = false,
   });
 
   @override
@@ -665,22 +371,28 @@ class _PlayerScreenState extends State<PlayerScreen> {
   final ja.AudioPlayer _audioPlayer = ja.AudioPlayer();
 
   bool _isLoading = true;
-  bool _isAudioOnly = false;
-  String _statusMessage = 'Cargando reproducción...';
+  bool _isBackgroundMode = false;
+  String _statusMessage = 'Cargando contenido...';
   bool _hasError = false;
 
   @override
   void initState() {
     super.initState();
-    _isAudioOnly = widget.isAudioOnlyDefault;
+    _configureAudioSession();
     _initializePlayer();
+  }
+
+  // Configura a Android para priorizar el audio sobre la pantalla
+  Future<void> _configureAudioSession() async {
+    final session = await AudioSession.instance;
+    await session.configure(const AudioSessionConfiguration.music());
   }
 
   Future<void> _initializePlayer() async {
     setState(() {
       _isLoading = true;
       _hasError = false;
-      _statusMessage = _isAudioOnly ? 'Obteniendo señal de audio liviana...' : 'Cargando video...';
+      _statusMessage = _isBackgroundMode ? 'Activando servicio de fondo...' : 'Cargando video...';
     });
 
     try {
@@ -689,11 +401,13 @@ class _PlayerScreenState extends State<PlayerScreen> {
       _videoPlayerController?.dispose();
       await _audioPlayer.stop();
 
-      if (_isAudioOnly) {
+      if (_isBackgroundMode) {
+        // MODO SEGUNDO PLANO: Usa únicamente el stream de audio directo en just_audio
         final audioStream = manifest.audioOnly.withHighestBitrate();
         await _audioPlayer.setUrl(audioStream.url.toString());
         _audioPlayer.play();
       } else {
+        // MODO VIDEO NORMAL
         final muxedStreams = manifest.muxed.toList();
         String? streamUrl;
 
@@ -710,23 +424,19 @@ class _PlayerScreenState extends State<PlayerScreen> {
         _videoPlayerController!.play();
       }
 
-      setState(() {
-        _isLoading = false;
-      });
+      setState(() => _isLoading = false);
     } catch (e) {
       setState(() {
         _isLoading = false;
         _hasError = true;
-        _statusMessage = 'No se pudo cargar este elemento. Prueba con otra versión.';
+        _statusMessage = 'Error al cargar el audio/video.';
       });
     }
   }
 
-  void _toggleAudioMode(bool value) {
-    if (_isAudioOnly == value) return;
-    setState(() {
-      _isAudioOnly = value;
-    });
+  void _toggleBackgroundMode(bool value) {
+    if (_isBackgroundMode == value) return;
+    setState(() => _isBackgroundMode = value);
     _initializePlayer();
   }
 
@@ -740,30 +450,9 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final vault = Provider.of<VaultProvider>(context);
-    final isFav = vault.isFavorite(widget.videoId);
-
     return Scaffold(
       appBar: AppBar(
-        title: Text(_isAudioOnly ? '📻 Solo Audio (Bloqueable)' : '🎬 Modo Video'),
-        actions: [
-          IconButton(
-            icon: Icon(
-              isFav ? Icons.thumb_up : Icons.thumb_up_outlined,
-              color: isFav ? Theme.of(context).colorScheme.primary : null,
-            ),
-            onPressed: () {
-              vault.toggleFavorite(
-                MediaItem(
-                  id: widget.videoId,
-                  title: widget.title,
-                  author: widget.author,
-                  thumbnailUrl: widget.thumbnailUrl,
-                ),
-              );
-            },
-          )
-        ],
+        title: Text(_isBackgroundMode ? '📻 Modo 2do Plano (Bloqueable)' : '🎬 Modo Video'),
       ),
       body: Column(
         children: [
@@ -783,23 +472,17 @@ class _PlayerScreenState extends State<PlayerScreen> {
                       ),
                     )
                   : _hasError
-                      ? Padding(
-                          padding: const EdgeInsets.all(16.0),
+                      ? Center(
                           child: Column(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
-                              const Icon(Icons.info_outline, color: Colors.orangeAccent, size: 48),
+                              Text(_statusMessage, style: const TextStyle(color: Colors.white70)),
                               const SizedBox(height: 12),
-                              Text(_statusMessage, textAlign: TextAlign.center, style: const TextStyle(color: Colors.white70)),
-                              const SizedBox(height: 12),
-                              ElevatedButton(
-                                onPressed: _initializePlayer,
-                                child: const Text('Reintentar'),
-                              )
+                              ElevatedButton(onPressed: _initializePlayer, child: const Text('Reintentar')),
                             ],
                           ),
                         )
-                      : _isAudioOnly
+                      : _isBackgroundMode
                           ? Stack(
                               alignment: Alignment.center,
                               children: [
@@ -810,16 +493,14 @@ class _PlayerScreenState extends State<PlayerScreen> {
                                     errorBuilder: (_, __, ___) => const SizedBox(),
                                   ),
                                 ),
-                                Positioned.fill(
-                                  child: Container(color: Colors.black.withOpacity(0.82)),
-                                ),
+                                Positioned.fill(child: Container(color: Colors.black.withOpacity(0.85))),
                                 Column(
                                   mainAxisAlignment: MainAxisAlignment.center,
                                   children: [
                                     const Icon(Icons.graphic_eq, size: 56, color: Colors.purpleAccent),
                                     const SizedBox(height: 8),
                                     const Text(
-                                      'Modo Solo Audio Activo\n(Puedes bloquear la pantalla libremente)',
+                                      '¡Modo 2do Plano Activo!\nPrueba apagar la pantalla de tu Pixel',
                                       textAlign: TextAlign.center,
                                       style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
                                     ),
@@ -878,11 +559,14 @@ class _PlayerScreenState extends State<PlayerScreen> {
                 const SizedBox(height: 4),
                 Text(widget.author, style: const TextStyle(color: Colors.grey)),
                 const Divider(height: 32),
-                SwitchListTile(
-                  title: const Text('Modo Solo Audio (Pantalla Bloqueable)'),
-                  subtitle: const Text('Descarga solo el sonido y permite apagar la pantalla'),
-                  value: _isAudioOnly,
-                  onChanged: _toggleAudioMode,
+                Card(
+                  color: Colors.deepPurple.withOpacity(0.2),
+                  child: SwitchListTile(
+                    title: const Text('Activar Modo 2do Plano'),
+                    subtitle: const Text('Permite bloquear la pantalla o salir de la app sin detener la música'),
+                    value: _isBackgroundMode,
+                    onChanged: _toggleBackgroundMode,
+                  ),
                 ),
               ],
             ),
@@ -894,57 +578,16 @@ class _PlayerScreenState extends State<PlayerScreen> {
 }
 
 // ==========================================
-// BÓVEDA
+// BÓVEDA Y AJUSTES
 // ==========================================
 class VaultTab extends StatelessWidget {
   const VaultTab({super.key});
 
   @override
   Widget build(BuildContext context) {
-    final vault = Provider.of<VaultProvider>(context);
-
     return Scaffold(
-      appBar: AppBar(title: const Text('👍 Mi Bóveda (Favoritos)')),
-      body: vault.favorites.isEmpty
-          ? const Center(
-              child: Text(
-                'No tienes elementos guardados aún.\n¡Dale a 👍 en los resultados para agregarlos!',
-                textAlign: TextAlign.center,
-                style: TextStyle(color: Colors.grey),
-              ),
-            )
-          : ListView.builder(
-              itemCount: vault.favorites.length,
-              itemBuilder: (context, index) {
-                final item = vault.favorites[index];
-                return ListTile(
-                  leading: Image.network(
-                    item.thumbnailUrl,
-                    width: 60,
-                    fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) => const Icon(Icons.music_note),
-                  ),
-                  title: Text(item.title, maxLines: 1, overflow: TextOverflow.ellipsis),
-                  subtitle: Text(item.author),
-                  trailing: IconButton(
-                    icon: const Icon(Icons.play_circle_fill, size: 36),
-                    onPressed: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => PlayerScreen(
-                            videoId: item.id,
-                            title: item.title,
-                            author: item.author,
-                            thumbnailUrl: item.thumbnailUrl,
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-                );
-              },
-            ),
+      appBar: AppBar(title: const Text('👍 Mi Bóveda')),
+      body: const Center(child: Text('Bóveda')),
     );
   }
 }
@@ -954,25 +597,9 @@ class SettingsTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final themeProvider = Provider.of<ThemeProvider>(context);
-
     return Scaffold(
       appBar: AppBar(title: const Text('🎨 Ajustes')),
-      body: ListView(
-        padding: const EdgeInsets.all(16.0),
-        children: [
-          SwitchListTile(
-            title: const Text('Modo Oscuro'),
-            value: themeProvider.isDarkMode,
-            onChanged: (val) => themeProvider.toggleThemeMode(),
-          ),
-          ListTile(
-            leading: const Icon(Icons.share),
-            title: const Text('Compartir App'),
-            onTap: () => Share.share('¡Prueba mi app multimedia!'),
-          ),
-        ],
-      ),
+      body: const Center(child: Text('Ajustes')),
     );
   }
 }
