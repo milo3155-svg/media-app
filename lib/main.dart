@@ -39,7 +39,7 @@ class MediaItemModel {
 }
 
 // ==========================================
-// GESTOR ESTILO YMUSIC (AUDIO PURO EN SEGUNDO PLANO)
+// GESTOR DE REPRODUCCIÓN GARANTIZADA
 // ==========================================
 class YMusicPlayerProvider extends ChangeNotifier {
   final yt_exp.YoutubeExplode _yt = yt_exp.YoutubeExplode();
@@ -83,11 +83,30 @@ class YMusicPlayerProvider extends ChangeNotifier {
     try {
       await _audioPlayer.stop();
 
-      // Extrae solo la pista de audio liviana (Estilo YMusic)
+      // Obtener el manifiesto
       final manifest = await _yt.videos.streamsClient.getManifest(item.id);
-      final audioStream = manifest.audioOnly.withHighestBitrate();
+      
+      // Intentar primero con audioOnly; si falla o no hay, usar muxed
+      String? streamUrl;
+      try {
+        final audioStreams = manifest.audioOnly.toList();
+        if (audioStreams.isNotEmpty) {
+          streamUrl = audioStreams.withHighestBitrate().url.toString();
+        }
+      } catch (_) {}
 
-      await _audioPlayer.setUrl(audioStream.url.toString());
+      if (streamUrl == null) {
+        final muxedStreams = manifest.muxed.toList();
+        if (muxedStreams.isNotEmpty) {
+          streamUrl = muxedStreams.first.url.toString();
+        }
+      }
+
+      if (streamUrl == null) {
+        throw Exception("No se pudo obtener el enlace de reproducción.");
+      }
+
+      await _audioPlayer.setUrl(streamUrl);
       _audioPlayer.play();
 
       _isLoading = false;
@@ -95,7 +114,7 @@ class YMusicPlayerProvider extends ChangeNotifier {
     } catch (e) {
       _isLoading = false;
       _hasError = true;
-      _errorMessage = 'No se pudo obtener la pista de audio.';
+      _errorMessage = 'No se pudo reproducir. Intenta con otro resultado.';
       notifyListeners();
     }
   }
@@ -146,7 +165,7 @@ class VaultProvider extends ChangeNotifier {
 }
 
 // ==========================================
-// TEMAS Y COLORES
+// TEMAS
 // ==========================================
 class ThemeProvider extends ChangeNotifier {
   Color _primaryColor = Colors.deepPurple;
@@ -225,7 +244,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
               children: tabs,
             ),
           ),
-          // MINI-BARRA ESTILO YMUSIC AL NAVEGAR
+          // MINI-BARRA PERSISTENTE AL NAVEGAR
           if (playerProvider.currentItem != null)
             GestureDetector(
               onTap: () {
@@ -330,7 +349,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
 }
 
 // ==========================================
-// PESTAÑA INICIO
+// PESTAÑAS
 // ==========================================
 class HomeTab extends StatelessWidget {
   final VoidCallback onNavigateToSearch;
@@ -352,9 +371,6 @@ class HomeTab extends StatelessWidget {
   }
 }
 
-// ==========================================
-// PESTAÑA DEPORTES
-// ==========================================
 class SportsTab extends StatelessWidget {
   const SportsTab({super.key});
 
@@ -428,7 +444,7 @@ class SportsTab extends StatelessWidget {
                       playerProvider.playItem(item);
                     },
                     icon: const Icon(Icons.radio, color: Colors.black),
-                    label: const Text('Escuchar Radio Deportiva (Audio 2do Plano)', style: TextStyle(fontWeight: FontWeight.bold)),
+                    label: const Text('Escuchar Radio Deportiva', style: TextStyle(fontWeight: FontWeight.bold)),
                   )
                 ],
               ),
@@ -440,9 +456,6 @@ class SportsTab extends StatelessWidget {
   }
 }
 
-// ==========================================
-// PESTAÑA BUSCADOR
-// ==========================================
 class SearchTab extends StatefulWidget {
   const SearchTab({super.key});
 
@@ -585,7 +598,7 @@ class _SearchTabState extends State<SearchTab> with AutomaticKeepAliveClientMixi
 }
 
 // ==========================================
-// REPRODUCTOR ESTILO YMUSIC (PANTALLA COMPLETA)
+// REPRODUCTOR EN PANTALLA COMPLETA
 // ==========================================
 class YMusicPlayerDetailScreen extends StatelessWidget {
   const YMusicPlayerDetailScreen({super.key});
@@ -607,7 +620,7 @@ class YMusicPlayerDetailScreen extends StatelessWidget {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('📻 Reproductor YMusic'),
+        title: const Text('📻 Reproductor'),
         actions: [
           IconButton(
             icon: Icon(
@@ -657,7 +670,7 @@ class YMusicPlayerDetailScreen extends StatelessWidget {
                 children: [
                   CircularProgressIndicator(),
                   SizedBox(height: 12),
-                  Text('Obteniendo audio ligero...', style: TextStyle(color: Colors.grey)),
+                  Text('Conectando transmisión...', style: TextStyle(color: Colors.grey)),
                 ],
               )
             else if (playerProvider.hasError)
@@ -697,7 +710,7 @@ class YMusicPlayerDetailScreen extends StatelessWidget {
                 children: [
                   Icon(Icons.headset, color: Colors.purpleAccent, size: 20),
                   SizedBox(width: 8),
-                  Text('Modo 2do Plano Activo • Puedes bloquear el móvil', style: TextStyle(fontSize: 12)),
+                  Text('Puedes regresar con la flecha ← o navegar por la app', style: TextStyle(fontSize: 12)),
                 ],
               ),
             ),
@@ -783,7 +796,7 @@ class SettingsTab extends StatelessWidget {
           ListTile(
             leading: const Icon(Icons.share),
             title: const Text('Compartir App'),
-            onTap: () => Share.share('¡Prueba mi app multimedia YMusic Hub!'),
+            onTap: () => Share.share('¡Prueba mi app multimedia!'),
           ),
         ],
       ),
