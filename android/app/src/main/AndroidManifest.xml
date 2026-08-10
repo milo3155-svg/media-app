@@ -1,4 +1,6 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.milo.media_app">
     <application
         android:label="media_app"
         android:name="${applicationName}"
@@ -21,4 +23,3 @@
             android:value="2" />
     </application>
 </manifest>
-
