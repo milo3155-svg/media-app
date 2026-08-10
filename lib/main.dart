@@ -8,15 +8,55 @@ import 'package:chewie/chewie.dart';
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
   runApp(
-    ChangeNotifierProvider(
-      create: (_) => ThemeProvider(),
+    MultiProvider(
+      providers: [
+        ChangeNotifierProvider(create: (_) => ThemeProvider()),
+        ChangeNotifierProvider(create: (_) => VaultProvider()),
+      ],
       child: const MediaApp(),
     ),
   );
 }
 
 // ==========================================
-// PROVEEDOR DE TEMAS Y COLORES DINÁMICOS
+// PROVEEDOR DE BÓVEDA (FAVORITOS)
+// ==========================================
+class MediaItem {
+  final String id;
+  final String title;
+  final String author;
+  final String thumbnailUrl;
+
+  MediaItem({
+    required this.id,
+    required this.title,
+    required this.author,
+    required this.thumbnailUrl,
+  });
+}
+
+class VaultProvider extends ChangeNotifier {
+  final List<MediaItem> _favorites = [];
+
+  List<MediaItem> get favorites => _favorites;
+
+  bool isFavorite(String id) {
+    return _favorites.any((item) => item.id == id);
+  }
+
+  void toggleFavorite(MediaItem item) {
+    final index = _favorites.indexWhere((element) => element.id == item.id);
+    if (index >= 0) {
+      _favorites.removeAt(index);
+    } else {
+      _favorites.add(item);
+    }
+    notifyListeners();
+  }
+}
+
+// ==========================================
+// PROVEEDOR DE TEMAS Y COLORES
 // ==========================================
 class ThemeProvider extends ChangeNotifier {
   Color _primaryColor = Colors.deepPurple;
@@ -67,7 +107,7 @@ class MediaApp extends StatelessWidget {
 }
 
 // ==========================================
-// NAVEGACIÓN PRINCIPAL (5 PESTAÑAS)
+// NAVEGACIÓN PRINCIPAL (IndexedStack para preservar búsquedas)
 // ==========================================
 class MainNavigationScreen extends StatefulWidget {
   const MainNavigationScreen({super.key});
@@ -90,7 +130,10 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: _tabs[_currentIndex],
+      body: IndexedStack(
+        index: _currentIndex,
+        children: _tabs,
+      ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _currentIndex,
         onDestinationSelected: (index) {
@@ -204,6 +247,7 @@ class SportsTab extends StatelessWidget {
                             videoId: '148_s-5N0m4',
                             title: 'Transmisión Deportiva en Vivo (Radio)',
                             author: 'Radio Deportes',
+                            thumbnailUrl: 'https://img.youtube.com/vi/148_s-5N0m4/hqdefault.jpg',
                             isAudioOnlyDefault: true,
                           ),
                         ),
@@ -250,6 +294,7 @@ class PodcastsTab extends StatelessWidget {
                         videoId: 'kXYiU_JCYtU',
                         title: 'Relatos e Historias de la Noche',
                         author: 'Podcast Oficial',
+                        thumbnailUrl: 'https://img.youtube.com/vi/kXYiU_JCYtU/hqdefault.jpg',
                         isAudioOnlyDefault: true,
                       ),
                     ),
@@ -265,7 +310,7 @@ class PodcastsTab extends StatelessWidget {
 }
 
 // ==========================================
-// PESTAÑA 3: BUSCADOR YOUTUBE
+// PESTAÑA 3: BUSCADOR (CONSERVACIÓN DE ESTADO)
 // ==========================================
 class SearchTab extends StatefulWidget {
   const SearchTab({super.key});
@@ -274,11 +319,14 @@ class SearchTab extends StatefulWidget {
   State<SearchTab> createState() => _SearchTabState();
 }
 
-class _SearchTabState extends State<SearchTab> {
+class _SearchTabState extends State<SearchTab> with AutomaticKeepAliveClientMixin {
   final TextEditingController _searchController = TextEditingController();
   final yt_exp.YoutubeExplode _yt = yt_exp.YoutubeExplode();
   List<yt_exp.Video> _searchResults = [];
   bool _isLoading = false;
+
+  @override
+  bool get wantKeepAlive => true; // Mantiene los resultados vivos al cambiar de pestaña
 
   Future<void> _performSearch(String query) async {
     if (query.trim().isEmpty) return;
@@ -316,6 +364,9 @@ class _SearchTabState extends State<SearchTab> {
 
   @override
   Widget build(BuildContext context) {
+    super.build(context);
+    final vault = Provider.of<VaultProvider>(context);
+
     return Scaffold(
       appBar: AppBar(title: const Text('🔍 Buscador Multimedia')),
       body: Padding(
@@ -368,6 +419,8 @@ class _SearchTabState extends State<SearchTab> {
                   itemCount: _searchResults.length,
                   itemBuilder: (context, index) {
                     final video = _searchResults[index];
+                    final isFav = vault.isFavorite(video.id.value);
+
                     return Card(
                       margin: const EdgeInsets.symmetric(vertical: 6),
                       child: ListTile(
@@ -379,20 +432,42 @@ class _SearchTabState extends State<SearchTab> {
                         ),
                         title: Text(video.title, maxLines: 2, overflow: TextOverflow.ellipsis),
                         subtitle: Text('${video.author} • ${video.duration?.inMinutes ?? 0} min'),
-                        trailing: IconButton(
-                          icon: const Icon(Icons.play_circle_fill, size: 36),
-                          onPressed: () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => PlayerScreen(
-                                  videoId: video.id.value,
-                                  title: video.title,
-                                  author: video.author,
-                                ),
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            IconButton(
+                              icon: Icon(
+                                isFav ? Icons.thumb_up : Icons.thumb_up_outlined,
+                                color: isFav ? Theme.of(context).colorScheme.primary : null,
                               ),
-                            );
-                          },
+                              onPressed: () {
+                                vault.toggleFavorite(
+                                  MediaItem(
+                                    id: video.id.value,
+                                    title: video.title,
+                                    author: video.author,
+                                    thumbnailUrl: video.thumbnails.lowResUrl,
+                                  ),
+                                );
+                              },
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.play_circle_fill, size: 32),
+                              onPressed: () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => PlayerScreen(
+                                      videoId: video.id.value,
+                                      title: video.title,
+                                      author: video.author,
+                                      thumbnailUrl: video.thumbnails.lowResUrl,
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                          ],
                         ),
                       ),
                     );
@@ -407,12 +482,13 @@ class _SearchTabState extends State<SearchTab> {
 }
 
 // ==========================================
-// PANTALLA DEL REPRODUCTOR (VIDEO Y SOLO AUDIO)
+// PANTALLA REPRODUCTOR (AHORRO DATOS REAL)
 // ==========================================
 class PlayerScreen extends StatefulWidget {
   final String videoId;
   final String title;
   final String author;
+  final String thumbnailUrl;
   final bool isAudioOnlyDefault;
 
   const PlayerScreen({
@@ -420,6 +496,7 @@ class PlayerScreen extends StatefulWidget {
     required this.videoId,
     required this.title,
     required this.author,
+    required this.thumbnailUrl,
     this.isAudioOnlyDefault = false,
   });
 
@@ -433,7 +510,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
   ChewieController? _chewieController;
   bool _isLoading = true;
   bool _isAudioOnly = false;
-  String _statusMessage = 'Extrayendo enlace de reproducción...';
+  String _statusMessage = 'Obteniendo flujos multimedia...';
 
   @override
   void initState() {
@@ -445,7 +522,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
   Future<void> _initializePlayer() async {
     setState(() {
       _isLoading = true;
-      _statusMessage = 'Cargando contenido...';
+      _statusMessage = _isAudioOnly ? 'Cargando flujo de audio liviano...' : 'Cargando video...';
     });
 
     try {
@@ -453,6 +530,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
       
       String streamUrl;
       if (_isAudioOnly) {
+        // EXTRAE ESTRICTAMENTE EL AUDIO MÁS LIGERO (Ahorro real de datos)
         final audioStream = manifest.audioOnly.withHighestBitrate();
         streamUrl = audioStream.url.toString();
       } else {
@@ -503,9 +581,30 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final vault = Provider.of<VaultProvider>(context);
+    final isFav = vault.isFavorite(widget.videoId);
+
     return Scaffold(
       appBar: AppBar(
-        title: Text(_isAudioOnly ? '📻 Reproductor Radio' : '🎬 Reproductor Video'),
+        title: Text(_isAudioOnly ? '📻 Modo Solo Audio' : '🎬 Modo Video'),
+        actions: [
+          IconButton(
+            icon: Icon(
+              isFav ? Icons.thumb_up : Icons.thumb_up_outlined,
+              color: isFav ? Theme.of(context).colorScheme.primary : null,
+            ),
+            onPressed: () {
+              vault.toggleFavorite(
+                MediaItem(
+                  id: widget.videoId,
+                  title: widget.title,
+                  author: widget.author,
+                  thumbnailUrl: widget.thumbnailUrl,
+                ),
+              );
+            },
+          )
+        ],
       ),
       body: Column(
         children: [
@@ -531,13 +630,17 @@ class _PlayerScreenState extends State<PlayerScreen> {
                             children: [
                               const Icon(Icons.radio, size: 64, color: Colors.purpleAccent),
                               const SizedBox(height: 8),
-                              const Text('Modo Solo Audio Activado', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                              const Text('Ahorro de datos activo (Solo Audio)', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
                               const SizedBox(height: 12),
                               Row(
                                 mainAxisAlignment: MainAxisAlignment.center,
                                 children: [
                                   IconButton(
-                                    icon: Icon(_videoPlayerController!.value.isPlaying ? Icons.pause_circle : Icons.play_circle, size: 48, color: Colors.white),
+                                    icon: Icon(
+                                      _videoPlayerController!.value.isPlaying ? Icons.pause_circle : Icons.play_circle,
+                                      size: 48,
+                                      color: Colors.white,
+                                    ),
                                     onPressed: () {
                                       setState(() {
                                         _videoPlayerController!.value.isPlaying
@@ -564,8 +667,8 @@ class _PlayerScreenState extends State<PlayerScreen> {
                 Text(widget.author, style: const TextStyle(color: Colors.grey)),
                 const Divider(height: 32),
                 SwitchListTile(
-                  title: const Text('Modo Solo Audio (Ahorro de datos)'),
-                  subtitle: const Text('Ideal para escuchar con pantalla en segundo plano'),
+                  title: const Text('Modo Solo Audio (Ahorro de Datos)'),
+                  subtitle: const Text('Descarga solo sonido y reduce el consumo de megas'),
                   value: _isAudioOnly,
                   onChanged: _toggleAudioOnly,
                 ),
@@ -579,20 +682,61 @@ class _PlayerScreenState extends State<PlayerScreen> {
 }
 
 // ==========================================
-// PESTAÑAS BÓVEDA Y AJUSTES
+// PESTAÑA 4: BÓVEDA EN TIEMPO REAL
 // ==========================================
 class VaultTab extends StatelessWidget {
   const VaultTab({super.key});
 
   @override
   Widget build(BuildContext context) {
+    final vault = Provider.of<VaultProvider>(context);
+
     return Scaffold(
       appBar: AppBar(title: const Text('👍 Mi Bóveda')),
-      body: const Center(child: Text('Lista de Me Gusta guardados')),
+      body: vault.favorites.isEmpty
+          ? const Center(
+              child: Text('No tienes elementos guardados aún.\n¡Dale a 👍 en el buscador o reproductor!',
+                  textAlign: TextAlign.center, style: TextStyle(color: Colors.grey)),
+            )
+          : ListView.builder(
+              itemCount: vault.favorites.length,
+              itemBuilder: (context, index) {
+                final item = vault.favorites[index];
+                return ListTile(
+                  leading: Image.network(
+                    item.thumbnailUrl,
+                    width: 60,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) => const Icon(Icons.music_note),
+                  ),
+                  title: Text(item.title, maxLines: 1, overflow: TextOverflow.ellipsis),
+                  subtitle: Text(item.author),
+                  trailing: IconButton(
+                    icon: const Icon(Icons.play_circle_fill),
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => PlayerScreen(
+                            videoId: item.id,
+                            title: item.title,
+                            author: item.author,
+                            thumbnailUrl: item.thumbnailUrl,
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                );
+              },
+            ),
     );
   }
 }
 
+// ==========================================
+// PESTAÑA 5: AJUSTES
+// ==========================================
 class SettingsTab extends StatelessWidget {
   const SettingsTab({super.key});
 
