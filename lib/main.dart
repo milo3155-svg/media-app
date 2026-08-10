@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
-import 'package:youtube_explode_dart/youtube_explode_dart' as yt_exp;
+import 'package:youtube_explode_dart/youtube_explode_dart.dart' as yt_exp;
 import 'package:just_audio/just_audio.dart' as ja;
 import 'package:audio_session/audio_session.dart';
 
@@ -353,7 +353,7 @@ class HomeTab extends StatelessWidget {
 }
 
 // ==========================================
-// PESTAÑA DEPORTES (MANTENIDA Y MEJORADA)
+// PESTAÑA DEPORTES
 // ==========================================
 class SportsTab extends StatelessWidget {
   const SportsTab({super.key});
@@ -623,7 +623,6 @@ class YMusicPlayerDetailScreen extends StatelessWidget {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            // Portada grande estilo reproductor de música
             ClipRRect(
               borderRadius: BorderRadius.circular(20),
               child: Image.network(
