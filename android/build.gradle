@@ -7,18 +7,6 @@ allprojects {
 
 rootProject.buildDir = '../build'
 
-// 1. Inyectamos SDK 34 a todos los plugins ANTES de evaluar la app
-subprojects { project ->
-    afterEvaluate {
-        if (project.hasProperty('android')) {
-            project.android {
-                compileSdkVersion 34
-            }
-        }
-    }
-}
-
-// 2. Definimos las rutas de compilación y dependencias
 subprojects {
     project.buildDir = "${rootProject.buildDir}/${project.name}"
 }
