@@ -3,15 +3,15 @@ import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart' as yt_exp;
 import 'package:video_player/video_player.dart';
-import 'package:audio_session/audio_session.dart';
 
-void main() async {
+void main() {
   WidgetsFlutterBinding.ensureInitialized();
   runApp(
     MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (_) => ThemeProvider()),
         ChangeNotifierProvider(create: (_) => VaultProvider()),
+        ChangeNotifierProvider(create: (_) => GlobalPlayerProvider()),
       ],
       child: const MediaApp(),
     ),
@@ -19,15 +19,15 @@ void main() async {
 }
 
 // ==========================================
-// PROVEEDOR DE BÓVEDA
+// GESTOR GLOBAL DE REPRODUCCIÓN (MANTIENE EL SONIDO AL NAVEGAR)
 // ==========================================
-class MediaItemModel {
+class GlobalMediaItem {
   final String id;
   final String title;
   final String author;
   final String thumbnailUrl;
 
-  MediaItemModel({
+  GlobalMediaItem({
     required this.id,
     required this.title,
     required this.author,
@@ -35,16 +35,107 @@ class MediaItemModel {
   });
 }
 
-class VaultProvider extends ChangeNotifier {
-  final List<MediaItemModel> _favorites = [];
+class GlobalPlayerProvider extends ChangeNotifier {
+  final yt_exp.YoutubeExplode _yt = yt_exp.YoutubeExplode();
+  VideoPlayerController? _videoPlayerController;
+  GlobalMediaItem? _currentItem;
 
-  List<MediaItemModel> get favorites => _favorites;
+  bool _isLoading = false;
+  bool _hasError = false;
+  bool _isPlaying = false;
+
+  GlobalMediaItem? get currentItem => _currentItem;
+  VideoPlayerController? get controller => _videoPlayerController;
+  bool get isLoading => _isLoading;
+  bool get hasError => _hasError;
+  bool get isPlaying => _isPlaying;
+
+  Future<void> playItem(GlobalMediaItem item) async {
+    _currentItem = item;
+    _isLoading = true;
+    _hasError = false;
+    notifyListeners();
+
+    try {
+      final manifest = await _yt.videos.streamsClient.getManifest(item.id);
+      final muxedStreams = manifest.muxed.toList();
+      String? streamUrl;
+
+      if (muxedStreams.isNotEmpty) {
+        streamUrl = muxedStreams.first.url.toString();
+      } else if (manifest.audioOnly.isNotEmpty) {
+        streamUrl = manifest.audioOnly.first.url.toString();
+      }
+
+      if (streamUrl == null) throw Exception("Stream no disponible");
+
+      await _videoPlayerController?.dispose();
+      _videoPlayerController = VideoPlayerController.networkUrl(Uri.parse(streamUrl));
+      await _videoPlayerController!.initialize();
+      _videoPlayerController!.play();
+
+      _videoPlayerController!.addListener(() {
+        if (_videoPlayerController != null) {
+          final isControllerPlaying = _videoPlayerController!.value.isPlaying;
+          if (_isPlaying != isControllerPlaying) {
+            _isPlaying = isControllerPlaying;
+            notifyListeners();
+          }
+        }
+      });
+
+      _isPlaying = true;
+      _isLoading = false;
+      notifyListeners();
+    } catch (e) {
+      _isLoading = false;
+      _hasError = true;
+      notifyListeners();
+    }
+  }
+
+  void togglePlayPause() {
+    if (_videoPlayerController != null && _videoPlayerController!.value.isInitialized) {
+      if (_videoPlayerController!.value.isPlaying) {
+        _videoPlayerController!.pause();
+        _isPlaying = false;
+      } else {
+        _videoPlayerController!.play();
+        _isPlaying = true;
+      }
+      notifyListeners();
+    }
+  }
+
+  void closePlayer() {
+    _videoPlayerController?.dispose();
+    _videoPlayerController = null;
+    _currentItem = null;
+    _isPlaying = false;
+    notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    _yt.close();
+    _videoPlayerController?.dispose();
+    super.dispose();
+  }
+}
+
+// ==========================================
+// PROVEEDOR DE BÓVEDA
+// ==========================================
+class VaultProvider extends ChangeNotifier {
+  final List<GlobalMediaItem> _favorites = [];
+
+  List<GlobalMediaItem> get favorites => _favorites;
 
   bool isFavorite(String id) {
     return _favorites.any((item) => item.id == id);
   }
 
-  void toggleFavorite(MediaItemModel item) {
+  void toggleFavorite(GlobalMediaItem item) {
     final index = _favorites.indexWhere((element) => element.id == item.id);
     if (index >= 0) {
       _favorites.removeAt(index);
@@ -107,7 +198,7 @@ class MediaApp extends StatelessWidget {
 }
 
 // ==========================================
-// NAVEGACIÓN PRINCIPAL
+// NAVEGACIÓN CON MINI-REPRODUCTOR PERSISTENTE
 // ==========================================
 class MainNavigationScreen extends StatefulWidget {
   const MainNavigationScreen({super.key});
@@ -121,6 +212,8 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final playerProvider = Provider.of<GlobalPlayerProvider>(context);
+
     final List<Widget> tabs = [
       HomeTab(onNavigateToSearch: () {
         setState(() => _currentIndex = 2);
@@ -132,9 +225,78 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     ];
 
     return Scaffold(
-      body: IndexedStack(
-        index: _currentIndex,
-        children: tabs,
+      body: Column(
+        children: [
+          Expanded(
+            child: IndexedStack(
+              index: _currentIndex,
+              children: tabs,
+            ),
+          ),
+          // MINI-BARRA REPRODUCTORA INFERIOR
+          if (playerProvider.currentItem != null)
+            GestureDetector(
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const PlayerDetailScreen()),
+                );
+              },
+              child: Container(
+                color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                child: Row(
+                  children: [
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(8),
+                      child: Image.network(
+                        playerProvider.currentItem!.thumbnailUrl,
+                        width: 48,
+                        height: 48,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => const Icon(Icons.music_note),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            playerProvider.currentItem!.title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                          ),
+                          Text(
+                            playerProvider.currentItem!.author,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(color: Colors.grey, fontSize: 12),
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (playerProvider.isLoading)
+                      const Padding(
+                        padding: EdgeInsets.all(8.0),
+                        child: SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2)),
+                      )
+                    else
+                      IconButton(
+                        icon: Icon(playerProvider.isPlaying ? Icons.pause_circle_filled : Icons.play_circle_filled, size: 36),
+                        onPressed: playerProvider.togglePlayPause,
+                      ),
+                    IconButton(
+                      icon: const Icon(Icons.close),
+                      onPressed: playerProvider.closePlayer,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+        ],
       ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _currentIndex,
@@ -257,6 +419,7 @@ class _SearchTabState extends State<SearchTab> with AutomaticKeepAliveClientMixi
   @override
   Widget build(BuildContext context) {
     super.build(context);
+    final playerProvider = Provider.of<GlobalPlayerProvider>(context, listen: false);
 
     return Scaffold(
       appBar: AppBar(title: const Text('🔍 Buscador')),
@@ -310,16 +473,18 @@ class _SearchTabState extends State<SearchTab> with AutomaticKeepAliveClientMixi
                         trailing: IconButton(
                           icon: const Icon(Icons.play_circle_fill, size: 36, color: Colors.deepPurple),
                           onPressed: () {
+                            final mediaItem = GlobalMediaItem(
+                              id: video.id.value,
+                              title: video.title,
+                              author: video.author,
+                              thumbnailUrl: video.thumbnails.highResUrl,
+                            );
+
+                            playerProvider.playItem(mediaItem);
+
                             Navigator.push(
                               context,
-                              MaterialPageRoute(
-                                builder: (_) => PlayerScreen(
-                                  videoId: video.id.value,
-                                  title: video.title,
-                                  author: video.author,
-                                  thumbnailUrl: video.thumbnails.highResUrl,
-                                ),
-                              ),
+                              MaterialPageRoute(builder: (_) => const PlayerDetailScreen()),
                             );
                           },
                         ),
@@ -336,102 +501,26 @@ class _SearchTabState extends State<SearchTab> with AutomaticKeepAliveClientMixi
 }
 
 // ==========================================
-// REPRODUCTOR FLUIDO SIN PETICIONES REPETIDAS
+// PANTALLA DETALLADA DEL REPRODUCTOR
 // ==========================================
-class PlayerScreen extends StatefulWidget {
-  final String videoId;
-  final String title;
-  final String author;
-  final String thumbnailUrl;
-
-  const PlayerScreen({
-    super.key,
-    required this.videoId,
-    required this.title,
-    required this.author,
-    required this.thumbnailUrl,
-  });
-
-  @override
-  State<PlayerScreen> createState() => _PlayerScreenState();
-}
-
-class _PlayerScreenState extends State<PlayerScreen> {
-  final yt_exp.YoutubeExplode _yt = yt_exp.YoutubeExplode();
-  VideoPlayerController? _videoPlayerController;
-
-  bool _isLoading = true;
-  bool _isBackgroundMode = false;
-  String _statusMessage = 'Cargando reproducción...';
-  bool _hasError = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _configureAudioSession();
-    _initializePlayer();
-  }
-
-  Future<void> _configureAudioSession() async {
-    try {
-      final session = await AudioSession.instance;
-      await session.configure(const AudioSessionConfiguration.music());
-    } catch (_) {}
-  }
-
-  Future<void> _initializePlayer() async {
-    setState(() {
-      _isLoading = true;
-      _hasError = false;
-      _statusMessage = 'Obteniendo stream...';
-    });
-
-    try {
-      final manifest = await _yt.videos.streamsClient.getManifest(widget.videoId);
-      final muxedStreams = manifest.muxed.toList();
-      String? streamUrl;
-
-      if (muxedStreams.isNotEmpty) {
-        streamUrl = muxedStreams.first.url.toString();
-      } else if (manifest.audioOnly.isNotEmpty) {
-        streamUrl = manifest.audioOnly.first.url.toString();
-      }
-
-      if (streamUrl == null) throw Exception("Stream no disponible");
-
-      _videoPlayerController?.dispose();
-      _videoPlayerController = VideoPlayerController.networkUrl(Uri.parse(streamUrl));
-      await _videoPlayerController!.initialize();
-      _videoPlayerController!.play();
-
-      setState(() => _isLoading = false);
-    } catch (e) {
-      setState(() {
-        _isLoading = false;
-        _hasError = true;
-        _statusMessage = 'Error al cargar el contenido.';
-      });
-    }
-  }
-
-  void _toggleBackgroundMode(bool value) {
-    setState(() {
-      _isBackgroundMode = value;
-    });
-  }
-
-  @override
-  void dispose() {
-    _yt.close();
-    _videoPlayerController?.dispose();
-    super.dispose();
-  }
+class PlayerDetailScreen extends StatelessWidget {
+  const PlayerDetailScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
+    final playerProvider = Provider.of<GlobalPlayerProvider>(context);
+    final item = playerProvider.currentItem;
+
+    if (item == null) {
+      return Scaffold(
+        appBar: AppBar(),
+        body: const Center(child: Text('No hay contenido en reproducción')),
+      );
+    }
+
     return Scaffold(
       appBar: AppBar(
-        title: Text(_isBackgroundMode ? '📻 Modo 2do Plano' : '🎬 Modo Video'),
+        title: const Text('🎬 Reproduciendo'),
       ),
       body: Column(
         children: [
@@ -439,92 +528,27 @@ class _PlayerScreenState extends State<PlayerScreen> {
             aspectRatio: 16 / 9,
             child: Container(
               color: Colors.black,
-              child: _isLoading
-                  ? Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          const CircularProgressIndicator(),
-                          const SizedBox(height: 12),
-                          Text(_statusMessage, style: const TextStyle(color: Colors.white70)),
-                        ],
-                      ),
-                    )
-                  : _hasError
-                      ? Center(
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Text(_statusMessage, style: const TextStyle(color: Colors.white70)),
-                              const SizedBox(height: 12),
-                              ElevatedButton(onPressed: _initializePlayer, child: const Text('Reintentar')),
-                            ],
-                          ),
-                        )
-                      : _isBackgroundMode
-                          ? Stack(
-                              alignment: Alignment.center,
-                              children: [
-                                Positioned.fill(
-                                  child: Image.network(
-                                    widget.thumbnailUrl,
-                                    fit: BoxFit.cover,
-                                    errorBuilder: (_, __, ___) => const SizedBox(),
-                                  ),
+              child: playerProvider.isLoading
+                  ? const Center(child: CircularProgressIndicator())
+                  : playerProvider.hasError
+                      ? const Center(child: Text('Error al cargar la transmisión', style: TextStyle(color: Colors.white)))
+                      : Stack(
+                          alignment: Alignment.bottomCenter,
+                          children: [
+                            VideoPlayer(playerProvider.controller!),
+                            VideoProgressIndicator(playerProvider.controller!, allowScrubbing: true),
+                            Center(
+                              child: IconButton(
+                                icon: Icon(
+                                  playerProvider.isPlaying ? Icons.pause_circle_filled : Icons.play_circle_filled,
+                                  size: 64,
+                                  color: Colors.white.withOpacity(0.8),
                                 ),
-                                Positioned.fill(child: Container(color: Colors.black.withOpacity(0.85))),
-                                Column(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    const Icon(Icons.graphic_eq, size: 56, color: Colors.purpleAccent),
-                                    const SizedBox(height: 8),
-                                    const Text(
-                                      '¡Modo 2do Plano Activo!\nPrueba apagar la pantalla o salir de la app',
-                                      textAlign: TextAlign.center,
-                                      style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-                                    ),
-                                    const SizedBox(height: 16),
-                                    IconButton(
-                                      icon: Icon(
-                                        _videoPlayerController!.value.isPlaying ? Icons.pause_circle_filled : Icons.play_circle_filled,
-                                        size: 64,
-                                        color: Colors.white,
-                                      ),
-                                      onPressed: () {
-                                        setState(() {
-                                          _videoPlayerController!.value.isPlaying
-                                              ? _videoPlayerController!.pause()
-                                              : _videoPlayerController!.play();
-                                        });
-                                      },
-                                    ),
-                                  ],
-                                ),
-                              ],
-                            )
-                          : Stack(
-                              alignment: Alignment.bottomCenter,
-                              children: [
-                                VideoPlayer(_videoPlayerController!),
-                                VideoProgressIndicator(_videoPlayerController!, allowScrubbing: true),
-                                Center(
-                                  child: IconButton(
-                                    icon: Icon(
-                                      _videoPlayerController!.value.isPlaying ? Icons.pause_circle_filled : Icons.play_circle_filled,
-                                      size: 64,
-                                      color: Colors.white.withOpacity(0.8),
-                                    ),
-                                    onPressed: () {
-                                      setState(() {
-                                        _videoPlayerController!.value.isPlaying
-                                            ? _videoPlayerController!.pause()
-                                            : _videoPlayerController!.play();
-                                      });
-                                    },
-                                  ),
-                                ),
-                              ],
+                                onPressed: playerProvider.togglePlayPause,
+                              ),
                             ),
+                          ],
+                        ),
             ),
           ),
           Padding(
@@ -532,18 +556,21 @@ class _PlayerScreenState extends State<PlayerScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(widget.title, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                Text(item.title, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                 const SizedBox(height: 4),
-                Text(widget.author, style: const TextStyle(color: Colors.grey)),
+                Text(item.author, style: const TextStyle(color: Colors.grey)),
                 const Divider(height: 32),
-                Card(
-                  color: Colors.deepPurple.withOpacity(0.2),
-                  child: SwitchListTile(
-                    title: const Text('Activar Modo 2do Plano'),
-                    subtitle: const Text('Mantiene el audio activo sin interrumpir la conexión'),
-                    value: _isBackgroundMode,
-                    onChanged: _toggleBackgroundMode,
-                  ),
+                const Row(
+                  children: [
+                    Icon(Icons.info_outline, color: Colors.deepPurple),
+                    SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Puedes presionar la flecha ← para regresar. La música seguirá sonando en la mini-barra inferior.',
+                        style: TextStyle(fontSize: 13, color: Colors.white70),
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
