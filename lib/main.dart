@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -64,7 +65,7 @@ class MediaApp extends StatelessWidget {
 }
 
 // ==========================================
-// NAVEGACIÓN PRINCIPAL (4 PESTAÑAS)
+// NAVEGACIÓN PRINCIPAL (5 PESTAÑAS)
 // ==========================================
 class MainNavigationScreen extends StatefulWidget {
   const MainNavigationScreen({super.key});
@@ -78,6 +79,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
 
   final List<Widget> _tabs = const [
     SportsTab(),
+    PodcastsTab(),
     SearchTab(),
     VaultTab(),
     SettingsTab(),
@@ -101,6 +103,11 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
             label: 'Deportes',
           ),
           NavigationDestination(
+            icon: Icon(Icons.podcasts_outlined),
+            selectedIcon: Icon(Icons.podcasts),
+            label: 'Podcasts',
+          ),
+          NavigationDestination(
             icon: Icon(Icons.search_outlined),
             selectedIcon: Icon(Icons.search),
             label: 'Buscar',
@@ -122,7 +129,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
 }
 
 // ==========================================
-// PESTAÑA 1: DEPORTES Y EVENTOS EN VIVO
+// PESTAÑA 1: DEPORTES REDISEÑADO
 // ==========================================
 class SportsTab extends StatelessWidget {
   const SportsTab({super.key});
@@ -133,13 +140,13 @@ class SportsTab extends StatelessWidget {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('⚽ Deportes en Vivo'),
+        title: const Text('⚽ Deportes & Radio'),
         actions: [
           IconButton(
-            icon: const Icon(Icons.radio),
+            icon: const Icon(Icons.radio_outlined),
             onPressed: () {
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Modo Radio activado')),
+                const SnackBar(content: Text('Transmisión de Radio activada')),
               );
             },
           )
@@ -148,68 +155,105 @@ class SportsTab extends StatelessWidget {
       body: ListView(
         padding: const EdgeInsets.all(16.0),
         children: [
-          Card(
-            color: primaryColor.withOpacity(0.15),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          // Tarjeta Destacada EN VIVO
+          Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [primaryColor.withOpacity(0.8), primaryColor.withOpacity(0.3)],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              borderRadius: BorderRadius.circular(20),
+              boxShadow: [
+                BoxShadow(
+                  color: primaryColor.withOpacity(0.2),
+                  blurRadius: 10,
+                  offset: const Offset(0, 4),
+                )
+              ],
+            ),
             child: Padding(
-              padding: const EdgeInsets.all(16.0),
+              padding: const EdgeInsets.all(20.0),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Chip(
-                        avatar: const Icon(Icons.fiber_manual_record, color: Colors.red, size: 12),
-                        label: const Text('EN VIVO'),
-                        backgroundColor: Colors.red.withOpacity(0.2),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: Colors.red,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: const Row(
+                          children: [
+                            Icon(Icons.circle, color: Colors.white, size: 8),
+                            SizedBox(width: 6),
+                            Text('EN VIVO', style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold)),
+                          ],
+                        ),
                       ),
-                      const Text('Champions League', style: TextStyle(fontWeight: FontWeight.bold)),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  const Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceAround,
-                    children: [
-                      Text('Real Madrid', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                      Text('2 - 1', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
-                      Text('FC Barcelona', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                      const Text('Champions League', style: TextStyle(color: Colors.white70, fontWeight: FontWeight.bold)),
                     ],
                   ),
                   const SizedBox(height: 16),
+                  const Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                    children: [
+                      Column(
+                        children: [
+                          Icon(Icons.shield, size: 36, color: Colors.white),
+                          SizedBox(height: 4),
+                          Text('Real Madrid', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                        ],
+                      ),
+                      Text('2 - 1', style: TextStyle(color: Colors.white, fontSize: 28, fontWeight: FontWeight.bold)),
+                      Column(
+                        children: [
+                          Icon(Icons.shield_outlined, size: 36, color: Colors.white),
+                          SizedBox(height: 4),
+                          Text('Barcelona', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                        ],
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 20),
                   ElevatedButton.icon(
                     style: ElevatedButton.styleFrom(
-                      minimumSize: const Size(double.infinity, 45),
-                      backgroundColor: primaryColor,
-                      foregroundColor: Colors.white,
+                      minimumSize: const Size(double.infinity, 48),
+                      backgroundColor: Colors.white,
+                      foregroundColor: Colors.black,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                     ),
                     onPressed: () {},
-                    icon: const Icon(Icons.volume_up),
-                    label: const Text('Escuchar Transmisión (Modo Radio)'),
+                    icon: const Icon(Icons.volume_up, color: Colors.black),
+                    label: const Text('Escuchar Narración en Vivo (Radio)', style: TextStyle(fontWeight: FontWeight.bold)),
                   )
                 ],
               ),
             ),
           ),
-          const SizedBox(height: 16),
-          const Text('Próximos Eventos - Liga MX', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-          const SizedBox(height: 8),
-          ListTile(
-            leading: const CircleAvatar(child: Icon(Icons.sports_soccer)),
-            title: const Text('América vs Guadalajara'),
-            subtitle: const Text('Hoy 21:00 hrs | Estadio Azteca'),
-            trailing: IconButton(
-              icon: const Icon(Icons.play_circle_outline),
-              onPressed: () {},
+          const SizedBox(height: 24),
+          const Text('Cartelera de Hoy - Liga MX', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 12),
+          Card(
+            child: ListTile(
+              leading: const CircleAvatar(child: Icon(Icons.sports_soccer)),
+              title: const Text('América vs Guadalajara'),
+              subtitle: const Text('Hoy 21:00 hrs | Estadio Azteca'),
+              trailing: ElevatedButton(
+                onPressed: () {},
+                child: const Text('Sintonizar'),
+              ),
             ),
           ),
-          ListTile(
-            leading: const CircleAvatar(child: Icon(Icons.sports_soccer)),
-            title: const Text('Cruz Azul vs Pumas'),
-            subtitle: const Text('Mañana 19:00 hrs'),
-            trailing: IconButton(
-              icon: const Icon(Icons.radio_button_checked),
-              onPressed: () {},
+          Card(
+            child: ListTile(
+              leading: const CircleAvatar(child: Icon(Icons.sports_soccer)),
+              title: const Text('Cruz Azul vs Pumas'),
+              subtitle: const Text('Mañana 19:00 hrs'),
+              trailing: const Icon(Icons.access_time),
             ),
           ),
         ],
@@ -219,56 +263,200 @@ class SportsTab extends StatelessWidget {
 }
 
 // ==========================================
-// PESTAÑA 2: BUSCADOR MULTIMEDIA
+// PESTAÑA 2: PODCASTS
 // ==========================================
-class SearchTab extends StatelessWidget {
-  const SearchTab({super.key});
+class PodcastsTab extends StatelessWidget {
+  const PodcastsTab({super.key});
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('🔍 Buscador YouTube'),
+        title: const Text('🎙️ Podcasts Destacados'),
+      ),
+      body: ListView(
+        padding: const EdgeInsets.all(16.0),
+        children: [
+          const Text('Episodios Recientes', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 12),
+          Card(
+            child: ListTile(
+              leading: Container(
+                width: 50,
+                height: 50,
+                decoration: BoxDecoration(
+                  color: Colors.purple.shade900,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(Icons.mic, color: Colors.white),
+              ),
+              title: const Text('Relatos e Historias de la Noche'),
+              subtitle: const Text('Ep. 142 • 45 min'),
+              trailing: IconButton(
+                icon: const Icon(Icons.play_circle_fill, size: 36),
+                onPressed: () {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Reproduciendo Podcast...')),
+                  );
+                },
+              ),
+            ),
+          ),
+          Card(
+            child: ListTile(
+              leading: Container(
+                width: 50,
+                height: 50,
+                decoration: BoxDecoration(
+                  color: Colors.orange.shade900,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(Icons.graphic_eq, color: Colors.white),
+              ),
+              title: const Text('Charla & Entretenimiento'),
+              subtitle: const Text('Ep. 89 • 1 hr 12 min'),
+              trailing: IconButton(
+                icon: const Icon(Icons.play_circle_fill, size: 36),
+                onPressed: () {},
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ==========================================
+// PESTAÑA 3: BUSCADOR YOUTUBE (BACKEND REAL)
+// ==========================================
+class SearchTab extends StatefulWidget {
+  const SearchTab({super.key});
+
+  @override
+  State<SearchTab> createState() => _SearchTabState();
+}
+
+class _SearchTabState extends State<SearchTab> {
+  final TextEditingController _searchController = TextEditingController();
+  final YoutubeExplode _yt = YoutubeExplode();
+  List<Video> _searchResults = [];
+  bool _isLoading = false;
+
+  Future<void> _performSearch(String query) async {
+    if (query.trim().isEmpty) return;
+
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      final results = await _yt.search.search(query);
+      setState(() {
+        _searchResults = results.take(15).toList();
+      });
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error al buscar: $e')),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    _yt.close();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('🔍 Buscador Multimedia'),
       ),
       body: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
           children: [
-            TextField(
-              decoration: InputDecoration(
-                hintText: 'Buscar canciones, videos o partidos...',
-                prefixIcon: const Icon(Icons.search),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-              ),
-            ),
-            const SizedBox(height: 20),
-            Expanded(
-              child: ListView.builder(
-                itemCount: 5,
-                itemBuilder: (context, index) {
-                  return Card(
-                    margin: const EdgeInsets.symmetric(vertical: 8),
-                    child: ListTile(
-                      leading: Container(
-                        width: 60,
-                        height: 60,
-                        color: Colors.grey.shade800,
-                        child: const Icon(Icons.play_arrow),
-                      ),
-                      title: Text('Resultado de búsqueda #${index + 1}'),
-                      subtitle: const Text('Canal Multimedia • 3.2M vistas'),
-                      trailing: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          IconButton(icon: const Icon(Icons.thumb_up_outlined), onPressed: () {}),
-                          IconButton(icon: const Icon(Icons.download_outlined), onPressed: () {}),
-                        ],
-                      ),
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _searchController,
+                    decoration: InputDecoration(
+                      hintText: 'Buscar en YouTube...',
+                      prefixIcon: const Icon(Icons.search),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                     ),
-                  );
-                },
-              ),
-            )
+                    onSubmitted: _performSearch,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                IconButton.filled(
+                  icon: const Icon(Icons.arrow_forward),
+                  onPressed: () => _performSearch(_searchController.text),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            if (_isLoading)
+              const Expanded(
+                child: Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      CircularProgressIndicator(),
+                      SizedBox(height: 12),
+                      Text('Consultando YouTube...'),
+                    ],
+                  ),
+                ),
+              )
+            else if (_searchResults.isEmpty)
+              const Expanded(
+                child: Center(
+                  child: Text('Escribe algo arriba y presiona buscar', style: TextStyle(color: Colors.grey)),
+                ),
+              )
+            else
+              Expanded(
+                child: ListView.builder(
+                  itemCount: _searchResults.length,
+                  itemBuilder: (context, index) {
+                    final video = _searchResults[index];
+                    return Card(
+                      margin: const EdgeInsets.symmetric(vertical: 6),
+                      child: ListTile(
+                        leading: Image.network(
+                          video.thumbnails.lowResUrl,
+                          width: 80,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) => const Icon(Icons.play_arrow),
+                        ),
+                        title: Text(video.title, maxLines: 2, overflow: TextOverflow.ellipsis),
+                        subtitle: Text('${video.author} • ${video.duration?.inMinutes ?? 0} min'),
+                        trailing: IconButton(
+                          icon: const Icon(Icons.play_circle_fill),
+                          onPressed: () {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text('Cargando: ${video.title}')),
+                            );
+                          },
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              )
           ],
         ),
       ),
@@ -277,7 +465,7 @@ class SearchTab extends StatelessWidget {
 }
 
 // ==========================================
-// PESTAÑA 3: BÓVEDA DE FAVORITOS & PLAYLISTS
+// PESTAÑA 4: BÓVEDA
 // ==========================================
 class VaultTab extends StatelessWidget {
   const VaultTab({super.key});
@@ -303,8 +491,8 @@ class VaultTab extends StatelessWidget {
               itemBuilder: (context, index) {
                 return ListTile(
                   leading: const Icon(Icons.music_note, color: Colors.amber),
-                  title: Text('Audio Favorito #${index + 1}'),
-                  subtitle: const Text('Guardado en la bóveda'),
+                  title: Text('Pista Guardada #${index + 1}'),
+                  subtitle: const Text('Bóveda de me gusta'),
                   trailing: const Icon(Icons.play_arrow),
                 );
               },
@@ -332,7 +520,7 @@ class VaultTab extends StatelessWidget {
 }
 
 // ==========================================
-// PESTAÑA 4: AJUSTES Y PERSONALIZACIÓN DE COLOR
+// PESTAÑA 5: AJUSTES Y SELECCIÓN DE COLOR
 // ==========================================
 class SettingsTab extends StatelessWidget {
   const SettingsTab({super.key});
@@ -365,7 +553,7 @@ class SettingsTab extends StatelessWidget {
           ),
           const Divider(),
           const SizedBox(height: 12),
-          const Text('Selecciona el Color Principal de la App:', style: TextStyle(fontWeight: FontWeight.bold)),
+          const Text('Selecciona el Color Principal:', style: TextStyle(fontWeight: FontWeight.bold)),
           const SizedBox(height: 16),
           Wrap(
             spacing: 12,
@@ -386,16 +574,9 @@ class SettingsTab extends StatelessWidget {
           ListTile(
             leading: const Icon(Icons.share),
             title: const Text('Compartir App'),
-            subtitle: const Text('Envía el enlace o la APK a tus amigos'),
             onTap: () {
               Share.share('¡Prueba mi nueva aplicación multimedia hecha en Flutter!');
             },
-          ),
-          ListTile(
-            leading: const Icon(Icons.download_done),
-            title: const Text('Gestor de Descargas'),
-            subtitle: const Text('Ver archivos guardados en el almacenamiento'),
-            onTap: () {},
           ),
         ],
       ),
