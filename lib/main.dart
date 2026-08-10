@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 void main() {
+  // Asegura que los servicios de Flutter se inicialicen antes de runApp
+  WidgetsFlutterBinding.ensureInitialized();
   runApp(const MediaApp());
 }
 
@@ -13,28 +15,19 @@ class MediaApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       title: 'Aplicación Multimedia',
       theme: ThemeData.dark().copyWith(
-        scaffoldBackgroundColor: const Color(0xFF121212),
-        primaryColor: Colors.deepPurple,
+        scaffoldBackgroundColor: Colors.black,
+        colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple, brightness: Brightness.dark),
       ),
-      home: const HomeScreen(),
-    );
-  }
-}
-
-class HomeScreen extends StatelessWidget {
-  const HomeScreen({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Aplicación Multimedia'),
-        backgroundColor: Colors.black,
-      ),
-      body: const Center(
-        child: Text(
-          '¡Bienvenido a tu App!',
-          style: TextStyle(fontSize: 20, color: Colors.white),
+      home: Scaffold(
+        appBar: AppBar(
+          title: const Text('Multimedia'),
+          centerTitle: true,
+        ),
+        body: const Center(
+          child: Text(
+            '¡App Iniciada Correctamente!',
+            style: TextStyle(fontSize: 18, color: Colors.white),
+          ),
         ),
       ),
     );
