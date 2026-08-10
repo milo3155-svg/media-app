@@ -1,12 +1,30 @@
 plugins {
     id "com.android.application"
-    id "org.jetbrains.kotlin.android"
+    id "kotlin-android"
     id "dev.flutter.flutter-gradle-plugin"
 }
 
+def localProperties = new Properties()
+def localPropertiesFile = rootProject.file('local.properties')
+if (localPropertiesFile.exists()) {
+    localPropertiesFile.withReader('UTF-8') { reader ->
+        localProperties.load(reader)
+    }
+}
+
+def flutterVersionCode = localProperties.getProperty('flutter.versionCode')
+if (flutterVersionCode == null) {
+    flutterVersionCode = '1'
+}
+
+def flutterVersionName = localProperties.getProperty('flutter.versionName')
+if (flutterVersionName == null) {
+    flutterVersionName = '1.0'
+}
+
 android {
-    namespace "com.example.media_app"
-    compileSdkVersion 34
+    namespace "com.milo.media_app" // Importante: que coincida con tu ID
+    compileSdk 34 // Una versión muy estable (Android 14)
 
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_1_8
@@ -17,21 +35,23 @@ android {
         jvmTarget = '1.8'
     }
 
+    sourceSets {
+        main.java.srcDirs += 'src/main/kotlin'
+    }
+
     defaultConfig {
-        applicationId "com.example.media_app"
-        minSdkVersion 21
-        targetSdkVersion 34
-        versionCode 1
-        versionName "1.0"
+        applicationId "com.milo.media_app" // Identificador único de tu app
+        minSdk 21 // Versión mínima (Android 5.0), súper compatible
+        targetSdk 34 // Apunta a Android 14
+        versionCode flutterVersionCode.toInteger()
+        versionName flutterVersionName
     }
 
     buildTypes {
         release {
-            signingConfig signingConfigs.debug
+            signingConfig signingConfigs.debug // Usamos firma de depuración para probar rápido
         }
     }
 }
 
-flutter {
-    source '../..'
-}
+dependencies {}
