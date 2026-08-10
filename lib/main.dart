@@ -4,6 +4,7 @@ import 'package:share_plus/share_plus.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart' as yt_exp;
 import 'package:video_player/video_player.dart';
 import 'package:chewie/chewie.dart';
+import 'package:just_audio/just_audio.dart' as ja;
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -107,7 +108,7 @@ class MediaApp extends StatelessWidget {
 }
 
 // ==========================================
-// NAVEGACIÓN PRINCIPAL CON DRAWER (MENÚ LATERAL)
+// NAVEGACIÓN PRINCIPAL CON DRAWER
 // ==========================================
 class MainNavigationScreen extends StatefulWidget {
   const MainNavigationScreen({super.key});
@@ -269,9 +270,7 @@ class HomeTab extends StatelessWidget {
     final primaryColor = Theme.of(context).colorScheme.primary;
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('🏠 Inicio'),
-      ),
+      appBar: AppBar(title: const Text('🏠 Inicio')),
       body: ListView(
         padding: const EdgeInsets.all(16.0),
         children: [
@@ -324,27 +323,6 @@ class HomeTab extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: 24),
-          const Text('Acceso Rápido', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-          const SizedBox(height: 12),
-          Card(
-            child: ListTile(
-              leading: const Icon(Icons.sports_soccer, color: Colors.green),
-              title: const Text('Eventos Deportivos en Vivo'),
-              subtitle: const Text('Revisa la cartelera y escucha narraciones'),
-              trailing: const Icon(Icons.arrow_forward_ios, size: 16),
-              onTap: () {},
-            ),
-          ),
-          Card(
-            child: ListTile(
-              leading: const Icon(Icons.thumb_up, color: Colors.amber),
-              title: const Text('Tus Favoritos en la Bóveda'),
-              subtitle: const Text('Escucha tus pistas guardadas'),
-              trailing: const Icon(Icons.arrow_forward_ios, size: 16),
-              onTap: () {},
-            ),
-          ),
         ],
       ),
     );
@@ -362,9 +340,7 @@ class SportsTab extends StatelessWidget {
     final primaryColor = Theme.of(context).colorScheme.primary;
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('⚽ Deportes & Radio'),
-      ),
+      appBar: AppBar(title: const Text('⚽ Deportes & Radio')),
       body: ListView(
         padding: const EdgeInsets.all(16.0),
         children: [
@@ -445,7 +421,7 @@ class SportsTab extends StatelessWidget {
 }
 
 // ==========================================
-// PESTAÑA BUSCADOR DUAL (YT & YT MUSIC)
+// PESTAÑA BUSCADOR DUAL
 // ==========================================
 class SearchTab extends StatefulWidget {
   final String searchMode;
@@ -493,7 +469,8 @@ class _SearchTabState extends State<SearchTab> with AutomaticKeepAliveClientMixi
     });
 
     try {
-      final searchQuery = _currentMode == 'YouTube Music' ? '$query letra audio' : query;
+      // BÚSQUEDA OPTIMIZADA: Evita Art Tracks restringidos en YT Music pidiendo versiones de audio limpias
+      final searchQuery = _currentMode == 'YouTube Music' ? '$query audio lyrics' : query;
       final results = await _yt.search.search(searchQuery);
       setState(() {
         _searchResults = results.take(15).toList();
@@ -526,9 +503,7 @@ class _SearchTabState extends State<SearchTab> with AutomaticKeepAliveClientMixi
     final vault = Provider.of<VaultProvider>(context);
 
     return Scaffold(
-      appBar: AppBar(
-        title: Text('🔍 Buscador $_currentMode'),
-      ),
+      appBar: AppBar(title: Text('🔍 Buscador $_currentMode')),
       body: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
@@ -669,7 +644,7 @@ class _SearchTabState extends State<SearchTab> with AutomaticKeepAliveClientMixi
 }
 
 // ==========================================
-// REPRODUCTOR MULTIMEDIA CON EXTRACCIÓN ROBUSTA
+// REPRODUCTOR HÍBRIDO (VIDEO Y AUDIO DE SEGUNDO PLANO)
 // ==========================================
 class PlayerScreen extends StatefulWidget {
   final String videoId;
@@ -695,9 +670,11 @@ class _PlayerScreenState extends State<PlayerScreen> {
   final yt_exp.YoutubeExplode _yt = yt_exp.YoutubeExplode();
   VideoPlayerController? _videoPlayerController;
   ChewieController? _chewieController;
+  final ja.AudioPlayer _audioPlayer = ja.AudioPlayer();
+
   bool _isLoading = true;
   bool _isAudioOnly = false;
-  String _statusMessage = 'Obteniendo flujos multimedia...';
+  String _statusMessage = 'Obteniendo flujos...';
   bool _hasError = false;
 
   @override
@@ -711,48 +688,36 @@ class _PlayerScreenState extends State<PlayerScreen> {
     setState(() {
       _isLoading = true;
       _hasError = false;
-      _statusMessage = _isAudioOnly ? 'Cargando flujo de audio...' : 'Cargando video...';
+      _statusMessage = _isAudioOnly ? 'Iniciando audio en segundo plano...' : 'Cargando video...';
     });
 
     try {
       final manifest = await _yt.videos.streamsClient.getManifest(widget.videoId);
-      
-      String? streamUrl;
-
-      // 1. Intento principal
-      if (_isAudioOnly) {
-        if (manifest.audioOnly.isNotEmpty) {
-          streamUrl = manifest.audioOnly.withHighestBitrate().url.toString();
-        } else if (manifest.muxed.isNotEmpty) {
-          streamUrl = manifest.muxed.first.url.toString();
-        }
-      } else {
-        if (manifest.muxed.isNotEmpty) {
-          streamUrl = manifest.muxed.withHighestBitrate().url.toString();
-        } else if (manifest.audioOnly.isNotEmpty) {
-          streamUrl = manifest.audioOnly.withHighestBitrate().url.toString();
-          _isAudioOnly = true; // Fallback a solo audio si no hay video directo
-        }
-      }
-
-      if (streamUrl == null) {
-        throw Exception("No se encontraron enlaces reproducibles para este contenido.");
-      }
 
       _videoPlayerController?.dispose();
       _chewieController?.dispose();
+      await _audioPlayer.stop();
 
-      _videoPlayerController = VideoPlayerController.networkUrl(Uri.parse(streamUrl));
-      await _videoPlayerController!.initialize();
+      if (_isAudioOnly) {
+        // MODO SOLO AUDIO: Usa just_audio para resistir el bloqueo de pantalla de Android
+        final audioStream = manifest.audioOnly.withHighestBitrate();
+        await _audioPlayer.setUrl(audioStream.url.toString());
+        _audioPlayer.play();
+      } else {
+        // MODO VIDEO
+        final muxedStream = manifest.muxed.withHighestBitrate();
+        _videoPlayerController = VideoPlayerController.networkUrl(Uri.parse(muxedStream.url.toString()));
+        await _videoPlayerController!.initialize();
 
-      _chewieController = ChewieController(
-        videoPlayerController: _videoPlayerController!,
-        autoPlay: true,
-        looping: false,
-        aspectRatio: _isAudioOnly ? 16 / 9 : _videoPlayerController!.value.aspectRatio,
-        allowFullScreen: !_isAudioOnly,
-        showControls: !_isAudioOnly,
-      );
+        _chewieController = ChewieController(
+          videoPlayerController: _videoPlayerController!,
+          autoPlay: true,
+          looping: false,
+          aspectRatio: _videoPlayerController!.value.aspectRatio,
+          allowFullScreen: true,
+          showControls: true,
+        );
+      }
 
       setState(() {
         _isLoading = false;
@@ -761,7 +726,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
       setState(() {
         _isLoading = false;
         _hasError = true;
-        _statusMessage = 'Este contenido tiene restricción de reproducción de origen. Prueba con otra versión o canción.';
+        _statusMessage = 'Servidor ocupado. Toca reintentar o selecciona otra versión.';
       });
     }
   }
@@ -779,6 +744,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
     _yt.close();
     _videoPlayerController?.dispose();
     _chewieController?.dispose();
+    _audioPlayer.dispose();
     super.dispose();
   }
 
@@ -789,7 +755,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(_isAudioOnly ? '📻 Solo Audio' : '🎬 Modo Video'),
+        title: Text(_isAudioOnly ? '📻 Solo Audio (Fondo)' : '🎬 Modo Video'),
         actions: [
           IconButton(
             icon: Icon(
@@ -854,28 +820,31 @@ class _PlayerScreenState extends State<PlayerScreen> {
                                   ),
                                 ),
                                 Positioned.fill(
-                                  child: Container(color: Colors.black.withOpacity(0.75)),
+                                  child: Container(color: Colors.black.withOpacity(0.8)),
                                 ),
                                 Center(
                                   child: Column(
                                     mainAxisAlignment: MainAxisAlignment.center,
                                     children: [
-                                      const Icon(Icons.music_note, size: 56, color: Colors.purpleAccent),
+                                      const Icon(Icons.graphic_eq, size: 56, color: Colors.purpleAccent),
                                       const SizedBox(height: 8),
-                                      const Text('Reproduciendo en Modo Audio', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-                                      const SizedBox(height: 12),
-                                      IconButton(
-                                        icon: Icon(
-                                          _videoPlayerController!.value.isPlaying ? Icons.pause_circle : Icons.play_circle,
-                                          size: 56,
-                                          color: Colors.white,
-                                        ),
-                                        onPressed: () {
-                                          setState(() {
-                                            _videoPlayerController!.value.isPlaying
-                                                ? _videoPlayerController!.pause()
-                                                : _videoPlayerController!.play();
-                                          });
+                                      const Text('Modo Fondo Activo (Pantalla Bloqueable)',
+                                          style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                                      const SizedBox(height: 16),
+                                      StreamBuilder<ja.PlayerState>(
+                                        stream: _audioPlayer.playerStateStream,
+                                        builder: (context, snapshot) {
+                                          final isPlaying = snapshot.data?.playing ?? false;
+                                          return IconButton(
+                                            icon: Icon(
+                                              isPlaying ? Icons.pause_circle_filled : Icons.play_circle_filled,
+                                              size: 64,
+                                              color: Colors.white,
+                                            ),
+                                            onPressed: () {
+                                              isPlaying ? _audioPlayer.pause() : _audioPlayer.play();
+                                            },
+                                          );
                                         },
                                       ),
                                     ],
@@ -896,8 +865,8 @@ class _PlayerScreenState extends State<PlayerScreen> {
                 Text(widget.author, style: const TextStyle(color: Colors.grey)),
                 const Divider(height: 32),
                 SwitchListTile(
-                  title: const Text('Modo Solo Audio (Ahorro de Datos)'),
-                  subtitle: const Text('Ideal para música y reproducir en segundo plano'),
+                  title: const Text('Modo Solo Audio (Fondo Activo)'),
+                  subtitle: const Text('Permite bloquear el teléfono sin interrumpir el sonido'),
                   value: _isAudioOnly,
                   onChanged: _toggleAudioOnly,
                 ),
@@ -911,7 +880,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
 }
 
 // ==========================================
-// PESTAÑAS BÓVEDA Y AJUSTES
+// BÓVEDA Y AJUSTES
 // ==========================================
 class VaultTab extends StatelessWidget {
   const VaultTab({super.key});
