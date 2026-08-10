@@ -23,8 +23,12 @@ dependencies:
   
   # Base de datos local y utilidades
   shared_preferences: ^2.2.2
-  share_plus: ^8.0.0
+  share_plus: 7.2.2
   provider: ^6.1.1
+
+# Forzamos una versión estable de package_info_plus que no falle en Gradle
+dependency_overrides:
+  package_info_plus: 8.0.2
 
 dev_dependencies:
   flutter_test:
