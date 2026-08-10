@@ -11,23 +11,14 @@ dependencies:
     sdk: flutter
   cupertino_icons: ^1.0.6
   
-  # Reproductor de audio y video
-  just_audio: ^0.9.36
-  video_player: ^2.8.2
-  chewie: ^1.7.5
-  
-  # Backend de YouTube y Red
+  # Reproductor Infalible de YouTube & YT Music
+  youtube_player_flutter: ^9.1.1
   youtube_explode_dart: ^2.2.1
   http: ^1.2.0
   
-  # Base de datos local y utilidades
-  shared_preferences: ^2.2.2
-  share_plus: 7.2.2
+  # Base de datos local y estado
   provider: ^6.1.1
-
-dependency_overrides:
-  package_info_plus: 8.0.2
-  wakelock_plus: 1.1.4
+  share_plus: 7.2.2
 
 dev_dependencies:
   flutter_test:
