@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
-import 'package:youtube_explode_dart/youtube_explode_dart.dart' as yt_exp;
+import 'package:youtube_explode_dart/youtube_explode_dart' as yt_exp;
 import 'package:video_player/video_player.dart';
 import 'package:chewie/chewie.dart';
 
@@ -107,7 +107,7 @@ class MediaApp extends StatelessWidget {
 }
 
 // ==========================================
-// NAVEGACIÓN PRINCIPAL (IndexedStack para preservar búsquedas)
+// NAVEGACIÓN PRINCIPAL CON DRAWER (MENÚ LATERAL)
 // ==========================================
 class MainNavigationScreen extends StatefulWidget {
   const MainNavigationScreen({super.key});
@@ -118,21 +118,104 @@ class MainNavigationScreen extends StatefulWidget {
 
 class _MainNavigationScreenState extends State<MainNavigationScreen> {
   int _currentIndex = 0;
+  String _searchMode = 'YouTube'; // YouTube o YouTube Music
 
-  final List<Widget> _tabs = const [
-    SportsTab(),
-    PodcastsTab(),
-    SearchTab(),
-    VaultTab(),
-    SettingsTab(),
-  ];
+  void _selectTabFromDrawer(int index, {String? searchMode}) {
+    setState(() {
+      _currentIndex = index;
+      if (searchMode != null) {
+        _searchMode = searchMode;
+      }
+    });
+    Navigator.pop(context); // Cierra el menú lateral
+  }
 
   @override
   Widget build(BuildContext context) {
+    final primaryColor = Theme.of(context).colorScheme.primary;
+
+    final List<Widget> tabs = [
+      HomeTab(onNavigateToSearch: (mode) {
+        setState(() {
+          _searchMode = mode;
+          _currentIndex = 2; // Ir a la pestaña de Buscar
+        });
+      }),
+      const SportsTab(),
+      SearchTab(searchMode: _searchMode),
+      const VaultTab(),
+      const SettingsTab(),
+    ];
+
     return Scaffold(
+      drawer: Drawer(
+        width: MediaQuery.of(context).size.width * 0.75, // Ocupa el 75% de la pantalla
+        child: Column(
+          children: [
+            UserAccountsDrawerHeader(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [primaryColor, primaryColor.withOpacity(0.6)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+              ),
+              currentAccountPicture: const CircleAvatar(
+                backgroundColor: Colors.white,
+                child: Icon(Icons.play_arrow_rounded, size: 40, color: Colors.deepPurple),
+              ),
+              accountName: const Text('Media Hub Stream', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+              accountEmail: const Text('Tu Centro Multimedia Personal', style: TextStyle(color: Colors.white70)),
+            ),
+            ListTile(
+              leading: const Icon(Icons.home_outlined),
+              title: const Text('Inicio'),
+              selected: _currentIndex == 0,
+              onTap: () => _selectTabFromDrawer(0),
+            ),
+            const Divider(),
+            ListTile(
+              leading: const Icon(Icons.video_library_outlined, color: Colors.redAccent),
+              title: const Text('YouTube Videos'),
+              selected: _currentIndex == 2 && _searchMode == 'YouTube',
+              onTap: () => _selectTabFromDrawer(2, searchMode: 'YouTube'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.music_note_outlined, color: Colors.red),
+              title: const Text('YouTube Music'),
+              selected: _currentIndex == 2 && _searchMode == 'YouTube Music',
+              onTap: () => _selectTabFromDrawer(2, searchMode: 'YouTube Music'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.sports_soccer_outlined),
+              title: const Text('Deportes & Radio'),
+              selected: _currentIndex == 1,
+              onTap: () => _selectTabFromDrawer(1),
+            ),
+            const Divider(),
+            ListTile(
+              leading: const Icon(Icons.collections_bookmark_outlined),
+              title: const Text('Mi Bóveda / Biblioteca'),
+              selected: _currentIndex == 3,
+              onTap: () => _selectTabFromDrawer(3),
+            ),
+            ListTile(
+              leading: const Icon(Icons.palette_outlined),
+              title: const Text('Ajustes y Temas'),
+              selected: _currentIndex == 4,
+              onTap: () => _selectTabFromDrawer(4),
+            ),
+            const Spacer(),
+            const Padding(
+              padding: EdgeInsets.all(16.0),
+              child: Text('Versión 1.0.0 • Pixel Edition', style: TextStyle(color: Colors.grey, fontSize: 12)),
+            )
+          ],
+        ),
+      ),
       body: IndexedStack(
         index: _currentIndex,
-        children: _tabs,
+        children: tabs,
       ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _currentIndex,
@@ -143,14 +226,14 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
         },
         destinations: const [
           NavigationDestination(
+            icon: Icon(Icons.home_outlined),
+            selectedIcon: Icon(Icons.home),
+            label: 'Inicio',
+          ),
+          NavigationDestination(
             icon: Icon(Icons.sports_soccer_outlined),
             selectedIcon: Icon(Icons.sports_soccer),
             label: 'Deportes',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.podcasts_outlined),
-            selectedIcon: Icon(Icons.podcasts),
-            label: 'Podcasts',
           ),
           NavigationDestination(
             icon: Icon(Icons.search_outlined),
@@ -174,7 +257,102 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
 }
 
 // ==========================================
-// PESTAÑA 1: DEPORTES REDISEÑADO
+// PESTAÑA INICIO (HOME)
+// ==========================================
+class HomeTab extends StatelessWidget {
+  final Function(String mode) onNavigateToSearch;
+
+  const HomeTab({super.key, required this.onNavigateToSearch});
+
+  @override
+  Widget build(BuildContext context) {
+    final primaryColor = Theme.of(context).colorScheme.primary;
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('🏠 Inicio'),
+      ),
+      body: ListView(
+        padding: const EdgeInsets.all(16.0),
+        children: [
+          const Text('¿Qué quieres explorar hoy?', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Expanded(
+                child: GestureDetector(
+                  onTap: () => onNavigateToSearch('YouTube'),
+                  child: Container(
+                    padding: const EdgeInsets.all(20),
+                    decoration: BoxDecoration(
+                      color: Colors.red.withOpacity(0.15),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: Colors.red.withOpacity(0.4)),
+                    ),
+                    child: const Column(
+                      children: [
+                        Icon(Icons.play_circle_fill, size: 48, color: Colors.red),
+                        SizedBox(height: 8),
+                        Text('YouTube', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                        Text('Videos y Clips', style: TextStyle(fontSize: 12, color: Colors.grey)),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: GestureDetector(
+                  onTap: () => onNavigateToSearch('YouTube Music'),
+                  child: Container(
+                    padding: const EdgeInsets.all(20),
+                    decoration: BoxDecoration(
+                      color: primaryColor.withOpacity(0.15),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: primaryColor.withOpacity(0.4)),
+                    ),
+                    child: Column(
+                      children: [
+                        Icon(Icons.music_note, size: 48, color: primaryColor),
+                        const SizedBox(height: 8),
+                        const Text('YT Music', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                        const Text('Música y Audio', style: TextStyle(fontSize: 12, color: Colors.grey)),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 24),
+          const Text('Acceso Rápido', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 12),
+          Card(
+            child: ListTile(
+              leading: const Icon(Icons.sports_soccer, color: Colors.green),
+              title: const Text('Eventos Deportivos en Vivo'),
+              subtitle: const Text('Revisa la cartelera y escucha narraciones'),
+              trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+              onTap: () {},
+            ),
+          ),
+          Card(
+            child: ListTile(
+              leading: const Icon(Icons.thumb_up, color: Colors.amber),
+              title: const Text('Tus Favoritos en la Bóveda'),
+              subtitle: const Text('Escucha tus pistas guardadas'),
+              trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+              onTap: () {},
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ==========================================
+// PESTAÑA DEPORTES
 // ==========================================
 class SportsTab extends StatelessWidget {
   const SportsTab({super.key});
@@ -267,53 +445,12 @@ class SportsTab extends StatelessWidget {
 }
 
 // ==========================================
-// PESTAÑA 2: PODCASTS
-// ==========================================
-class PodcastsTab extends StatelessWidget {
-  const PodcastsTab({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('🎙️ Podcasts Destacados')),
-      body: ListView(
-        padding: const EdgeInsets.all(16.0),
-        children: [
-          Card(
-            child: ListTile(
-              leading: const Icon(Icons.mic, color: Colors.purple, size: 36),
-              title: const Text('Relatos e Historias de la Noche'),
-              subtitle: const Text('Episodio de Terror • 45 min'),
-              trailing: IconButton(
-                icon: const Icon(Icons.play_circle_fill, size: 36),
-                onPressed: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => const PlayerScreen(
-                        videoId: 'kXYiU_JCYtU',
-                        title: 'Relatos e Historias de la Noche',
-                        author: 'Podcast Oficial',
-                        thumbnailUrl: 'https://img.youtube.com/vi/kXYiU_JCYtU/hqdefault.jpg',
-                        isAudioOnlyDefault: true,
-                      ),
-                    ),
-                  );
-                },
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// ==========================================
-// PESTAÑA 3: BUSCADOR (CONSERVACIÓN DE ESTADO)
+// PESTAÑA BUSCADOR DUAL (YT & YT MUSIC)
 // ==========================================
 class SearchTab extends StatefulWidget {
-  const SearchTab({super.key});
+  final String searchMode;
+
+  const SearchTab({super, this.searchMode = 'YouTube'});
 
   @override
   State<SearchTab> createState() => _SearchTabState();
@@ -324,9 +461,29 @@ class _SearchTabState extends State<SearchTab> with AutomaticKeepAliveClientMixi
   final yt_exp.YoutubeExplode _yt = yt_exp.YoutubeExplode();
   List<yt_exp.Video> _searchResults = [];
   bool _isLoading = false;
+  late String _currentMode;
 
   @override
-  bool get wantKeepAlive => true; // Mantiene los resultados vivos al cambiar de pestaña
+  bool get wantKeepAlive => true;
+
+  @override
+  void initState() {
+    super.initState();
+    _currentMode = widget.searchMode;
+  }
+
+  @override
+  void didUpdateWidget(SearchTab oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.searchMode != widget.searchMode) {
+      setState(() {
+        _currentMode = widget.searchMode;
+      });
+      if (_searchController.text.isNotEmpty) {
+        _performSearch(_searchController.text);
+      }
+    }
+  }
 
   Future<void> _performSearch(String query) async {
     if (query.trim().isEmpty) return;
@@ -336,7 +493,8 @@ class _SearchTabState extends State<SearchTab> with AutomaticKeepAliveClientMixi
     });
 
     try {
-      final results = await _yt.search.search(query);
+      final searchQuery = _currentMode == 'YouTube Music' ? '$query audio official' : query;
+      final results = await _yt.search.search(searchQuery);
       setState(() {
         _searchResults = results.take(15).toList();
       });
@@ -368,18 +526,46 @@ class _SearchTabState extends State<SearchTab> with AutomaticKeepAliveClientMixi
     final vault = Provider.of<VaultProvider>(context);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('🔍 Buscador Multimedia')),
+      appBar: AppBar(
+        title: Text('🔍 Buscador $_currentMode'),
+      ),
       body: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
           children: [
             Row(
               children: [
+                ChoiceChip(
+                  label: const Text('YouTube'),
+                  selected: _currentMode == 'YouTube',
+                  onSelected: (selected) {
+                    if (selected) {
+                      setState(() => _currentMode = 'YouTube');
+                      _performSearch(_searchController.text);
+                    }
+                  },
+                ),
+                const SizedBox(width: 8),
+                ChoiceChip(
+                  label: const Text('YT Music'),
+                  selected: _currentMode == 'YouTube Music',
+                  onSelected: (selected) {
+                    if (selected) {
+                      setState(() => _currentMode = 'YouTube Music');
+                      _performSearch(_searchController.text);
+                    }
+                  },
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
                 Expanded(
                   child: TextField(
                     controller: _searchController,
                     decoration: InputDecoration(
-                      hintText: 'Buscar en YouTube...',
+                      hintText: _currentMode == 'YouTube Music' ? 'Buscar canciones, artistas...' : 'Buscar videos...',
                       prefixIcon: const Icon(Icons.search),
                       border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                     ),
@@ -402,7 +588,7 @@ class _SearchTabState extends State<SearchTab> with AutomaticKeepAliveClientMixi
                     children: [
                       CircularProgressIndicator(),
                       SizedBox(height: 12),
-                      Text('Consultando YouTube...'),
+                      Text('Consultando servidores...'),
                     ],
                   ),
                 ),
@@ -410,7 +596,7 @@ class _SearchTabState extends State<SearchTab> with AutomaticKeepAliveClientMixi
             else if (_searchResults.isEmpty)
               const Expanded(
                 child: Center(
-                  child: Text('Escribe algo arriba y presiona buscar', style: TextStyle(color: Colors.grey)),
+                  child: Text('Escribe algo arriba para buscar', style: TextStyle(color: Colors.grey)),
                 ),
               )
             else
@@ -462,6 +648,7 @@ class _SearchTabState extends State<SearchTab> with AutomaticKeepAliveClientMixi
                                       title: video.title,
                                       author: video.author,
                                       thumbnailUrl: video.thumbnails.lowResUrl,
+                                      isAudioOnlyDefault: _currentMode == 'YouTube Music',
                                     ),
                                   ),
                                 );
@@ -482,7 +669,7 @@ class _SearchTabState extends State<SearchTab> with AutomaticKeepAliveClientMixi
 }
 
 // ==========================================
-// PANTALLA REPRODUCTOR (AHORRO DATOS REAL)
+// REPRODUCTOR MULTIMEDIA
 // ==========================================
 class PlayerScreen extends StatefulWidget {
   final String videoId;
@@ -492,7 +679,7 @@ class PlayerScreen extends StatefulWidget {
   final bool isAudioOnlyDefault;
 
   const PlayerScreen({
-    super.key,
+    super,
     required this.videoId,
     required this.title,
     required this.author,
@@ -510,7 +697,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
   ChewieController? _chewieController;
   bool _isLoading = true;
   bool _isAudioOnly = false;
-  String _statusMessage = 'Obteniendo flujos multimedia...';
+  String _statusMessage = 'Obteniendo flujos...';
 
   @override
   void initState() {
@@ -522,7 +709,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
   Future<void> _initializePlayer() async {
     setState(() {
       _isLoading = true;
-      _statusMessage = _isAudioOnly ? 'Cargando flujo de audio liviano...' : 'Cargando video...';
+      _statusMessage = _isAudioOnly ? 'Cargando flujo de audio...' : 'Cargando video...';
     });
 
     try {
@@ -530,7 +717,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
       
       String streamUrl;
       if (_isAudioOnly) {
-        // EXTRAE ESTRICTAMENTE EL AUDIO MÁS LIGERO (Ahorro real de datos)
         final audioStream = manifest.audioOnly.withHighestBitrate();
         streamUrl = audioStream.url.toString();
       } else {
@@ -558,7 +744,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
       });
     } catch (e) {
       setState(() {
-        _statusMessage = 'Error al cargar transmisión: $e';
+        _statusMessage = 'Error al cargar: $e';
       });
     }
   }
@@ -586,7 +772,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(_isAudioOnly ? '📻 Modo Solo Audio' : '🎬 Modo Video'),
+        title: Text(_isAudioOnly ? '📻 Solo Audio' : '🎬 Modo Video'),
         actions: [
           IconButton(
             icon: Icon(
@@ -628,29 +814,24 @@ class _PlayerScreenState extends State<PlayerScreen> {
                           child: Column(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
-                              const Icon(Icons.radio, size: 64, color: Colors.purpleAccent),
+                              const Icon(Icons.music_note, size: 64, color: Colors.purpleAccent),
                               const SizedBox(height: 8),
-                              const Text('Ahorro de datos activo (Solo Audio)', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                              const Text('Reproduciendo en Modo Audio', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
                               const SizedBox(height: 12),
-                              Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  IconButton(
-                                    icon: Icon(
-                                      _videoPlayerController!.value.isPlaying ? Icons.pause_circle : Icons.play_circle,
-                                      size: 48,
-                                      color: Colors.white,
-                                    ),
-                                    onPressed: () {
-                                      setState(() {
-                                        _videoPlayerController!.value.isPlaying
-                                            ? _videoPlayerController!.pause()
-                                            : _videoPlayerController!.play();
-                                      });
-                                    },
-                                  ),
-                                ],
-                              )
+                              IconButton(
+                                icon: Icon(
+                                  _videoPlayerController!.value.isPlaying ? Icons.pause_circle : Icons.play_circle,
+                                  size: 48,
+                                  color: Colors.white,
+                                ),
+                                onPressed: () {
+                                  setState(() {
+                                    _videoPlayerController!.value.isPlaying
+                                        ? _videoPlayerController!.pause()
+                                        : _videoPlayerController!.play();
+                                  });
+                                },
+                              ),
                             ],
                           ),
                         )
@@ -668,7 +849,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                 const Divider(height: 32),
                 SwitchListTile(
                   title: const Text('Modo Solo Audio (Ahorro de Datos)'),
-                  subtitle: const Text('Descarga solo sonido y reduce el consumo de megas'),
+                  subtitle: const Text('Ideal para música y reproducir en segundo plano'),
                   value: _isAudioOnly,
                   onChanged: _toggleAudioOnly,
                 ),
@@ -682,7 +863,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
 }
 
 // ==========================================
-// PESTAÑA 4: BÓVEDA EN TIEMPO REAL
+// PESTAÑAS BÓVEDA Y AJUSTES
 // ==========================================
 class VaultTab extends StatelessWidget {
   const VaultTab({super.key});
@@ -692,10 +873,10 @@ class VaultTab extends StatelessWidget {
     final vault = Provider.of<VaultProvider>(context);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('👍 Mi Bóveda')),
+      appBar: AppBar(title: const Text('👍 Mi Bóveda / Biblioteca')),
       body: vault.favorites.isEmpty
           ? const Center(
-              child: Text('No tienes elementos guardados aún.\n¡Dale a 👍 en el buscador o reproductor!',
+              child: Text('No tienes elementos guardados aún.\n¡Dale a 👍 en los resultados!',
                   textAlign: TextAlign.center, style: TextStyle(color: Colors.grey)),
             )
           : ListView.builder(
@@ -734,9 +915,6 @@ class VaultTab extends StatelessWidget {
   }
 }
 
-// ==========================================
-// PESTAÑA 5: AJUSTES
-// ==========================================
 class SettingsTab extends StatelessWidget {
   const SettingsTab({super.key});
 
