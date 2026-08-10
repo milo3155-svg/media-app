@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
-import 'package:youtube_explode_dart/youtube_explode_dart' as yt_exp;
+import 'package:youtube_explode_dart/youtube_explode_dart.dart' as yt_exp;
 import 'package:video_player/video_player.dart';
 import 'package:chewie/chewie.dart';
 
@@ -118,7 +118,7 @@ class MainNavigationScreen extends StatefulWidget {
 
 class _MainNavigationScreenState extends State<MainNavigationScreen> {
   int _currentIndex = 0;
-  String _searchMode = 'YouTube'; // YouTube o YouTube Music
+  String _searchMode = 'YouTube';
 
   void _selectTabFromDrawer(int index, {String? searchMode}) {
     setState(() {
@@ -127,7 +127,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
         _searchMode = searchMode;
       }
     });
-    Navigator.pop(context); // Cierra el menú lateral
+    Navigator.pop(context);
   }
 
   @override
@@ -138,7 +138,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
       HomeTab(onNavigateToSearch: (mode) {
         setState(() {
           _searchMode = mode;
-          _currentIndex = 2; // Ir a la pestaña de Buscar
+          _currentIndex = 2;
         });
       }),
       const SportsTab(),
@@ -149,7 +149,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
 
     return Scaffold(
       drawer: Drawer(
-        width: MediaQuery.of(context).size.width * 0.75, // Ocupa el 75% de la pantalla
+        width: MediaQuery.of(context).size.width * 0.75,
         child: Column(
           children: [
             UserAccountsDrawerHeader(
@@ -262,7 +262,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
 class HomeTab extends StatelessWidget {
   final Function(String mode) onNavigateToSearch;
 
-  const HomeTab({super.key, required this.onNavigateToSearch});
+  const HomeTab({super, required this.onNavigateToSearch});
 
   @override
   Widget build(BuildContext context) {
