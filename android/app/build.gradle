@@ -23,8 +23,9 @@ if (flutterVersionName == null) {
 }
 
 android {
-    namespace "com.milo.media_app" // Importante: que coincida con tu ID
-    compileSdk 34 // Una versión muy estable (Android 14)
+    namespace "com.milo.media_app"
+    compileSdkVersion 34
+    ndkVersion flutter.ndkVersion
 
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_1_8
@@ -35,23 +36,21 @@ android {
         jvmTarget = '1.8'
     }
 
-    sourceSets {
-        main.java.srcDirs += 'src/main/kotlin'
-    }
-
     defaultConfig {
-        applicationId "com.milo.media_app" // Identificador único de tu app
-        minSdk 21 // Versión mínima (Android 5.0), súper compatible
-        targetSdk 34 // Apunta a Android 14
+        applicationId "com.milo.media_app"
+        minSdkVersion 21
+        targetSdkVersion 34
         versionCode flutterVersionCode.toInteger()
         versionName flutterVersionName
     }
 
     buildTypes {
         release {
-            signingConfig signingConfigs.debug // Usamos firma de depuración para probar rápido
+            signingConfig signingConfigs.debug
         }
     }
 }
 
-dependencies {}
+flutter {
+    source '../..'
+}
