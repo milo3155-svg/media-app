@@ -11,8 +11,8 @@ dependencies:
     sdk: flutter
   cupertino_icons: ^1.0.6
   
-  # Version estable compatible con Flutter de Codemagic
-  youtube_player_flutter: 9.0.3
+  # Reproductor de video y backend
+  video_player: ^2.8.2
   youtube_explode_dart: ^2.2.1
   http: ^1.2.0
   
