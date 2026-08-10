@@ -1,18 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:just_audio_background/just_audio_background.dart';
 import 'package:share_plus/share_plus.dart';
 
-Future<void> main() async {
+void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  
-  // Inicialización del servicio en segundo plano y notificaciones
-  await JustAudioBackground.init(
-    androidNotificationChannelId: 'com.milo.media_app.channel.audio',
-    androidNotificationChannelName: 'Media Playback',
-    androidNotificationOngoing: true,
-  );
-
   runApp(
     ChangeNotifierProvider(
       create: (_) => ThemeProvider(),
@@ -148,7 +139,7 @@ class SportsTab extends StatelessWidget {
             icon: const Icon(Icons.radio),
             onPressed: () {
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Modo Radio activado en segundo plano')),
+                const SnackBar(content: Text('Modo Radio activado')),
               );
             },
           )
@@ -181,7 +172,7 @@ class SportsTab extends StatelessWidget {
                     mainAxisAlignment: MainAxisAlignment.spaceAround,
                     children: [
                       Text('Real Madrid', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                      Text('2 - 1', style: TextStyle(fontSize: 24, fontWeight: FontWeight.extrabold)),
+                      Text('2 - 1', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
                       Text('FC Barcelona', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                     ],
                   ),
@@ -241,43 +232,45 @@ class SearchTab extends StatelessWidget {
       ),
       body: Padding(
         padding: const EdgeInsets.all(16.0),
-        children: [
-          TextField(
-            decoration: InputDecoration(
-              hintText: 'Buscar canciones, videos o partidos...',
-              prefixIcon: const Icon(Icons.search),
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+        child: Column(
+          children: [
+            TextField(
+              decoration: InputDecoration(
+                hintText: 'Buscar canciones, videos o partidos...',
+                prefixIcon: const Icon(Icons.search),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+              ),
             ),
-          ),
-          const SizedBox(height: 20),
-          Expanded(
-            child: ListView.builder(
-              itemCount: 5,
-              itemBuilder: (context, index) {
-                return Card(
-                  margin: const EdgeInsets.symmetric(vertical: 8),
-                  child: ListTile(
-                    leading: Container(
-                      width: 60,
-                      height: 60,
-                      color: Colors.grey.shade800,
-                      child: const Icon(Icons.play_arrow),
+            const SizedBox(height: 20),
+            Expanded(
+              child: ListView.builder(
+                itemCount: 5,
+                itemBuilder: (context, index) {
+                  return Card(
+                    margin: const EdgeInsets.symmetric(vertical: 8),
+                    child: ListTile(
+                      leading: Container(
+                        width: 60,
+                        height: 60,
+                        color: Colors.grey.shade800,
+                        child: const Icon(Icons.play_arrow),
+                      ),
+                      title: Text('Resultado de búsqueda #${index + 1}'),
+                      subtitle: const Text('Canal Multimedia • 3.2M vistas'),
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          IconButton(icon: const Icon(Icons.thumb_up_outlined), onPressed: () {}),
+                          IconButton(icon: const Icon(Icons.download_outlined), onPressed: () {}),
+                        ],
+                      ),
                     ),
-                    title: Text('Resultado de búsqueda #${index + 1}'),
-                    subtitle: const Text('Canal Multimedia • 3.2M vistas'),
-                    trailing: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        IconButton(icon: const Icon(Icons.thumb_up_outlined), onPressed: () {}),
-                        IconButton(icon: const Icon(Icons.download_outlined), onPressed: () {}),
-                      ],
-                    ),
-                  ),
-                );
-              },
-            ),
-          )
-        ],
+                  );
+                },
+              ),
+            )
+          ],
+        ),
       ),
     );
   }
@@ -409,4 +402,3 @@ class SettingsTab extends StatelessWidget {
     );
   }
 }
-
