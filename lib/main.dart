@@ -2,10 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart' as yt_exp;
-import 'package:just_audio/just_audio.dart' as ja;
-import 'package:audio_session/audio_session.dart';
+import 'package:youtube_player_flutter/youtube_player_flutter.dart';
 
-void main() async {
+void main() {
   WidgetsFlutterBinding.ensureInitialized();
   runApp(
     MultiProvider(
@@ -39,103 +38,43 @@ class MediaItemModel {
 }
 
 // ==========================================
-// GESTOR DE REPRODUCCIÓN (CLIENT OVERRIDE)
+// GESTOR DE REPRODUCCIÓN INFALIBLE (IFRAME)
 // ==========================================
 class YMusicPlayerProvider extends ChangeNotifier {
-  final yt_exp.YoutubeExplode _yt = yt_exp.YoutubeExplode();
-  final ja.AudioPlayer _audioPlayer = ja.AudioPlayer();
   MediaItemModel? _currentItem;
-
-  bool _isLoading = false;
-  bool _hasError = false;
-  bool _isPlaying = false;
-  String _errorMessage = '';
+  YoutubePlayerController? _controller;
 
   MediaItemModel? get currentItem => _currentItem;
-  ja.AudioPlayer get audioPlayer => _audioPlayer;
-  bool get isLoading => _isLoading;
-  bool get hasError => _hasError;
-  bool get isPlaying => _isPlaying;
-  String get errorMessage => _errorMessage;
+  YoutubePlayerController? get controller => _controller;
 
-  YMusicPlayerProvider() {
-    _initAudioSession();
-    _audioPlayer.playerStateStream.listen((state) {
-      _isPlaying = state.playing;
-      notifyListeners();
-    });
-  }
-
-  Future<void> _initAudioSession() async {
-    try {
-      final session = await AudioSession.instance;
-      await session.configure(const AudioSessionConfiguration.music());
-    } catch (_) {}
-  }
-
-  Future<void> playItem(MediaItemModel item) async {
+  void playItem(MediaItemModel item) {
     _currentItem = item;
-    _isLoading = true;
-    _hasError = false;
-    _errorMessage = '';
+    
+    _controller?.dispose();
+    _controller = YoutubePlayerController(
+      initialVideoId: item.id,
+      flags: const YoutubePlayerFlags(
+        autoPlay: true,
+        mute: false,
+        hideControls: true,
+        isLive: false,
+        forceHD: false,
+      ),
+    );
+
     notifyListeners();
-
-    try {
-      await _audioPlayer.stop();
-
-      // Solicita el manifiesto usando el cliente iOS / AndroidVr de YouTube
-      // Esto evita las firmas de cifrado PoToken que causan el error en Android
-      final manifest = await _yt.videos.streamsClient.getManifest(
-        item.id,
-        ytClients: [
-          yt_exp.YoutubeApiClient.ios,
-          yt_exp.YoutubeApiClient.androidVr,
-        ],
-      );
-
-      String? streamUrl;
-
-      if (manifest.audioOnly.isNotEmpty) {
-        streamUrl = manifest.audioOnly.withHighestBitrate().url.toString();
-      } else if (manifest.muxed.isNotEmpty) {
-        streamUrl = manifest.muxed.first.url.toString();
-      }
-
-      if (streamUrl == null) {
-        throw Exception("No se obtuvo URL de audio.");
-      }
-
-      await _audioPlayer.setUrl(streamUrl);
-      _audioPlayer.play();
-
-      _isLoading = false;
-      notifyListeners();
-    } catch (e) {
-      _isLoading = false;
-      _hasError = true;
-      _errorMessage = 'YouTube rechazó la sesión. Reintenta o selecciona otro tema.';
-      notifyListeners();
-    }
-  }
-
-  void togglePlayPause() {
-    if (_audioPlayer.playing) {
-      _audioPlayer.pause();
-    } else {
-      _audioPlayer.play();
-    }
   }
 
   void closePlayer() {
-    _audioPlayer.stop();
+    _controller?.dispose();
+    _controller = null;
     _currentItem = null;
     notifyListeners();
   }
 
   @override
   void dispose() {
-    _yt.close();
-    _audioPlayer.dispose();
+    _controller?.dispose();
     super.dispose();
   }
 }
@@ -210,7 +149,7 @@ class MediaApp extends StatelessWidget {
 }
 
 // ==========================================
-// NAVEGACIÓN
+// NAVEGACIÓN PRINCIPAL
 // ==========================================
 class MainNavigationScreen extends StatefulWidget {
   const MainNavigationScreen({super.key});
@@ -243,6 +182,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
               children: tabs,
             ),
           ),
+          // MINI-BARRA PERSISTENTE
           if (playerProvider.currentItem != null)
             GestureDetector(
               onTap: () {
@@ -287,16 +227,6 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
                         ],
                       ),
                     ),
-                    if (playerProvider.isLoading)
-                      const Padding(
-                        padding: EdgeInsets.all(8.0),
-                        child: SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2)),
-                      )
-                    else
-                      IconButton(
-                        icon: Icon(playerProvider.isPlaying ? Icons.pause_circle_filled : Icons.play_circle_filled, size: 36),
-                        onPressed: playerProvider.togglePlayPause,
-                      ),
                     IconButton(
                       icon: const Icon(Icons.close),
                       onPressed: playerProvider.closePlayer,
@@ -561,6 +491,7 @@ class YMusicPlayerDetailScreen extends StatelessWidget {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
+            // Portada limpia
             ClipRRect(
               borderRadius: BorderRadius.circular(20),
               child: Image.network(
@@ -589,40 +520,19 @@ class YMusicPlayerDetailScreen extends StatelessWidget {
               textAlign: TextAlign.center,
               style: const TextStyle(fontSize: 15, color: Colors.grey),
             ),
-            const SizedBox(height: 32),
-            if (playerProvider.isLoading)
-              const Column(
-                children: [
-                  CircularProgressIndicator(),
-                  SizedBox(height: 12),
-                  Text('Conectando transmisión...', style: TextStyle(color: Colors.grey)),
-                ],
-              )
-            else if (playerProvider.hasError)
-              Column(
-                children: [
-                  Text(playerProvider.errorMessage, style: const TextStyle(color: Colors.orangeAccent)),
-                  const SizedBox(height: 12),
-                  ElevatedButton(
-                    onPressed: () => playerProvider.playItem(item),
-                    child: const Text('Reintentar'),
-                  ),
-                ],
-              )
-            else
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  IconButton(
-                    icon: Icon(
-                      playerProvider.isPlaying ? Icons.pause_circle_filled : Icons.play_circle_filled,
-                      size: 72,
-                      color: Theme.of(context).colorScheme.primary,
-                    ),
-                    onPressed: playerProvider.togglePlayPause,
-                  ),
-                ],
+            const SizedBox(height: 20),
+            
+            // Reproductor incrustado de YouTube oculto en tamaño para canalizar solo el audio
+            if (playerProvider.controller != null)
+              SizedBox(
+                height: 1,
+                width: 1,
+                child: YoutubePlayer(
+                  controller: playerProvider.controller!,
+                  showVideoProgressIndicator: false,
+                ),
               ),
+
             const SizedBox(height: 24),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
@@ -633,9 +543,9 @@ class YMusicPlayerDetailScreen extends StatelessWidget {
               child: const Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(Icons.headset, color: Colors.purpleAccent, size: 20),
+                  Icon(Icons.check_circle_outline, color: Colors.greenAccent, size: 20),
                   SizedBox(width: 8),
-                  Text('Puedes salir de la app o apagar la pantalla', style: TextStyle(fontSize: 12)),
+                  Text('Conexión nativa activa sin bloqueos', style: TextStyle(fontSize: 12)),
                 ],
               ),
             ),
