@@ -1,7 +1,6 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:share_plus/share_plus.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:http/http.dart' as http;
 
@@ -27,7 +26,6 @@ class MediaItemModel {
   final String title;
   final String author;
   final String thumbnailUrl;
-  final String duration;
   final String? directStreamUrl;
 
   MediaItemModel({
@@ -35,22 +33,18 @@ class MediaItemModel {
     required this.title,
     required this.author,
     required this.thumbnailUrl,
-    required this.duration,
     this.directStreamUrl,
   });
 }
 
 // ==========================================
-// GESTOR DE REPRODUCCIÓN (API DIRECTA MULTI-NODE)
+// GESTOR DE REPRODUCCIÓN (SERVIDOR PRIVADO RENDER)
 // ==========================================
 class YMusicPlayerProvider extends ChangeNotifier {
   final AudioPlayer _player = AudioPlayer();
   
-  // Endpoints multi-región para resolver búsquedas y streams
-  final List<String> _searchEndpoints = [
-    'https://saavn.me/api/search/songs',
-    'https://yt.drgns.space/api/v1/search',
-  ];
+  // URL de tu propio servidor backend en Render
+  final String _backendUrl = 'https://mi-media-proxy.onrender.com';
 
   MediaItemModel? _currentItem;
   bool _isLoading = false;
@@ -69,69 +63,31 @@ class YMusicPlayerProvider extends ChangeNotifier {
     });
   }
 
-  // Búsqueda global resiliente
+  // Búsqueda a través de tu servidor privado
   Future<List<MediaItemModel>> searchMusic(String query) async {
-    // 1. Intentar Búsqueda en API Pública Global de Música
     try {
-      final url = Uri.parse('https://saavn.me/api/search/songs?query=${Uri.encodeComponent(query)}&page=1&limit=15');
-      final response = await http.get(url).timeout(const Duration(seconds: 6));
+      final url = Uri.parse('$_backendUrl/api/search?q=${Uri.encodeComponent(query)}');
+      final response = await http.get(url).timeout(const Duration(seconds: 10));
 
       if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        if (data['success'] == true && data['data'] != null) {
-          final List results = data['data']['results'] ?? [];
-          if (results.isNotEmpty) {
-            return results.map((item) {
-              final List downloadUrls = item['downloadUrl'] ?? [];
-              String streamUrl = '';
-              if (downloadUrls.isNotEmpty) {
-                streamUrl = downloadUrls.last['link'] ?? ''; // Calidad máxima 320kbps
-              }
-
-              final List images = item['image'] ?? [];
-              String thumb = '';
-              if (images.isNotEmpty) {
-                thumb = images.last['link'] ?? '';
-              }
-
-              return MediaItemModel(
-                id: item['id'] ?? '',
-                title: item['name'] ?? 'Sin título',
-                author: item['primaryArtists'] ?? 'Artista',
-                thumbnailUrl: thumb,
-                duration: '${(item['duration'] ?? 0) ~/ 60} min',
-                directStreamUrl: streamUrl,
-              );
-            }).toList();
-          }
-        }
-      }
-    } catch (_) {}
-
-    // 2. Fallback a Nodo Secundario
-    try {
-      final url = Uri.parse('https://yt.drgns.space/api/v1/search?q=${Uri.encodeComponent(query)}&type=video');
-      final response = await http.get(url).timeout(const Duration(seconds: 6));
-
-      if (response.statusCode == 200) {
-        final List items = json.decode(response.body);
-        return items.map((item) {
-          final String vId = item['videoId'] ?? '';
+        final List data = json.decode(response.body);
+        return data.map((item) {
           return MediaItemModel(
-            id: vId,
+            id: item['id'] ?? '',
             title: item['title'] ?? 'Sin título',
             author: item['author'] ?? 'Artista',
-            thumbnailUrl: 'https://i.ytimg.com/vi/$vId/hqdefault.jpg',
-            duration: '${(item['lengthSeconds'] ?? 0) ~/ 60} min',
+            thumbnailUrl: item['thumbnailUrl'] ?? '',
+            directStreamUrl: item['streamUrl'] ?? '',
           );
         }).toList();
       }
-    } catch (_) {}
-
+    } catch (e) {
+      debugPrint("Error en búsqueda backend: $e");
+    }
     return [];
   }
 
-  // Reproducción por Stream Directo
+  // Reproducción directa
   Future<void> playItem(MediaItemModel item) async {
     _currentItem = item;
     _isLoading = true;
@@ -140,12 +96,7 @@ class YMusicPlayerProvider extends ChangeNotifier {
 
     try {
       await _player.stop();
-      String? audioUrl = item.directStreamUrl;
-
-      // Si no tiene URL directa previa, resolver vía Cobalt/Proxy
-      if (audioUrl == null || audioUrl.isEmpty) {
-        audioUrl = await _resolveStreamUrl(item.id);
-      }
+      final String? audioUrl = item.directStreamUrl;
 
       if (audioUrl == null || audioUrl.isEmpty) {
         throw Exception("Stream no disponible");
@@ -161,30 +112,6 @@ class YMusicPlayerProvider extends ChangeNotifier {
       _hasError = true;
       notifyListeners();
     }
-  }
-
-  Future<String?> _resolveStreamUrl(String videoId) async {
-    final List<String> resolverNodes = [
-      'https://yt.drgns.space/api/v1/videos/$videoId',
-      'https://invidious.nerdvpn.de/api/v1/videos/$videoId',
-    ];
-
-    for (String node in resolverNodes) {
-      try {
-        final response = await http.get(Uri.parse(node)).timeout(const Duration(seconds: 5));
-        if (response.statusCode == 200) {
-          final data = json.decode(response.body);
-          final List formats = data['adaptiveFormats'] ?? [];
-          final audioStreams = formats.where((f) => f['type']?.contains('audio') ?? false).toList();
-          if (audioStreams.isNotEmpty) {
-            return audioStreams.first['url'] as String?;
-          }
-        }
-      } catch (_) {
-        continue;
-      }
-    }
-    return null;
   }
 
   void togglePlayPause() {
@@ -352,7 +279,6 @@ class SportsTab extends StatelessWidget {
                   title: 'Radio Fórmula México',
                   author: 'Deportes / Noticias',
                   thumbnailUrl: 'https://images.unsplash.com/photo-1540747913346-19e32dc3e97e?w=400',
-                  duration: 'EN VIVO',
                   directStreamUrl: 'https://stream.radioformula.com.mx/formula.mp3',
                 ),
               ),
@@ -390,7 +316,7 @@ class _SearchTabState extends State<SearchTab> {
   Widget build(BuildContext context) {
     final player = Provider.of<YMusicPlayerProvider>(context, listen: false);
     return Scaffold(
-      appBar: AppBar(title: const Text('🔍 Buscar Música')),
+      appBar: AppBar(title: const Text('🔍 Buscar Música (Backend Render)')),
       body: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
