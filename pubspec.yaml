@@ -1,5 +1,5 @@
 name: media_app
-description: "Aplicación multimedia estilo YMusic con segundo plano y feed deportivo."
+description: "Aplicación multimedia con reproducción nativa y deportes."
 publish_to: 'none'
 version: 1.0.0+1
 
@@ -11,9 +11,8 @@ dependencies:
     sdk: flutter
   cupertino_icons: ^1.0.6
   
-  # Reproductores y Sesión de Audio
-  just_audio: ^0.9.36
-  audio_session: ^0.1.18
+  # Reproductor Nativo de Ultra Compatibilidad para Radios y Audio
+  audioplayers: ^6.0.0
   youtube_explode_dart: ^2.3.4
   http: ^1.2.0
   
