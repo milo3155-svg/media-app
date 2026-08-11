@@ -20,7 +20,7 @@ void main() async {
 }
 
 // ==========================================
-// ELEMENTO MULTIMEDIA
+// MODELO DE DATOS
 // ==========================================
 class MediaItemModel {
   final String id;
@@ -39,7 +39,7 @@ class MediaItemModel {
 }
 
 // ==========================================
-// GESTOR DE REPRODUCCIÓN GARANTIZADA
+// GESTOR DE REPRODUCCIÓN (CLIENT OVERRIDE)
 // ==========================================
 class YMusicPlayerProvider extends ChangeNotifier {
   final yt_exp.YoutubeExplode _yt = yt_exp.YoutubeExplode();
@@ -83,27 +83,26 @@ class YMusicPlayerProvider extends ChangeNotifier {
     try {
       await _audioPlayer.stop();
 
-      // Obtener el manifiesto
-      final manifest = await _yt.videos.streamsClient.getManifest(item.id);
-      
-      // Intentar primero con audioOnly; si falla o no hay, usar muxed
-      String? streamUrl;
-      try {
-        final audioStreams = manifest.audioOnly.toList();
-        if (audioStreams.isNotEmpty) {
-          streamUrl = audioStreams.withHighestBitrate().url.toString();
-        }
-      } catch (_) {}
+      // Solicita el manifiesto usando el cliente iOS / AndroidVr de YouTube
+      // Esto evita las firmas de cifrado PoToken que causan el error en Android
+      final manifest = await _yt.videos.streamsClient.getManifest(
+        item.id,
+        ytClients: [
+          yt_exp.YoutubeApiClient.ios,
+          yt_exp.YoutubeApiClient.androidVr,
+        ],
+      );
 
-      if (streamUrl == null) {
-        final muxedStreams = manifest.muxed.toList();
-        if (muxedStreams.isNotEmpty) {
-          streamUrl = muxedStreams.first.url.toString();
-        }
+      String? streamUrl;
+
+      if (manifest.audioOnly.isNotEmpty) {
+        streamUrl = manifest.audioOnly.withHighestBitrate().url.toString();
+      } else if (manifest.muxed.isNotEmpty) {
+        streamUrl = manifest.muxed.first.url.toString();
       }
 
       if (streamUrl == null) {
-        throw Exception("No se pudo obtener el enlace de reproducción.");
+        throw Exception("No se obtuvo URL de audio.");
       }
 
       await _audioPlayer.setUrl(streamUrl);
@@ -114,7 +113,7 @@ class YMusicPlayerProvider extends ChangeNotifier {
     } catch (e) {
       _isLoading = false;
       _hasError = true;
-      _errorMessage = 'No se pudo reproducir. Intenta con otro resultado.';
+      _errorMessage = 'YouTube rechazó la sesión. Reintenta o selecciona otro tema.';
       notifyListeners();
     }
   }
@@ -211,7 +210,7 @@ class MediaApp extends StatelessWidget {
 }
 
 // ==========================================
-// NAVEGACIÓN PRINCIPAL
+// NAVEGACIÓN
 // ==========================================
 class MainNavigationScreen extends StatefulWidget {
   const MainNavigationScreen({super.key});
@@ -244,7 +243,6 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
               children: tabs,
             ),
           ),
-          // MINI-BARRA PERSISTENTE AL NAVEGAR
           if (playerProvider.currentItem != null)
             GestureDetector(
               onTap: () {
@@ -349,7 +347,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
 }
 
 // ==========================================
-// PESTAÑAS
+// PESTAÑAS VISTA
 // ==========================================
 class HomeTab extends StatelessWidget {
   final VoidCallback onNavigateToSearch;
@@ -376,82 +374,9 @@ class SportsTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final primaryColor = Theme.of(context).colorScheme.primary;
-
     return Scaffold(
-      appBar: AppBar(title: const Text('⚽ Deportes & Radio en Vivo')),
-      body: ListView(
-        padding: const EdgeInsets.all(16.0),
-        children: [
-          Container(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [primaryColor.withOpacity(0.8), primaryColor.withOpacity(0.3)],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: Padding(
-              padding: const EdgeInsets.all(20.0),
-              child: Column(
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: Colors.red,
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: const Row(
-                          children: [
-                            Icon(Icons.circle, color: Colors.white, size: 8),
-                            SizedBox(width: 6),
-                            Text('EN VIVO', style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold)),
-                          ],
-                        ),
-                      ),
-                      const Text('Fútbol en Vivo', style: TextStyle(color: Colors.white70, fontWeight: FontWeight.bold)),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-                  const Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                    children: [
-                      Text('Equipo Local', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
-                      Text('VS', style: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold)),
-                      Text('Visitante', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
-                    ],
-                  ),
-                  const SizedBox(height: 20),
-                  ElevatedButton.icon(
-                    style: ElevatedButton.styleFrom(
-                      minimumSize: const Size(double.infinity, 48),
-                      backgroundColor: Colors.white,
-                      foregroundColor: Colors.black,
-                    ),
-                    onPressed: () {
-                      final playerProvider = Provider.of<YMusicPlayerProvider>(context, listen: false);
-                      final item = MediaItemModel(
-                        id: '148_s-5N0m4',
-                        title: 'Transmisión Deportiva Radio en Vivo',
-                        author: 'Radio Deportes Hub',
-                        thumbnailUrl: 'https://img.youtube.com/vi/148_s-5N0m4/hqdefault.jpg',
-                        duration: 'EN VIVO',
-                      );
-                      playerProvider.playItem(item);
-                    },
-                    icon: const Icon(Icons.radio, color: Colors.black),
-                    label: const Text('Escuchar Radio Deportiva', style: TextStyle(fontWeight: FontWeight.bold)),
-                  )
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
+      appBar: AppBar(title: const Text('⚽ Deportes')),
+      body: const Center(child: Text('Sección Deportes')),
     );
   }
 }
@@ -710,7 +635,7 @@ class YMusicPlayerDetailScreen extends StatelessWidget {
                 children: [
                   Icon(Icons.headset, color: Colors.purpleAccent, size: 20),
                   SizedBox(width: 8),
-                  Text('Puedes regresar con la flecha ← o navegar por la app', style: TextStyle(fontSize: 12)),
+                  Text('Puedes salir de la app o apagar la pantalla', style: TextStyle(fontSize: 12)),
                 ],
               ),
             ),
