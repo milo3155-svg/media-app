@@ -1,11 +1,8 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
-import 'package:http/http.dart' as http;
+import 'package:audioplayers/audioplayers.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart' as yt_exp;
-import 'package:just_audio/just_audio.dart' as ja;
-import 'package:audio_session/audio_session.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -43,43 +40,29 @@ class MediaItemModel {
 }
 
 // ==========================================
-// GESTOR DE REPRODUCCIÓN (MÚSICA + RADIO)
+// GESTOR DE REPRODUCCIÓN NATIVO (AUDIOPLAYERS)
 // ==========================================
 class YMusicPlayerProvider extends ChangeNotifier {
-  final ja.AudioPlayer _audioPlayer = ja.AudioPlayer();
+  final AudioPlayer _audioPlayer = AudioPlayer();
+  final yt_exp.YoutubeExplode _yt = yt_exp.YoutubeExplode();
+  
   MediaItemModel? _currentItem;
-
   bool _isLoading = false;
   bool _hasError = false;
   bool _isPlaying = false;
   String _errorMessage = '';
 
   MediaItemModel? get currentItem => _currentItem;
-  ja.AudioPlayer get audioPlayer => _audioPlayer;
   bool get isLoading => _isLoading;
   bool get hasError => _hasError;
   bool get isPlaying => _isPlaying;
   String get errorMessage => _errorMessage;
 
-  final List<String> _pipedInstances = [
-    'https://pipedapi.kavin.rocks',
-    'https://api.piped.privacydev.net',
-    'https://pipedapi.tokhmi.xyz',
-  ];
-
   YMusicPlayerProvider() {
-    _initAudioSession();
-    _audioPlayer.playerStateStream.listen((state) {
-      _isPlaying = state.playing;
+    _audioPlayer.onPlayerStateChanged.listen((state) {
+      _isPlaying = (state == PlayerState.playing);
       notifyListeners();
     });
-  }
-
-  Future<void> _initAudioSession() async {
-    try {
-      final session = await AudioSession.instance;
-      await session.configure(const AudioSessionConfiguration.music());
-    } catch (_) {}
   }
 
   Future<void> playItem(MediaItemModel item) async {
@@ -92,71 +75,47 @@ class YMusicPlayerProvider extends ChangeNotifier {
     try {
       await _audioPlayer.stop();
 
-      String? audioUrl = item.directStreamUrl;
+      String? streamUrl = item.directStreamUrl;
 
-      // Si no es transmisión de radio directa, consultamos la API de Piped
-      if (audioUrl == null) {
-        for (String instance in _pipedInstances) {
-          try {
-            final response = await http.get(
-              Uri.parse('$instance/streams/${item.id}'),
-            ).timeout(const Duration(seconds: 4));
-
-            if (response.statusCode == 200) {
-              final data = jsonDecode(response.body);
-              final audioStreams = data['audioStreams'] as List?;
-
-              if (audioStreams != null && audioStreams.isNotEmpty) {
-                final bestAudio = audioStreams.firstWhere(
-                  (s) => s['format'] == 'M4A' || s['mimeType'].toString().contains('audio'),
-                  orElse: () => audioStreams.first,
-                );
-                audioUrl = bestAudio['url'];
-                break;
-              }
-            }
-          } catch (_) {
-            continue;
-          }
+      // Si no es un stream directo de radio, extraemos con youtube_explode_dart directo
+      if (streamUrl == null) {
+        final manifest = await _yt.videos.streamsClient.getManifest(item.id);
+        
+        // Obtener la mejor pista de audio
+        if (manifest.audioOnly.isNotEmpty) {
+          streamUrl = manifest.audioOnly.withHighestBitrate().url.toString();
+        } else if (manifest.muxed.isNotEmpty) {
+          streamUrl = manifest.muxed.first.url.toString();
         }
       }
 
-      if (audioUrl == null) {
-        throw Exception("No se pudo obtener el enlace de audio.");
+      if (streamUrl == null || streamUrl.isEmpty) {
+        throw Exception("No se pudo obtener la fuente de audio.");
       }
 
-      // Inyección de AudioSource con encabezados HTTP de navegador
-      await _audioPlayer.setAudioSource(
-        ja.AudioSource.uri(
-          Uri.parse(audioUrl),
-          headers: {
-            'User-Agent': 'Mozilla/5.0 (Linux; Android 10; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
-          },
-        ),
-      );
-
-      _audioPlayer.play();
+      // Reproducir usando el motor nativo de AudioPlayer
+      await _audioPlayer.play(UrlSource(streamUrl));
 
       _isLoading = false;
       notifyListeners();
     } catch (e) {
       _isLoading = false;
       _hasError = true;
-      _errorMessage = 'Error al conectar la transmisión. Intenta de nuevo.';
+      _errorMessage = 'No se pudo conectar a la fuente de audio.';
       notifyListeners();
     }
   }
 
-  void togglePlayPause() {
-    if (_audioPlayer.playing) {
-      _audioPlayer.pause();
+  void togglePlayPause() async {
+    if (_isPlaying) {
+      await _audioPlayer.pause();
     } else {
-      _audioPlayer.play();
+      await _audioPlayer.resume();
     }
   }
 
-  void closePlayer() {
-    _audioPlayer.stop();
+  void closePlayer() async {
+    await _audioPlayer.stop();
     _currentItem = null;
     notifyListeners();
   }
@@ -164,6 +123,7 @@ class YMusicPlayerProvider extends ChangeNotifier {
   @override
   void dispose() {
     _audioPlayer.dispose();
+    _yt.close();
     super.dispose();
   }
 }
@@ -256,9 +216,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
 
     final List<Widget> tabs = [
       HomeTab(onNavigateToSearch: () => setState(() => _currentIndex = 2)),
-      SportsTab(onNavigateToSearch: (query) {
-        setState(() => _currentIndex = 2);
-      }),
+      const SportsTab(),
       const SearchTab(),
       const VaultTab(),
       const SettingsTab(),
@@ -399,33 +357,35 @@ class HomeTab extends StatelessWidget {
   }
 }
 
+// ==========================================
+// PESTAÑA DEPORTES CON EMISORAS HTTPS ESTABLES
+// ==========================================
 class SportsTab extends StatelessWidget {
-  final Function(String) onNavigateToSearch;
-
-  const SportsTab({super.key, required this.onNavigateToSearch});
+  const SportsTab({super.key});
 
   @override
   Widget build(BuildContext context) {
     final playerProvider = Provider.of<YMusicPlayerProvider>(context, listen: false);
     final primaryColor = Theme.of(context).colorScheme.primary;
 
+    // URLs de radio HTTPS 100% estables comprobadas
     final List<Map<String, String>> radioStations = [
       {
-        'title': 'W Radio Deportes México',
-        'author': 'Fútbol & Deportes 24/7',
+        'title': 'W Radio México (Deportes)',
+        'author': 'Fútbol & Cobertura Deportiva',
         'url': 'https://stream.wradio.com.mx/wradio.mp3',
         'img': 'https://images.unsplash.com/photo-1508098682722-e99c43a406b2?w=400',
       },
       {
-        'title': 'Radio Formula Deportes Stream',
+        'title': 'Radio Formula México',
         'author': 'Noticias & Análisis Deportivo',
         'url': 'https://stream.radioformula.com.mx/formula.mp3',
         'img': 'https://images.unsplash.com/photo-1540747913346-19e32dc3e97e?w=400',
       },
       {
-        'title': 'Radio Marca España',
-        'author': 'Fútbol Europeo en Vivo',
-        'url': 'https://radiomarca.stream/live.mp3',
+        'title': 'RNE Radio Nacional España',
+        'author': 'Deportes e Información',
+        'url': 'https://rtvestream.rtve.es/rne/rne_r1_main.mp3',
         'img': 'https://images.unsplash.com/photo-1518091043644-c1d4457512c6?w=400',
       },
     ];
@@ -465,7 +425,7 @@ class SportsTab extends StatelessWidget {
                           ],
                         ),
                       ),
-                      const Text('Jornada de Hoy', style: TextStyle(color: Colors.white70, fontWeight: FontWeight.bold)),
+                      const Text('Jornada Deportiva', style: TextStyle(color: Colors.white70, fontWeight: FontWeight.bold)),
                     ],
                   ),
                   const SizedBox(height: 16),
@@ -496,14 +456,14 @@ class SportsTab extends StatelessWidget {
                       playerProvider.playItem(item);
                     },
                     icon: const Icon(Icons.radio, color: Colors.redAccent),
-                    label: const Text('Escuchar Narración en Vivo (Radio)', style: TextStyle(fontWeight: FontWeight.bold)),
+                    label: const Text('Escuchar Transmisión en Vivo', style: TextStyle(fontWeight: FontWeight.bold)),
                   ),
                 ],
               ),
             ),
           ),
           const SizedBox(height: 24),
-          const Text('📻 Emisoras Deportivas en Vivo (2do Plano)', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+          const Text('📻 Emisoras Deportivas en Vivo', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
           const SizedBox(height: 12),
           ...radioStations.map((station) {
             return Card(
@@ -702,7 +662,7 @@ class YMusicPlayerDetailScreen extends StatelessWidget {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('📻 Reproductor YMusic'),
+        title: const Text('📻 Reproductor'),
         actions: [
           IconButton(
             icon: Icon(
@@ -752,7 +712,7 @@ class YMusicPlayerDetailScreen extends StatelessWidget {
                 children: [
                   CircularProgressIndicator(),
                   SizedBox(height: 12),
-                  Text('Conectando red nativa...', style: TextStyle(color: Colors.grey)),
+                  Text('Conectando fuente nativa...', style: TextStyle(color: Colors.grey)),
                 ],
               )
             else if (playerProvider.hasError)
@@ -792,7 +752,7 @@ class YMusicPlayerDetailScreen extends StatelessWidget {
                 children: [
                   Icon(Icons.headset, color: Colors.purpleAccent, size: 20),
                   SizedBox(width: 8),
-                  Text('Red Nativa Activada • Puedes navegar libremente', style: TextStyle(fontSize: 12)),
+                  Text('Reproducción activa • Puedes navegar por la app', style: TextStyle(fontSize: 12)),
                 ],
               ),
             ),
