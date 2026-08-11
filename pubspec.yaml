@@ -1,5 +1,5 @@
 name: media_app
-description: "Aplicación multimedia con motores híbridos (Radio nativa + WebEngine)."
+description: "Aplicación multimedia profesional con servicio de primer plano."
 publish_to: 'none'
 version: 1.0.0+1
 
@@ -11,9 +11,9 @@ dependencies:
     sdk: flutter
   cupertino_icons: ^1.0.6
   
-  # Motores duales: WebView (YouTube) + AudioPlayers (Radio)
-  webview_flutter: ^4.7.0
-  audioplayers: ^6.0.0
+  # LIBRERÍAS DE 1ER NIVEL PARA AUDIO EN SEGUNDO PLANO
+  just_audio: ^0.9.36
+  audio_service: ^0.18.12
   youtube_explode_dart: ^2.3.4
   http: ^1.2.0
   
