@@ -1,10 +1,13 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:http/http.dart' as http;
 import 'package:youtube_explode_dart/youtube_explode_dart.dart' as yt_exp;
-import 'package:youtube_player_flutter/youtube_player_flutter.dart';
+import 'package:just_audio/just_audio.dart' as ja;
+import 'package:audio_session/audio_session.dart';
 
-void main() {
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   runApp(
     MultiProvider(
@@ -38,43 +41,122 @@ class MediaItemModel {
 }
 
 // ==========================================
-// GESTOR DE REPRODUCCIÓN NATIVO
+// GESTOR DE REPRODUCCIÓN ESTILO YMUSIC (INVIDIOUS API)
 // ==========================================
 class YMusicPlayerProvider extends ChangeNotifier {
+  final ja.AudioPlayer _audioPlayer = ja.AudioPlayer();
   MediaItemModel? _currentItem;
-  YoutubePlayerController? _controller;
+
+  bool _isLoading = false;
+  bool _hasError = false;
+  bool _isPlaying = false;
+  String _errorMessage = '';
 
   MediaItemModel? get currentItem => _currentItem;
-  YoutubePlayerController? get controller => _controller;
+  ja.AudioPlayer get audioPlayer => _audioPlayer;
+  bool get isLoading => _isLoading;
+  bool get hasError => _hasError;
+  bool get isPlaying => _isPlaying;
+  String get errorMessage => _errorMessage;
 
-  void playItem(MediaItemModel item) {
+  // Lista de instancias públicas de Invidious (Fallback automático)
+  final List<String> _invidiousInstances = [
+    'https://inv.tux.space',
+    'https://invidious.nerdvpn.de',
+    'https://invidious.drgns.space',
+    'https://invidious.projectsegfau.lt',
+  ];
+
+  YMusicPlayerProvider() {
+    _initAudioSession();
+    _audioPlayer.playerStateStream.listen((state) {
+      _isPlaying = state.playing;
+      notifyListeners();
+    });
+  }
+
+  Future<void> _initAudioSession() async {
+    try {
+      final session = await AudioSession.instance;
+      await session.configure(const AudioSessionConfiguration.music());
+    } catch (_) {}
+  }
+
+  Future<void> playItem(MediaItemModel item) async {
     _currentItem = item;
-    
-    _controller?.dispose();
-    _controller = YoutubePlayerController(
-      initialVideoId: item.id,
-      flags: const YoutubePlayerFlags(
-        autoPlay: true,
-        mute: false,
-        hideControls: false,
-        isLive: false,
-        forceHD: false,
-      ),
-    );
-
+    _isLoading = true;
+    _hasError = false;
+    _errorMessage = '';
     notifyListeners();
+
+    try {
+      await _audioPlayer.stop();
+
+      String? audioUrl;
+
+      // Recorremos las instancias de la API hasta encontrar una activa
+      for (String instance in _invidiousInstances) {
+        try {
+          final response = await http.get(
+            Uri.parse('$instance/api/v1/videos/${item.id}'),
+          ).timeout(const Duration(seconds: 4));
+
+          if (response.statusCode == 200) {
+            final data = jsonDecode(response.body);
+            final adaptiveFormats = data['adaptiveFormats'] as List?;
+
+            if (adaptiveFormats != null) {
+              // Filtrar solo las pistas de audio puro (m4a / webm)
+              final audioStreams = adaptiveFormats.where((f) => 
+                f['type'] != null && f['type'].toString().contains('audio')
+              ).toList();
+
+              if (audioStreams.isNotEmpty) {
+                // Ordenar por bitrate o seleccionar el primero
+                audioUrl = audioStreams.first['url'];
+                break;
+              }
+            }
+          }
+        } catch (_) {
+          continue; // Intenta con la siguiente instancia si esta no responde
+        }
+      }
+
+      if (audioUrl == null) {
+        throw Exception("No se pudo obtener el stream de audio.");
+      }
+
+      await _audioPlayer.setUrl(audioUrl);
+      _audioPlayer.play();
+
+      _isLoading = false;
+      notifyListeners();
+    } catch (e) {
+      _isLoading = false;
+      _hasError = true;
+      _errorMessage = 'Error al conectar la transmisión. Intenta de nuevo.';
+      notifyListeners();
+    }
+  }
+
+  void togglePlayPause() {
+    if (_audioPlayer.playing) {
+      _audioPlayer.pause();
+    } else {
+      _audioPlayer.play();
+    }
   }
 
   void closePlayer() {
-    _controller?.dispose();
-    _controller = null;
+    _audioPlayer.stop();
     _currentItem = null;
     notifyListeners();
   }
 
   @override
   void dispose() {
-    _controller?.dispose();
+    _audioPlayer.dispose();
     super.dispose();
   }
 }
@@ -182,7 +264,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
               children: tabs,
             ),
           ),
-          // MINI-BARRA PERSISTENTE AL NAVEGAR
+          // MINI-BARRA PERSISTENTE
           if (playerProvider.currentItem != null)
             GestureDetector(
               onTap: () {
@@ -227,6 +309,16 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
                         ],
                       ),
                     ),
+                    if (playerProvider.isLoading)
+                      const Padding(
+                        padding: EdgeInsets.all(8.0),
+                        child: SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2)),
+                      )
+                    else
+                      IconButton(
+                        icon: Icon(playerProvider.isPlaying ? Icons.pause_circle_filled : Icons.play_circle_filled, size: 36),
+                        onPressed: playerProvider.togglePlayPause,
+                      ),
                     IconButton(
                       icon: const Icon(Icons.close),
                       onPressed: playerProvider.closePlayer,
@@ -475,7 +567,7 @@ class YMusicPlayerDetailScreen extends StatelessWidget {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('📻 Reproductor'),
+        title: const Text('📻 Reproductor YMusic'),
         actions: [
           IconButton(
             icon: Icon(
@@ -486,51 +578,86 @@ class YMusicPlayerDetailScreen extends StatelessWidget {
           ),
         ],
       ),
-      body: SingleChildScrollView(
+      body: Padding(
+        padding: const EdgeInsets.all(24.0),
         child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            // Reproductor nativo fluido visible
-            if (playerProvider.controller != null)
-              YoutubePlayer(
-                controller: playerProvider.controller!,
-                showVideoProgressIndicator: true,
-                progressIndicatorColor: Colors.deepPurple,
+            ClipRRect(
+              borderRadius: BorderRadius.circular(20),
+              child: Image.network(
+                item.thumbnailUrl,
+                width: double.infinity,
+                height: 280,
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => Container(
+                  height: 280,
+                  color: Colors.grey[900],
+                  child: const Icon(Icons.music_note, size: 80, color: Colors.white70),
+                ),
               ),
-
-            Padding(
-              padding: const EdgeInsets.all(20.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+            ),
+            const SizedBox(height: 28),
+            Text(
+              item.title,
+              textAlign: TextAlign.center,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              item.author,
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 15, color: Colors.grey),
+            ),
+            const SizedBox(height: 32),
+            if (playerProvider.isLoading)
+              const Column(
                 children: [
-                  Text(
-                    item.title,
-                    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  CircularProgressIndicator(),
+                  SizedBox(height: 12),
+                  Text('Obteniendo audio liviano via API...', style: TextStyle(color: Colors.grey)),
+                ],
+              )
+            else if (playerProvider.hasError)
+              Column(
+                children: [
+                  Text(playerProvider.errorMessage, style: const TextStyle(color: Colors.orangeAccent)),
+                  const SizedBox(height: 12),
+                  ElevatedButton(
+                    onPressed: () => playerProvider.playItem(item),
+                    child: const Text('Reintentar'),
                   ),
-                  const SizedBox(height: 6),
-                  Text(
-                    item.author,
-                    style: const TextStyle(fontSize: 14, color: Colors.grey),
-                  ),
-                  const Divider(height: 32),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                    decoration: BoxDecoration(
-                      color: Colors.purple.withOpacity(0.15),
-                      borderRadius: BorderRadius.circular(12),
+                ],
+              )
+            else
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  IconButton(
+                    icon: Icon(
+                      playerProvider.isPlaying ? Icons.pause_circle_filled : Icons.play_circle_filled,
+                      size: 72,
+                      color: Theme.of(context).colorScheme.primary,
                     ),
-                    child: const Row(
-                      children: [
-                        Icon(Icons.info_outline, color: Colors.purpleAccent, size: 22),
-                        SizedBox(width: 10),
-                        Expanded(
-                          child: Text(
-                            'Puedes presionar la flecha ← para regresar. La reproducción continuará en la mini-barra inferior.',
-                            style: TextStyle(fontSize: 13),
-                          ),
-                        ),
-                      ],
-                    ),
+                    onPressed: playerProvider.togglePlayPause,
                   ),
+                ],
+              ),
+            const SizedBox(height: 24),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              decoration: BoxDecoration(
+                color: Colors.purple.withOpacity(0.15),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.headset, color: Colors.purpleAccent, size: 20),
+                  SizedBox(width: 8),
+                  Text('Audio liviano directo • Puedes navegar libremente', style: TextStyle(fontSize: 12)),
                 ],
               ),
             ),
