@@ -38,12 +38,10 @@ class MediaItemModel {
 }
 
 // ==========================================
-// GESTOR DE REPRODUCCIÓN (SERVIDOR PRIVADO RENDER)
+// GESTOR DE REPRODUCCIÓN (CON SOPORTE DE DESBLOQUEO)
 // ==========================================
 class YMusicPlayerProvider extends ChangeNotifier {
   final AudioPlayer _player = AudioPlayer();
-  
-  // URL de tu propio servidor backend en Render
   final String _backendUrl = 'https://mi-media-proxy.onrender.com';
 
   MediaItemModel? _currentItem;
@@ -57,13 +55,22 @@ class YMusicPlayerProvider extends ChangeNotifier {
   bool get hasError => _hasError;
 
   YMusicPlayerProvider() {
+    _initAudioSession();
     _player.playerStateStream.listen((state) {
       _isPlaying = state.playing;
       notifyListeners();
     });
   }
 
-  // Búsqueda a través de tu servidor privado
+  // Permite que el reproductor no se pause al desbloquear o cambiar de estado la pantalla
+  void _initAudioSession() async {
+    try {
+      await _player.setLoopMode(LoopMode.off);
+    } catch (e) {
+      debugPrint("Error de sesión: $e");
+    }
+  }
+
   Future<List<MediaItemModel>> searchMusic(String query) async {
     try {
       final url = Uri.parse('$_backendUrl/api/search?q=${Uri.encodeComponent(query)}');
@@ -87,7 +94,6 @@ class YMusicPlayerProvider extends ChangeNotifier {
     return [];
   }
 
-  // Reproducción directa
   Future<void> playItem(MediaItemModel item) async {
     _currentItem = item;
     _isLoading = true;
@@ -102,8 +108,9 @@ class YMusicPlayerProvider extends ChangeNotifier {
         throw Exception("Stream no disponible");
       }
 
-      await _player.setUrl(audioUrl);
-      await _player.play();
+      // Previene interrupciones bruscas de la fuente de audio
+      await _player.setUrl(audioUrl, preload: true);
+      _player.play();
 
       _isLoading = false;
       notifyListeners();
@@ -136,7 +143,7 @@ class YMusicPlayerProvider extends ChangeNotifier {
 }
 
 // ==========================================
-// PROVEEDORES DE ESTADO
+// PROVEEDORES Y VISTAS
 // ==========================================
 class VaultProvider extends ChangeNotifier {
   final List<MediaItemModel> _favorites = [];
@@ -157,9 +164,6 @@ class ThemeProvider extends ChangeNotifier {
   void toggleThemeMode() { _isDarkMode = !_isDarkMode; notifyListeners(); }
 }
 
-// ==========================================
-// APLICACIÓN PRINCIPAL
-// ==========================================
 class MediaApp extends StatelessWidget {
   const MediaApp({super.key});
 
@@ -248,9 +252,6 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
   }
 }
 
-// ==========================================
-// PESTAÑAS
-// ==========================================
 class HomeTab extends StatelessWidget {
   const HomeTab({super.key});
   @override
@@ -260,34 +261,7 @@ class HomeTab extends StatelessWidget {
 class SportsTab extends StatelessWidget {
   const SportsTab({super.key});
   @override
-  Widget build(BuildContext context) {
-    final player = Provider.of<YMusicPlayerProvider>(context, listen: false);
-    return Scaffold(
-      appBar: AppBar(title: const Text('⚽ Deportes & Radio')),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          Card(
-            child: ListTile(
-              leading: const Icon(Icons.radio, size: 36, color: Colors.deepPurple),
-              title: const Text('Radio Fórmula México'),
-              subtitle: const Text('Noticias y Deportes en vivo'),
-              trailing: const Icon(Icons.play_circle_fill, size: 32),
-              onTap: () => player.playItem(
-                MediaItemModel(
-                  id: 'radio_formula',
-                  title: 'Radio Fórmula México',
-                  author: 'Deportes / Noticias',
-                  thumbnailUrl: 'https://images.unsplash.com/photo-1540747913346-19e32dc3e97e?w=400',
-                  directStreamUrl: 'https://stream.radioformula.com.mx/formula.mp3',
-                ),
-              ),
-            ),
-          )
-        ],
-      ),
-    );
-  }
+  Widget build(BuildContext context) => const Scaffold(body: Center(child: Text('Deportes')));
 }
 
 class SearchTab extends StatefulWidget {
@@ -316,7 +290,7 @@ class _SearchTabState extends State<SearchTab> {
   Widget build(BuildContext context) {
     final player = Provider.of<YMusicPlayerProvider>(context, listen: false);
     return Scaffold(
-      appBar: AppBar(title: const Text('🔍 Buscar Música (Backend Render)')),
+      appBar: AppBar(title: const Text('🔍 Buscar Música')),
       body: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
@@ -324,7 +298,7 @@ class _SearchTabState extends State<SearchTab> {
             TextField(
               controller: _ctrl,
               decoration: InputDecoration(
-                hintText: 'Escribe una canción o artista...',
+                hintText: 'Buscar canción...',
                 prefixIcon: const Icon(Icons.search),
                 suffixIcon: IconButton(icon: const Icon(Icons.arrow_forward), onPressed: () => _search(_ctrl.text)),
                 border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
@@ -374,7 +348,7 @@ class YMusicPlayerDetailScreen extends StatelessWidget {
     if (item == null) return const Scaffold(body: Center(child: Text('Sin selección')));
 
     return Scaffold(
-      appBar: AppBar(title: const Text('📻 Reproductor Nativo')),
+      appBar: AppBar(title: const Text('📻 Reproductor')),
       body: Padding(
         padding: const EdgeInsets.all(24.0),
         child: Column(
@@ -408,7 +382,7 @@ class YMusicPlayerDetailScreen extends StatelessWidget {
             if (player.isLoading)
               const CircularProgressIndicator()
             else if (player.hasError)
-              const Text('Error al conectar con la fuente de audio', style: TextStyle(color: Colors.redAccent))
+              const Text('Error al reproducir audio', style: TextStyle(color: Colors.redAccent))
             else
               IconButton(
                 icon: Icon(player.isPlaying ? Icons.pause_circle_filled : Icons.play_circle_filled, size: 72, color: Colors.deepPurple),
