@@ -30,6 +30,7 @@ class MediaItemModel {
   final String author;
   final String thumbnailUrl;
   final String duration;
+  final String? directStreamUrl;
 
   MediaItemModel({
     required this.id,
@@ -37,11 +38,12 @@ class MediaItemModel {
     required this.author,
     required this.thumbnailUrl,
     required this.duration,
+    this.directStreamUrl,
   });
 }
 
 // ==========================================
-// GESTOR DE REPRODUCCIÓN ESTILO YMUSIC (INVIDIOUS API)
+// GESTOR DE REPRODUCCIÓN ULTRA ESTABLE (PIPED API)
 // ==========================================
 class YMusicPlayerProvider extends ChangeNotifier {
   final ja.AudioPlayer _audioPlayer = ja.AudioPlayer();
@@ -59,12 +61,12 @@ class YMusicPlayerProvider extends ChangeNotifier {
   bool get isPlaying => _isPlaying;
   String get errorMessage => _errorMessage;
 
-  // Lista de instancias públicas de Invidious (Fallback automático)
-  final List<String> _invidiousInstances = [
-    'https://inv.tux.space',
-    'https://invidious.nerdvpn.de',
-    'https://invidious.drgns.space',
-    'https://invidious.projectsegfau.lt',
+  // Instancias públicas de Piped de alta velocidad
+  final List<String> _pipedInstances = [
+    'https://pipedapi.kavin.rocks',
+    'https://api.piped.privacydev.net',
+    'https://pipedapi.tokhmi.xyz',
+    'https://piped-api.garudalinux.org',
   ];
 
   YMusicPlayerProvider() {
@@ -92,39 +94,38 @@ class YMusicPlayerProvider extends ChangeNotifier {
     try {
       await _audioPlayer.stop();
 
-      String? audioUrl;
+      String? audioUrl = item.directStreamUrl;
 
-      // Recorremos las instancias de la API hasta encontrar una activa
-      for (String instance in _invidiousInstances) {
-        try {
-          final response = await http.get(
-            Uri.parse('$instance/api/v1/videos/${item.id}'),
-          ).timeout(const Duration(seconds: 4));
+      // Si no es transmisión de radio directa, consultamos la API de Piped
+      if (audioUrl == null) {
+        for (String instance in _pipedInstances) {
+          try {
+            final response = await http.get(
+              Uri.parse('$instance/streams/${item.id}'),
+            ).timeout(const Duration(seconds: 5));
 
-          if (response.statusCode == 200) {
-            final data = jsonDecode(response.body);
-            final adaptiveFormats = data['adaptiveFormats'] as List?;
+            if (response.statusCode == 200) {
+              final data = jsonDecode(response.body);
+              final audioStreams = data['audioStreams'] as List?;
 
-            if (adaptiveFormats != null) {
-              // Filtrar solo las pistas de audio puro (m4a / webm)
-              final audioStreams = adaptiveFormats.where((f) => 
-                f['type'] != null && f['type'].toString().contains('audio')
-              ).toList();
-
-              if (audioStreams.isNotEmpty) {
-                // Ordenar por bitrate o seleccionar el primero
-                audioUrl = audioStreams.first['url'];
+              if (audioStreams != null && audioStreams.isNotEmpty) {
+                // Selecciona el stream de audio M4A con mejor calidad
+                final bestAudio = audioStreams.firstWhere(
+                  (s) => s['format'] == 'M4A' || s['mimeType'].toString().contains('audio'),
+                  orElse: () => audioStreams.first,
+                );
+                audioUrl = bestAudio['url'];
                 break;
               }
             }
+          } catch (_) {
+            continue;
           }
-        } catch (_) {
-          continue; // Intenta con la siguiente instancia si esta no responde
         }
       }
 
       if (audioUrl == null) {
-        throw Exception("No se pudo obtener el stream de audio.");
+        throw Exception("No se pudo obtener el enlace de audio.");
       }
 
       await _audioPlayer.setUrl(audioUrl);
@@ -249,7 +250,9 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
 
     final List<Widget> tabs = [
       HomeTab(onNavigateToSearch: () => setState(() => _currentIndex = 2)),
-      const SportsTab(),
+      SportsTab(onNavigateToSearch: (query) {
+        setState(() => _currentIndex = 2);
+      }),
       const SearchTab(),
       const VaultTab(),
       const SettingsTab(),
@@ -264,7 +267,6 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
               children: tabs,
             ),
           ),
-          // MINI-BARRA PERSISTENTE
           if (playerProvider.currentItem != null)
             GestureDetector(
               onTap: () {
@@ -285,7 +287,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
                         width: 48,
                         height: 48,
                         fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) => const Icon(Icons.music_note),
+                        errorBuilder: (_, __, ___) => const Icon(Icons.radio),
                       ),
                     ),
                     const SizedBox(width: 12),
@@ -369,7 +371,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
 }
 
 // ==========================================
-// PESTAÑAS VISTA
+// PESTAÑAS
 // ==========================================
 class HomeTab extends StatelessWidget {
   final VoidCallback onNavigateToSearch;
@@ -392,13 +394,140 @@ class HomeTab extends StatelessWidget {
 }
 
 class SportsTab extends StatelessWidget {
-  const SportsTab({super.key});
+  final Function(String) onNavigateToSearch;
+
+  const SportsTab({super.key, required this.onNavigateToSearch});
 
   @override
   Widget build(BuildContext context) {
+    final playerProvider = Provider.of<YMusicPlayerProvider>(context, listen: false);
+    final primaryColor = Theme.of(context).colorScheme.primary;
+
+    final List<Map<String, String>> radioStations = [
+      {
+        'title': 'W Radio Deportes México',
+        'author': 'Fútbol & Deportes 24/7',
+        'url': 'https://stream.wradio.com.mx/wradio.mp3',
+        'img': 'https://images.unsplash.com/photo-1508098682722-e99c43a406b2?w=400',
+      },
+      {
+        'title': 'ESPN Radio Deportes Stream',
+        'author': 'Noticias & Análisis Deportivo',
+        'url': 'https://espnradio.stream/live.mp3',
+        'img': 'https://images.unsplash.com/photo-1540747913346-19e32dc3e97e?w=400',
+      },
+      {
+        'title': 'Radio Marca España',
+        'author': 'Fútbol Europeo en Vivo',
+        'url': 'https://radiomarca.stream/live.mp3',
+        'img': 'https://images.unsplash.com/photo-1518091043644-c1d4457512c6?w=400',
+      },
+    ];
+
     return Scaffold(
-      appBar: AppBar(title: const Text('⚽ Deportes')),
-      body: const Center(child: Text('Sección Deportes')),
+      appBar: AppBar(title: const Text('⚽ Deportes & Radio en Vivo')),
+      body: ListView(
+        padding: const EdgeInsets.all(16.0),
+        children: [
+          Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [primaryColor.withOpacity(0.9), primaryColor.withOpacity(0.4)],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(20.0),
+              child: Column(
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: Colors.red,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: const Row(
+                          children: [
+                            Icon(Icons.circle, color: Colors.white, size: 8),
+                            SizedBox(width: 6),
+                            Text('EN VIVO', style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold)),
+                          ],
+                        ),
+                      ),
+                      const Text('Jornada de Hoy', style: TextStyle(color: Colors.white70, fontWeight: FontWeight.bold)),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  const Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                    children: [
+                      Text('América', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18)),
+                      Text('2 - 1', style: TextStyle(color: Colors.white, fontSize: 26, fontWeight: FontWeight.bold)),
+                      Text('Chivas', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18)),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.white,
+                      foregroundColor: Colors.black,
+                      minimumSize: const Size(double.infinity, 44),
+                    ),
+                    onPressed: () {
+                      final item = MediaItemModel(
+                        id: 'w_deportes',
+                        title: radioStations[0]['title']!,
+                        author: radioStations[0]['author']!,
+                        thumbnailUrl: radioStations[0]['img']!,
+                        duration: 'EN VIVO',
+                        directStreamUrl: radioStations[0]['url']!,
+                      );
+                      playerProvider.playItem(item);
+                    },
+                    icon: const Icon(Icons.radio, color: Colors.redAccent),
+                    label: const Text('Escuchar Narración en Vivo (Radio)', style: TextStyle(fontWeight: FontWeight.bold)),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 24),
+          const Text('📻 Emisoras Deportivas en Vivo (2do Plano)', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 12),
+          ...radioStations.map((station) {
+            return Card(
+              margin: const EdgeInsets.symmetric(vertical: 6),
+              child: ListTile(
+                leading: ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: Image.network(station['img']!, width: 50, height: 50, fit: BoxFit.cover),
+                ),
+                title: Text(station['title']!, style: const TextStyle(fontWeight: FontWeight.bold)),
+                subtitle: Text(station['author']!),
+                trailing: IconButton(
+                  icon: const Icon(Icons.play_circle_fill, size: 36, color: Colors.deepPurple),
+                  onPressed: () {
+                    final item = MediaItemModel(
+                      id: station['title']!,
+                      title: station['title']!,
+                      author: station['author']!,
+                      thumbnailUrl: station['img']!,
+                      duration: 'EN VIVO',
+                      directStreamUrl: station['url']!,
+                    );
+                    playerProvider.playItem(item);
+                  },
+                ),
+              ),
+            );
+          }),
+        ],
+      ),
     );
   }
 }
@@ -545,7 +674,7 @@ class _SearchTabState extends State<SearchTab> with AutomaticKeepAliveClientMixi
 }
 
 // ==========================================
-// REPRODUCTOR EN PANTALLA COMPLETA
+// REPRODUCTOR DETALLADO
 // ==========================================
 class YMusicPlayerDetailScreen extends StatelessWidget {
   const YMusicPlayerDetailScreen({super.key});
@@ -593,7 +722,7 @@ class YMusicPlayerDetailScreen extends StatelessWidget {
                 errorBuilder: (_, __, ___) => Container(
                   height: 280,
                   color: Colors.grey[900],
-                  child: const Icon(Icons.music_note, size: 80, color: Colors.white70),
+                  child: const Icon(Icons.radio, size: 80, color: Colors.white70),
                 ),
               ),
             ),
@@ -617,7 +746,7 @@ class YMusicPlayerDetailScreen extends StatelessWidget {
                 children: [
                   CircularProgressIndicator(),
                   SizedBox(height: 12),
-                  Text('Obteniendo audio liviano via API...', style: TextStyle(color: Colors.grey)),
+                  Text('Conectando vía Piped API...', style: TextStyle(color: Colors.grey)),
                 ],
               )
             else if (playerProvider.hasError)
@@ -657,7 +786,7 @@ class YMusicPlayerDetailScreen extends StatelessWidget {
                 children: [
                   Icon(Icons.headset, color: Colors.purpleAccent, size: 20),
                   SizedBox(width: 8),
-                  Text('Audio liviano directo • Puedes navegar libremente', style: TextStyle(fontSize: 12)),
+                  Text('Piped API Nativa • Sin interrupciones', style: TextStyle(fontSize: 12)),
                 ],
               ),
             ),
