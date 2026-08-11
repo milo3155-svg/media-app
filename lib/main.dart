@@ -38,7 +38,7 @@ class MediaItemModel {
 }
 
 // ==========================================
-// GESTOR DE REPRODUCCIÓN (CON SOPORTE DE DESBLOQUEO)
+// GESTOR DE REPRODUCCIÓN GLOBAL NATIVO
 // ==========================================
 class YMusicPlayerProvider extends ChangeNotifier {
   final AudioPlayer _player = AudioPlayer();
@@ -55,20 +55,11 @@ class YMusicPlayerProvider extends ChangeNotifier {
   bool get hasError => _hasError;
 
   YMusicPlayerProvider() {
-    _initAudioSession();
     _player.playerStateStream.listen((state) {
       _isPlaying = state.playing;
+      _isLoading = state.processingState == ProcessingState.loading || state.processingState == ProcessingState.buffering;
       notifyListeners();
     });
-  }
-
-  // Permite que el reproductor no se pause al desbloquear o cambiar de estado la pantalla
-  void _initAudioSession() async {
-    try {
-      await _player.setLoopMode(LoopMode.off);
-    } catch (e) {
-      debugPrint("Error de sesión: $e");
-    }
   }
 
   Future<List<MediaItemModel>> searchMusic(String query) async {
@@ -108,12 +99,8 @@ class YMusicPlayerProvider extends ChangeNotifier {
         throw Exception("Stream no disponible");
       }
 
-      // Previene interrupciones bruscas de la fuente de audio
-      await _player.setUrl(audioUrl, preload: true);
+      await _player.setUrl(audioUrl);
       _player.play();
-
-      _isLoading = false;
-      notifyListeners();
     } catch (e) {
       _isLoading = false;
       _hasError = true;
@@ -127,6 +114,7 @@ class YMusicPlayerProvider extends ChangeNotifier {
     } else {
       _player.play();
     }
+    notifyListeners();
   }
 
   Future<void> stop() async {
@@ -261,7 +249,11 @@ class HomeTab extends StatelessWidget {
 class SportsTab extends StatelessWidget {
   const SportsTab({super.key});
   @override
-  Widget build(BuildContext context) => const Scaffold(body: Center(child: Text('Deportes')));
+  Widget build(BuildContext context) {
+    return const Scaffold(
+      body: Center(child: Text('⚽ Sección de Deportes en desarrollo')),
+    );
+  }
 }
 
 class SearchTab extends StatefulWidget {
