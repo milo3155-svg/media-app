@@ -41,17 +41,15 @@ class MediaItemModel {
 }
 
 // ==========================================
-// GESTOR DE REPRODUCCIÓN (PROXY INVIDIOUS / COBALT)
+// GESTOR DE REPRODUCCIÓN (API DIRECTA MULTI-NODE)
 // ==========================================
 class YMusicPlayerProvider extends ChangeNotifier {
   final AudioPlayer _player = AudioPlayer();
   
-  // Nodos ultra estables de Invidious
-  final List<String> _proxyNodes = [
-    'https://inv.tux.pizza',
-    'https://invidious.nerdvpn.de',
-    'https://invidious.drgns.space',
-    'https://vid.puffyan.us',
+  // Endpoints multi-región para resolver búsquedas y streams
+  final List<String> _searchEndpoints = [
+    'https://saavn.me/api/search/songs',
+    'https://yt.drgns.space/api/v1/search',
   ];
 
   MediaItemModel? _currentItem;
@@ -71,41 +69,69 @@ class YMusicPlayerProvider extends ChangeNotifier {
     });
   }
 
-  // Búsqueda en API Invidious
+  // Búsqueda global resiliente
   Future<List<MediaItemModel>> searchMusic(String query) async {
-    for (String node in _proxyNodes) {
-      try {
-        final url = Uri.parse('$node/api/v1/search?q=${Uri.encodeComponent(query)}&type=video');
-        final response = await http.get(url).timeout(const Duration(seconds: 5));
+    // 1. Intentar Búsqueda en API Pública Global de Música
+    try {
+      final url = Uri.parse('https://saavn.me/api/search/songs?query=${Uri.encodeComponent(query)}&page=1&limit=15');
+      final response = await http.get(url).timeout(const Duration(seconds: 6));
 
-        if (response.statusCode == 200) {
-          final List items = json.decode(response.body);
-          
-          return items.map((item) {
-            final String videoId = item['videoId'] ?? '';
-            final List thumbnails = item['videoThumbnails'] ?? [];
-            String thumb = 'https://i.ytimg.com/vi/$videoId/hqdefault.jpg';
-            if (thumbnails.isNotEmpty) {
-              thumb = thumbnails.first['url'] ?? thumb;
-            }
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        if (data['success'] == true && data['data'] != null) {
+          final List results = data['data']['results'] ?? [];
+          if (results.isNotEmpty) {
+            return results.map((item) {
+              final List downloadUrls = item['downloadUrl'] ?? [];
+              String streamUrl = '';
+              if (downloadUrls.isNotEmpty) {
+                streamUrl = downloadUrls.last['link'] ?? ''; // Calidad máxima 320kbps
+              }
 
-            return MediaItemModel(
-              id: videoId,
-              title: item['title'] ?? 'Sin título',
-              author: item['author'] ?? 'Desconocido',
-              thumbnailUrl: thumb,
-              duration: '${(item['lengthSeconds'] ?? 0) ~/ 60} min',
-            );
-          }).toList();
+              final List images = item['image'] ?? [];
+              String thumb = '';
+              if (images.isNotEmpty) {
+                thumb = images.last['link'] ?? '';
+              }
+
+              return MediaItemModel(
+                id: item['id'] ?? '',
+                title: item['name'] ?? 'Sin título',
+                author: item['primaryArtists'] ?? 'Artista',
+                thumbnailUrl: thumb,
+                duration: '${(item['duration'] ?? 0) ~/ 60} min',
+                directStreamUrl: streamUrl,
+              );
+            }).toList();
+          }
         }
-      } catch (_) {
-        continue; // Fallback al siguiente nodo si falla uno
       }
-    }
+    } catch (_) {}
+
+    // 2. Fallback a Nodo Secundario
+    try {
+      final url = Uri.parse('https://yt.drgns.space/api/v1/search?q=${Uri.encodeComponent(query)}&type=video');
+      final response = await http.get(url).timeout(const Duration(seconds: 6));
+
+      if (response.statusCode == 200) {
+        final List items = json.decode(response.body);
+        return items.map((item) {
+          final String vId = item['videoId'] ?? '';
+          return MediaItemModel(
+            id: vId,
+            title: item['title'] ?? 'Sin título',
+            author: item['author'] ?? 'Artista',
+            thumbnailUrl: 'https://i.ytimg.com/vi/$vId/hqdefault.jpg',
+            duration: '${(item['lengthSeconds'] ?? 0) ~/ 60} min',
+          );
+        }).toList();
+      }
+    } catch (_) {}
+
     return [];
   }
 
-  // Reproducción por Audio Stream NATIVO desde el Proxy
+  // Reproducción por Stream Directo
   Future<void> playItem(MediaItemModel item) async {
     _currentItem = item;
     _isLoading = true;
@@ -116,12 +142,13 @@ class YMusicPlayerProvider extends ChangeNotifier {
       await _player.stop();
       String? audioUrl = item.directStreamUrl;
 
-      if (audioUrl == null) {
-        audioUrl = await _fetchAudioFromProxy(item.id);
+      // Si no tiene URL directa previa, resolver vía Cobalt/Proxy
+      if (audioUrl == null || audioUrl.isEmpty) {
+        audioUrl = await _resolveStreamUrl(item.id);
       }
 
       if (audioUrl == null || audioUrl.isEmpty) {
-        throw Exception("Audio no disponible en los nodos");
+        throw Exception("Stream no disponible");
       }
 
       await _player.setUrl(audioUrl);
@@ -136,19 +163,19 @@ class YMusicPlayerProvider extends ChangeNotifier {
     }
   }
 
-  Future<String?> _fetchAudioFromProxy(String videoId) async {
-    for (String node in _proxyNodes) {
-      try {
-        final url = Uri.parse('$node/api/v1/videos/$videoId');
-        final response = await http.get(url).timeout(const Duration(seconds: 6));
+  Future<String?> _resolveStreamUrl(String videoId) async {
+    final List<String> resolverNodes = [
+      'https://yt.drgns.space/api/v1/videos/$videoId',
+      'https://invidious.nerdvpn.de/api/v1/videos/$videoId',
+    ];
 
+    for (String node in resolverNodes) {
+      try {
+        final response = await http.get(Uri.parse(node)).timeout(const Duration(seconds: 5));
         if (response.statusCode == 200) {
           final data = json.decode(response.body);
-          final List adaptiveFormats = data['adaptiveFormats'] ?? [];
-
-          // Filtrar streams de solo audio (audio/mp4 o audio/webm)
-          final audioStreams = adaptiveFormats.where((f) => f['type']?.contains('audio') ?? false).toList();
-
+          final List formats = data['adaptiveFormats'] ?? [];
+          final audioStreams = formats.where((f) => f['type']?.contains('audio') ?? false).toList();
           if (audioStreams.isNotEmpty) {
             return audioStreams.first['url'] as String?;
           }
@@ -363,7 +390,7 @@ class _SearchTabState extends State<SearchTab> {
   Widget build(BuildContext context) {
     final player = Provider.of<YMusicPlayerProvider>(context, listen: false);
     return Scaffold(
-      appBar: AppBar(title: const Text('🔍 Buscar Música (Invidious)')),
+      appBar: AppBar(title: const Text('🔍 Buscar Música')),
       body: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
@@ -455,7 +482,7 @@ class YMusicPlayerDetailScreen extends StatelessWidget {
             if (player.isLoading)
               const CircularProgressIndicator()
             else if (player.hasError)
-              const Text('Error al conectar con la fuente del Proxy', style: TextStyle(color: Colors.redAccent))
+              const Text('Error al conectar con la fuente de audio', style: TextStyle(color: Colors.redAccent))
             else
               IconButton(
                 icon: Icon(player.isPlaying ? Icons.pause_circle_filled : Icons.play_circle_filled, size: 72, color: Colors.deepPurple),
