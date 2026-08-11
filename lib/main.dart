@@ -2,16 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:just_audio/just_audio.dart';
-import 'package:audio_session/audio_session.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart' as yt_exp;
 
-void main() async {
+void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  
-  // CONFIGURACIÓN DE AUDIO DE 1ER NIVEL EN ANDROID
-  final session = await AudioSession.instance;
-  await session.configure(const AudioSessionConfiguration.music());
-
   runApp(
     MultiProvider(
       providers: [
@@ -46,7 +40,7 @@ class MediaItemModel {
 }
 
 // ==========================================
-// GESTOR DE REPRODUCCIÓN (JUST_AUDIO + SESSION)
+// GESTOR DE REPRODUCCIÓN ESTABLE
 // ==========================================
 class YMusicPlayerProvider extends ChangeNotifier {
   final AudioPlayer _player = AudioPlayer();
@@ -89,16 +83,10 @@ class YMusicPlayerProvider extends ChangeNotifier {
         }
       }
 
-      await _player.setAudioSource(
-        AudioSource.uri(
-          Uri.parse(audioUrl),
-          headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
-          },
-        ),
-      );
-
-      _player.play();
+      // Carga directa y segura de la fuente de sonido
+      await _player.setUrl(audioUrl);
+      await _player.play();
+      
       _isLoading = false;
       notifyListeners();
     } catch (e) {
@@ -178,7 +166,7 @@ class MainNavigationScreen extends StatefulWidget {
 }
 
 class _MainNavigationScreenState extends State<MainNavigationScreen> {
-  int _currentIndex = 1; // Abrir en la pestaña Deportes por defecto
+  int _currentIndex = 1; // Inicia en Deportes
 
   @override
   Widget build(BuildContext context) {
@@ -266,7 +254,7 @@ class SportsTab extends StatelessWidget {
             child: ListTile(
               leading: const Icon(Icons.radio, size: 36, color: Colors.deepPurple),
               title: const Text('Radio Fórmula México'),
-              subtitle: const Text('Noticias y Deportes en vivo (Stream HTTPS)'),
+              subtitle: const Text('Noticias y Deportes en vivo'),
               trailing: const Icon(Icons.play_circle_fill, size: 32),
               onTap: () => player.playItem(
                 MediaItemModel(
