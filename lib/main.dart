@@ -3,7 +3,6 @@ import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart' as yt_exp;
-import 'package:webview_flutter/webview_flutter.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -41,48 +40,81 @@ class MediaItemModel {
 }
 
 // ==========================================
-// GESTOR DE REPRODUCCIÓN (Audio / Web Engine)
+// GESTOR DE REPRODUCCIÓN NATIVO DE AUDIO
 // ==========================================
 class YMusicPlayerProvider extends ChangeNotifier {
   final AudioPlayer _audioPlayer = AudioPlayer();
-  WebViewController? _webViewController;
+  final yt_exp.YoutubeExplode _yt = yt_exp.YoutubeExplode();
+  
   MediaItemModel? _currentItem;
+  bool _isLoading = false;
+  bool _isPlaying = false;
+  bool _hasError = false;
 
   MediaItemModel? get currentItem => _currentItem;
-  WebViewController? get webViewController => _webViewController;
+  bool get isLoading => _isLoading;
+  bool get isPlaying => _isPlaying;
+  bool get hasError => _hasError;
 
   YMusicPlayerProvider() {
-    _initWebView();
-  }
-
-  void _initWebView() {
-    _webViewController = WebViewController()
-      ..setJavaScriptMode(JavaScriptMode.unrestricted)
-      ..setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36');
+    _audioPlayer.onPlayerStateChanged.listen((state) {
+      _isPlaying = (state == PlayerState.playing);
+      notifyListeners();
+    });
   }
 
   Future<void> playItem(MediaItemModel item) async {
     _currentItem = item;
+    _isLoading = true;
+    _hasError = false;
     notifyListeners();
 
-    if (item.directStreamUrl != null) {
-      _webViewController?.loadRequest(Uri.parse('about:blank'));
+    try {
       await _audioPlayer.stop();
-      await _audioPlayer.play(UrlSource(item.directStreamUrl!));
-    } else {
-      await _audioPlayer.stop();
-      final String targetUrl = 'https://www.youtube.com/embed/${item.id}?autoplay=1&enablejsapi=1&origin=https://www.youtube.com';
-      _webViewController?.loadRequest(Uri.parse(targetUrl));
+      String? audioUrl = item.directStreamUrl;
+
+      // Extracción limpia del archivo de audio directo de YouTube (.m4a)
+      if (audioUrl == null) {
+        final manifest = await _yt.videos.streamsClient.getManifest(item.id);
+        final audioStreams = manifest.audioOnly;
+        
+        if (audioStreams.isNotEmpty) {
+          audioUrl = audioStreams.withHighestBitrate().url.toString();
+        } else {
+          throw Exception("Sin audio disponible");
+        }
+      }
+
+      // Se reproduce con el motor nativo del sistema
+      await _audioPlayer.play(UrlSource(audioUrl));
+      _isLoading = false;
+      notifyListeners();
+    } catch (e) {
+      _isLoading = false;
+      _hasError = true;
+      notifyListeners();
     }
+  }
 
-    notifyListeners();
+  void togglePlayPause() async {
+    if (_isPlaying) {
+      await _audioPlayer.pause();
+    } else {
+      await _audioPlayer.resume();
+    }
   }
 
   Future<void> stop() async {
     await _audioPlayer.stop();
-    _webViewController?.loadRequest(Uri.parse('about:blank'));
     _currentItem = null;
     notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    _audioPlayer.dispose();
+    _yt.close();
+    super.dispose();
   }
 }
 
@@ -134,10 +166,12 @@ class MainNavigationScreen extends StatefulWidget {
 }
 
 class _MainNavigationScreenState extends State<MainNavigationScreen> {
-  int _currentIndex = 2; // Iniciar en Buscar directamente
+  int _currentIndex = 2;
+
   @override
   Widget build(BuildContext context) {
     final player = Provider.of<YMusicPlayerProvider>(context);
+
     return Scaffold(
       body: Column(
         children: [
@@ -160,15 +194,24 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
                 borderRadius: BorderRadius.circular(6),
                 child: Image.network(
                   player.currentItem!.thumbnailUrl,
-                  width: 40,
-                  height: 40,
+                  width: 44,
+                  height: 44,
                   fit: BoxFit.cover,
                   errorBuilder: (_, __, ___) => const Icon(Icons.music_note),
                 ),
               ),
               title: Text(player.currentItem!.title, maxLines: 1, overflow: TextOverflow.ellipsis),
               subtitle: Text(player.currentItem!.author, maxLines: 1, overflow: TextOverflow.ellipsis),
-              trailing: IconButton(icon: const Icon(Icons.close), onPressed: player.stop),
+              trailing: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  IconButton(
+                    icon: Icon(player.isPlaying ? Icons.pause_circle_filled : Icons.play_circle_filled, size: 32),
+                    onPressed: player.togglePlayPause,
+                  ),
+                  IconButton(icon: const Icon(Icons.close), onPressed: player.stop),
+                ],
+              ),
               onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const YMusicPlayerDetailScreen())),
             )
         ],
@@ -189,7 +232,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
 }
 
 // ==========================================
-// PESTAÑAS RESTAURADAS
+// PESTAÑAS
 // ==========================================
 class HomeTab extends StatelessWidget {
   const HomeTab({super.key});
@@ -312,35 +355,62 @@ class _SearchTabState extends State<SearchTab> {
   }
 }
 
+// ==========================================
+// REPRODUCTOR CON PORTADA ESTILO YMUSIC
+// ==========================================
 class YMusicPlayerDetailScreen extends StatelessWidget {
   const YMusicPlayerDetailScreen({super.key});
+
   @override
   Widget build(BuildContext context) {
     final player = Provider.of<YMusicPlayerProvider>(context);
+    final item = player.currentItem;
+
+    if (item == null) return const Scaffold(body: Center(child: Text('Sin selección')));
+
     return Scaffold(
-      appBar: AppBar(title: const Text('📻 Reproductor')),
-      body: Column(
-        children: [
-          if (player.currentItem?.directStreamUrl == null && player.webViewController != null)
-            SizedBox(
-              height: 240,
-              width: double.infinity,
-              child: WebViewWidget(controller: player.webViewController!),
-            )
-          else
-            const SizedBox(
-              height: 240,
-              child: Center(child: Icon(Icons.radio, size: 100, color: Colors.deepPurple)),
+      appBar: AppBar(title: const Text('📻 Reproductor Nativo')),
+      body: Padding(
+        padding: const EdgeInsets.all(24.0),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(20),
+              child: Image.network(
+                item.thumbnailUrl,
+                width: double.infinity,
+                height: 280,
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => Container(
+                  height: 280,
+                  color: Colors.grey[900],
+                  child: const Icon(Icons.music_note, size: 80, color: Colors.white70),
+                ),
+              ),
             ),
-          Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Text(
-              player.currentItem?.title ?? '',
-              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            const SizedBox(height: 24),
+            Text(
+              item.title,
               textAlign: TextAlign.center,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
             ),
-          )
-        ],
+            const SizedBox(height: 8),
+            Text(item.author, style: const TextStyle(color: Colors.grey)),
+            const SizedBox(height: 32),
+            if (player.isLoading)
+              const CircularProgressIndicator()
+            else if (player.hasError)
+              const Text('Error al obtener el audio nativo', style: TextStyle(color: Colors.redAccent))
+            else
+              IconButton(
+                icon: Icon(player.isPlaying ? Icons.pause_circle_filled : Icons.play_circle_filled, size: 72, color: Colors.deepPurple),
+                onPressed: player.togglePlayPause,
+              ),
+          ],
+        ),
       ),
     );
   }
