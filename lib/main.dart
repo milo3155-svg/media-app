@@ -41,16 +41,17 @@ class MediaItemModel {
 }
 
 // ==========================================
-// GESTOR DE REPRODUCCIÓN (PIPED PROXY BACKEND)
+// GESTOR DE REPRODUCCIÓN (PROXY INVIDIOUS / COBALT)
 // ==========================================
 class YMusicPlayerProvider extends ChangeNotifier {
   final AudioPlayer _player = AudioPlayer();
   
-  // Instancias públicas de Piped API
-  final List<String> _pipedInstances = [
-    'https://pipedapi.kavin.rocks',
-    'https://api.piped.private.coffee',
-    'https://pipedapi.mha.fi',
+  // Nodos ultra estables de Invidious
+  final List<String> _proxyNodes = [
+    'https://inv.tux.pizza',
+    'https://invidious.nerdvpn.de',
+    'https://invidious.drgns.space',
+    'https://vid.puffyan.us',
   ];
 
   MediaItemModel? _currentItem;
@@ -70,36 +71,41 @@ class YMusicPlayerProvider extends ChangeNotifier {
     });
   }
 
-  // Método para consultar la API de Búsqueda de Piped
-  Future<List<MediaItemModel>> searchPiped(String query) async {
-    for (String instance in _pipedInstances) {
+  // Búsqueda en API Invidious
+  Future<List<MediaItemModel>> searchMusic(String query) async {
+    for (String node in _proxyNodes) {
       try {
-        final url = Uri.parse('$instance/search?q=${Uri.encodeComponent(query)}&filter=music');
+        final url = Uri.parse('$node/api/v1/search?q=${Uri.encodeComponent(query)}&type=video');
         final response = await http.get(url).timeout(const Duration(seconds: 5));
 
         if (response.statusCode == 200) {
-          final data = json.decode(response.body);
-          final List items = data['items'] ?? [];
+          final List items = json.decode(response.body);
           
-          return items.where((item) => item['type'] == 'stream').map((item) {
-            final String videoId = (item['url'] as String).replaceAll('/watch?v=', '');
+          return items.map((item) {
+            final String videoId = item['videoId'] ?? '';
+            final List thumbnails = item['videoThumbnails'] ?? [];
+            String thumb = 'https://i.ytimg.com/vi/$videoId/hqdefault.jpg';
+            if (thumbnails.isNotEmpty) {
+              thumb = thumbnails.first['url'] ?? thumb;
+            }
+
             return MediaItemModel(
               id: videoId,
               title: item['title'] ?? 'Sin título',
-              author: item['uploaderName'] ?? 'Desconocido',
-              thumbnailUrl: item['thumbnail'] ?? '',
-              duration: '${(item['duration'] ?? 0) ~/ 60} min',
+              author: item['author'] ?? 'Desconocido',
+              thumbnailUrl: thumb,
+              duration: '${(item['lengthSeconds'] ?? 0) ~/ 60} min',
             );
           }).toList();
         }
       } catch (_) {
-        continue; // Si falla una instancia, intenta con la siguiente
+        continue; // Fallback al siguiente nodo si falla uno
       }
     }
     return [];
   }
 
-  // Método para extraer el Stream Directo de Audio vía Proxy
+  // Reproducción por Audio Stream NATIVO desde el Proxy
   Future<void> playItem(MediaItemModel item) async {
     _currentItem = item;
     _isLoading = true;
@@ -110,13 +116,12 @@ class YMusicPlayerProvider extends ChangeNotifier {
       await _player.stop();
       String? audioUrl = item.directStreamUrl;
 
-      // Si es de YouTube, obtenemos el stream directo desde el Proxy
       if (audioUrl == null) {
-        audioUrl = await _fetchAudioUrlFromProxy(item.id);
+        audioUrl = await _fetchAudioFromProxy(item.id);
       }
 
       if (audioUrl == null || audioUrl.isEmpty) {
-        throw Exception("No se pudo obtener el audio desde el proxy");
+        throw Exception("Audio no disponible en los nodos");
       }
 
       await _player.setUrl(audioUrl);
@@ -131,27 +136,25 @@ class YMusicPlayerProvider extends ChangeNotifier {
     }
   }
 
-  Future<String?> _fetchAudioUrlFromProxy(String videoId) async {
-    for (String instance in _pipedInstances) {
+  Future<String?> _fetchAudioFromProxy(String videoId) async {
+    for (String node in _proxyNodes) {
       try {
-        final url = Uri.parse('$instance/streams/$videoId');
+        final url = Uri.parse('$node/api/v1/videos/$videoId');
         final response = await http.get(url).timeout(const Duration(seconds: 6));
 
         if (response.statusCode == 200) {
           final data = json.decode(response.body);
-          final List audioStreams = data['audioStreams'] ?? [];
+          final List adaptiveFormats = data['adaptiveFormats'] ?? [];
+
+          // Filtrar streams de solo audio (audio/mp4 o audio/webm)
+          final audioStreams = adaptiveFormats.where((f) => f['type']?.contains('audio') ?? false).toList();
 
           if (audioStreams.isNotEmpty) {
-            // Seleccionar el stream de mejor calidad (M4A / AAC)
-            final bestStream = audioStreams.firstWhere(
-              (stream) => stream['mimeType']?.contains('audio/mp4') ?? false,
-              orElse: () => audioStreams.first,
-            );
-            return bestStream['url'] as String?;
+            return audioStreams.first['url'] as String?;
           }
         }
       } catch (_) {
-        continue; // Fallback a la siguiente instancia
+        continue;
       }
     }
     return null;
@@ -226,7 +229,7 @@ class MainNavigationScreen extends StatefulWidget {
 }
 
 class _MainNavigationScreenState extends State<MainNavigationScreen> {
-  int _currentIndex = 2; // Pestaña Buscar
+  int _currentIndex = 2;
 
   @override
   Widget build(BuildContext context) {
@@ -349,7 +352,7 @@ class _SearchTabState extends State<SearchTab> {
     if (q.trim().isEmpty) return;
     setState(() => _isLoading = true);
     final player = Provider.of<YMusicPlayerProvider>(context, listen: false);
-    final results = await player.searchPiped(q);
+    final results = await player.searchMusic(q);
     setState(() {
       _res = results;
       _isLoading = false;
@@ -360,7 +363,7 @@ class _SearchTabState extends State<SearchTab> {
   Widget build(BuildContext context) {
     final player = Provider.of<YMusicPlayerProvider>(context, listen: false);
     return Scaffold(
-      appBar: AppBar(title: const Text('🔍 Buscar Música (Piped Proxy)')),
+      appBar: AppBar(title: const Text('🔍 Buscar Música (Invidious)')),
       body: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
