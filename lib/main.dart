@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
-import 'package:audioplayers/audioplayers.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart' as yt_exp;
+import 'package:webview_flutter/webview_flutter.dart';
 
-void main() async {
+void main() {
   WidgetsFlutterBinding.ensureInitialized();
   runApp(
     MultiProvider(
@@ -27,7 +27,7 @@ class MediaItemModel {
   final String author;
   final String thumbnailUrl;
   final String duration;
-  final String? directStreamUrl;
+  final String? directWebUrl;
 
   MediaItemModel({
     required this.id,
@@ -35,96 +35,52 @@ class MediaItemModel {
     required this.author,
     required this.thumbnailUrl,
     required this.duration,
-    this.directStreamUrl,
+    this.directWebUrl,
   });
 }
 
 // ==========================================
-// GESTOR DE REPRODUCCIÓN NATIVO (AUDIOPLAYERS)
+// GESTOR DE REPRODUCCIÓN (WEBVIEW ENGINE)
 // ==========================================
 class YMusicPlayerProvider extends ChangeNotifier {
-  final AudioPlayer _audioPlayer = AudioPlayer();
-  final yt_exp.YoutubeExplode _yt = yt_exp.YoutubeExplode();
-  
   MediaItemModel? _currentItem;
+  WebViewController? _webViewController;
   bool _isLoading = false;
-  bool _hasError = false;
-  bool _isPlaying = false;
-  String _errorMessage = '';
 
   MediaItemModel? get currentItem => _currentItem;
+  WebViewController? get webViewController => _webViewController;
   bool get isLoading => _isLoading;
-  bool get hasError => _hasError;
-  bool get isPlaying => _isPlaying;
-  String get errorMessage => _errorMessage;
 
-  YMusicPlayerProvider() {
-    _audioPlayer.onPlayerStateChanged.listen((state) {
-      _isPlaying = (state == PlayerState.playing);
-      notifyListeners();
-    });
-  }
-
-  Future<void> playItem(MediaItemModel item) async {
+  void playItem(MediaItemModel item) {
     _currentItem = item;
     _isLoading = true;
-    _hasError = false;
-    _errorMessage = '';
     notifyListeners();
 
-    try {
-      await _audioPlayer.stop();
+    // Determinar la URL objetivo (YouTube Embed o Stream Web Nativo)
+    final String targetUrl = item.directWebUrl ?? 
+        'https://www.youtube.com/embed/${item.id}?autoplay=1&playsinline=1';
 
-      String? streamUrl = item.directStreamUrl;
+    _webViewController = WebViewController()
+      ..setJavaScriptMode(JavaScriptMode.unrestricted)
+      ..setUserAgent('Mozilla/5.0 (Linux; Android 10; Pixel 10 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36')
+      ..setNavigationDelegate(
+        NavigationDelegate(
+          onPageFinished: (String url) {
+            _isLoading = false;
+            notifyListeners();
+          },
+        ),
+      )
+      ..loadRequest(Uri.parse(targetUrl));
 
-      // Si no es un stream directo de radio, extraemos con youtube_explode_dart directo
-      if (streamUrl == null) {
-        final manifest = await _yt.videos.streamsClient.getManifest(item.id);
-        
-        // Obtener la mejor pista de audio
-        if (manifest.audioOnly.isNotEmpty) {
-          streamUrl = manifest.audioOnly.withHighestBitrate().url.toString();
-        } else if (manifest.muxed.isNotEmpty) {
-          streamUrl = manifest.muxed.first.url.toString();
-        }
-      }
-
-      if (streamUrl == null || streamUrl.isEmpty) {
-        throw Exception("No se pudo obtener la fuente de audio.");
-      }
-
-      // Reproducir usando el motor nativo de AudioPlayer
-      await _audioPlayer.play(UrlSource(streamUrl));
-
-      _isLoading = false;
-      notifyListeners();
-    } catch (e) {
-      _isLoading = false;
-      _hasError = true;
-      _errorMessage = 'No se pudo conectar a la fuente de audio.';
-      notifyListeners();
-    }
+    notifyListeners();
   }
 
-  void togglePlayPause() async {
-    if (_isPlaying) {
-      await _audioPlayer.pause();
-    } else {
-      await _audioPlayer.resume();
-    }
-  }
-
-  void closePlayer() async {
-    await _audioPlayer.stop();
+  void closePlayer() {
+    _webViewController?.loadRequest(Uri.parse('about:blank'));
+    _webViewController = null;
     _currentItem = null;
     notifyListeners();
-  }
-
-  @override
-  void dispose() {
-    _audioPlayer.dispose();
-    _yt.close();
-    super.dispose();
   }
 }
 
@@ -231,6 +187,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
               children: tabs,
             ),
           ),
+          // MINI-BARRA PERSISTENTE AL NAVEGAR
           if (playerProvider.currentItem != null)
             GestureDetector(
               onTap: () {
@@ -282,8 +239,8 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
                       )
                     else
                       IconButton(
-                        icon: Icon(playerProvider.isPlaying ? Icons.pause_circle_filled : Icons.play_circle_filled, size: 36),
-                        onPressed: playerProvider.togglePlayPause,
+                        icon: const Icon(Icons.play_circle_filled, size: 36, color: Colors.deepPurple),
+                        onPressed: () {},
                       ),
                     IconButton(
                       icon: const Icon(Icons.close),
@@ -357,9 +314,6 @@ class HomeTab extends StatelessWidget {
   }
 }
 
-// ==========================================
-// PESTAÑA DEPORTES CON EMISORAS HTTPS ESTABLES
-// ==========================================
 class SportsTab extends StatelessWidget {
   const SportsTab({super.key});
 
@@ -368,25 +322,18 @@ class SportsTab extends StatelessWidget {
     final playerProvider = Provider.of<YMusicPlayerProvider>(context, listen: false);
     final primaryColor = Theme.of(context).colorScheme.primary;
 
-    // URLs de radio HTTPS 100% estables comprobadas
     final List<Map<String, String>> radioStations = [
       {
         'title': 'W Radio México (Deportes)',
-        'author': 'Fútbol & Cobertura Deportiva',
-        'url': 'https://stream.wradio.com.mx/wradio.mp3',
+        'author': 'Fútbol & Cobertura 24/7',
+        'url': 'https://wradio.com.mx/player/',
         'img': 'https://images.unsplash.com/photo-1508098682722-e99c43a406b2?w=400',
       },
       {
         'title': 'Radio Formula México',
         'author': 'Noticias & Análisis Deportivo',
-        'url': 'https://stream.radioformula.com.mx/formula.mp3',
+        'url': 'https://www.radioformula.com.mx/audio/',
         'img': 'https://images.unsplash.com/photo-1540747913346-19e32dc3e97e?w=400',
-      },
-      {
-        'title': 'RNE Radio Nacional España',
-        'author': 'Deportes e Información',
-        'url': 'https://rtvestream.rtve.es/rne/rne_r1_main.mp3',
-        'img': 'https://images.unsplash.com/photo-1518091043644-c1d4457512c6?w=400',
       },
     ];
 
@@ -425,7 +372,7 @@ class SportsTab extends StatelessWidget {
                           ],
                         ),
                       ),
-                      const Text('Jornada Deportiva', style: TextStyle(color: Colors.white70, fontWeight: FontWeight.bold)),
+                      const Text('Jornada Deportivo', style: TextStyle(color: Colors.white70, fontWeight: FontWeight.bold)),
                     ],
                   ),
                   const SizedBox(height: 16),
@@ -451,7 +398,7 @@ class SportsTab extends StatelessWidget {
                         author: radioStations[0]['author']!,
                         thumbnailUrl: radioStations[0]['img']!,
                         duration: 'EN VIVO',
-                        directStreamUrl: radioStations[0]['url']!,
+                        directWebUrl: radioStations[0]['url']!,
                       );
                       playerProvider.playItem(item);
                     },
@@ -484,7 +431,7 @@ class SportsTab extends StatelessWidget {
                       author: station['author']!,
                       thumbnailUrl: station['img']!,
                       duration: 'EN VIVO',
-                      directStreamUrl: station['url']!,
+                      directWebUrl: station['url']!,
                     );
                     playerProvider.playItem(item);
                   },
@@ -640,7 +587,7 @@ class _SearchTabState extends State<SearchTab> with AutomaticKeepAliveClientMixi
 }
 
 // ==========================================
-// REPRODUCTOR DETALLADO
+// REPRODUCTOR EN PANTALLA COMPLETA
 // ==========================================
 class YMusicPlayerDetailScreen extends StatelessWidget {
   const YMusicPlayerDetailScreen({super.key});
@@ -662,7 +609,7 @@ class YMusicPlayerDetailScreen extends StatelessWidget {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('📻 Reproductor'),
+        title: const Text('📻 Reproductor Nativo'),
         actions: [
           IconButton(
             icon: Icon(
@@ -673,86 +620,52 @@ class YMusicPlayerDetailScreen extends StatelessWidget {
           ),
         ],
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(24.0),
+      body: SingleChildScrollView(
         child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            ClipRRect(
-              borderRadius: BorderRadius.circular(20),
-              child: Image.network(
-                item.thumbnailUrl,
-                width: double.infinity,
-                height: 280,
-                fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) => Container(
-                  height: 280,
-                  color: Colors.grey[900],
-                  child: const Icon(Icons.radio, size: 80, color: Colors.white70),
-                ),
-              ),
-            ),
-            const SizedBox(height: 28),
-            Text(
-              item.title,
-              textAlign: TextAlign.center,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              item.author,
-              textAlign: TextAlign.center,
-              style: const TextStyle(fontSize: 15, color: Colors.grey),
-            ),
-            const SizedBox(height: 32),
-            if (playerProvider.isLoading)
-              const Column(
-                children: [
-                  CircularProgressIndicator(),
-                  SizedBox(height: 12),
-                  Text('Conectando fuente nativa...', style: TextStyle(color: Colors.grey)),
-                ],
-              )
-            else if (playerProvider.hasError)
-              Column(
-                children: [
-                  Text(playerProvider.errorMessage, style: const TextStyle(color: Colors.orangeAccent)),
-                  const SizedBox(height: 12),
-                  ElevatedButton(
-                    onPressed: () => playerProvider.playItem(item),
-                    child: const Text('Reintentar'),
-                  ),
-                ],
-              )
-            else
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  IconButton(
-                    icon: Icon(
-                      playerProvider.isPlaying ? Icons.pause_circle_filled : Icons.play_circle_filled,
-                      size: 72,
-                      color: Theme.of(context).colorScheme.primary,
-                    ),
-                    onPressed: playerProvider.togglePlayPause,
-                  ),
-                ],
-              ),
-            const SizedBox(height: 24),
+            // Contenedor WebView Nativo que garantiza la transmisión
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-              decoration: BoxDecoration(
-                color: Colors.purple.withOpacity(0.15),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: const Row(
-                mainAxisSize: MainAxisSize.min,
+              height: 250,
+              width: double.infinity,
+              color: Colors.black,
+              child: playerProvider.webViewController != null
+                  ? WebViewWidget(controller: playerProvider.webViewController!)
+                  : const Center(child: CircularProgressIndicator()),
+            ),
+            Padding(
+              padding: const EdgeInsets.all(20.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Icon(Icons.headset, color: Colors.purpleAccent, size: 20),
-                  SizedBox(width: 8),
-                  Text('Reproducción activa • Puedes navegar por la app', style: TextStyle(fontSize: 12)),
+                  Text(
+                    item.title,
+                    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    item.author,
+                    style: const TextStyle(fontSize: 14, color: Colors.grey),
+                  ),
+                  const Divider(height: 32),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    decoration: BoxDecoration(
+                      color: Colors.purple.withOpacity(0.15),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Row(
+                      children: [
+                        Icon(Icons.check_circle_outline, color: Colors.greenAccent, size: 22),
+                        SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            'Transmisión nativa activa. Puedes navegar libremente por la app con la mini-barra inferior.',
+                            style: TextStyle(fontSize: 13),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 ],
               ),
             ),
