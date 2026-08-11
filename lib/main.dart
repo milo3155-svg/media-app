@@ -41,17 +41,15 @@ class MediaItemModel {
 }
 
 // ==========================================
-// GESTOR DE REPRODUCCIÓN (Doble Motor: Audio/Web)
+// GESTOR DE REPRODUCCIÓN (Audio / Web Engine)
 // ==========================================
 class YMusicPlayerProvider extends ChangeNotifier {
   final AudioPlayer _audioPlayer = AudioPlayer();
   WebViewController? _webViewController;
   MediaItemModel? _currentItem;
-  bool _isLoading = false;
 
   MediaItemModel? get currentItem => _currentItem;
   WebViewController? get webViewController => _webViewController;
-  bool get isLoading => _isLoading;
 
   YMusicPlayerProvider() {
     _initWebView();
@@ -65,7 +63,6 @@ class YMusicPlayerProvider extends ChangeNotifier {
 
   Future<void> playItem(MediaItemModel item) async {
     _currentItem = item;
-    _isLoading = true;
     notifyListeners();
 
     if (item.directStreamUrl != null) {
@@ -74,12 +71,10 @@ class YMusicPlayerProvider extends ChangeNotifier {
       await _audioPlayer.play(UrlSource(item.directStreamUrl!));
     } else {
       await _audioPlayer.stop();
-      // Usamos el modo embed estándar
       final String targetUrl = 'https://www.youtube.com/embed/${item.id}?autoplay=1&enablejsapi=1&origin=https://www.youtube.com';
       _webViewController?.loadRequest(Uri.parse(targetUrl));
     }
 
-    _isLoading = false;
     notifyListeners();
   }
 
@@ -139,23 +134,43 @@ class MainNavigationScreen extends StatefulWidget {
 }
 
 class _MainNavigationScreenState extends State<MainNavigationScreen> {
-  int _currentIndex = 0;
+  int _currentIndex = 2; // Iniciar en Buscar directamente
   @override
   Widget build(BuildContext context) {
     final player = Provider.of<YMusicPlayerProvider>(context);
     return Scaffold(
       body: Column(
         children: [
-          Expanded(child: IndexedStack(index: _currentIndex, children: const [
-             HomeTab(), SportsTab(), SearchTab(), VaultTab(), SettingsTab()
-          ])),
+          Expanded(
+            child: IndexedStack(
+              index: _currentIndex,
+              children: const [
+                HomeTab(),
+                SportsTab(),
+                SearchTab(),
+                VaultTab(),
+                SettingsTab(),
+              ],
+            ),
+          ),
           if (player.currentItem != null)
-             ListTile(
-               tileColor: Colors.deepPurple.shade900,
-               title: Text(player.currentItem!.title, maxLines: 1),
-               trailing: IconButton(icon: const Icon(Icons.close), onPressed: player.stop),
-               onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const YMusicPlayerDetailScreen())),
-             )
+            ListTile(
+              tileColor: Colors.deepPurple.shade900,
+              leading: ClipRRect(
+                borderRadius: BorderRadius.circular(6),
+                child: Image.network(
+                  player.currentItem!.thumbnailUrl,
+                  width: 40,
+                  height: 40,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => const Icon(Icons.music_note),
+                ),
+              ),
+              title: Text(player.currentItem!.title, maxLines: 1, overflow: TextOverflow.ellipsis),
+              subtitle: Text(player.currentItem!.author, maxLines: 1, overflow: TextOverflow.ellipsis),
+              trailing: IconButton(icon: const Icon(Icons.close), onPressed: player.stop),
+              onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const YMusicPlayerDetailScreen())),
+            )
         ],
       ),
       bottomNavigationBar: NavigationBar(
@@ -174,43 +189,171 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
 }
 
 // ==========================================
-// PESTAÑAS Y REPRODUCTOR
+// PESTAÑAS RESTAURADAS
 // ==========================================
-class HomeTab extends StatelessWidget { const HomeTab({super.key}); @override Widget build(BuildContext context) => const Scaffold(body: Center(child: Text('Inicio'))); }
+class HomeTab extends StatelessWidget {
+  const HomeTab({super.key});
+  @override
+  Widget build(BuildContext context) => const Scaffold(body: Center(child: Text('Inicio')));
+}
 
-class SportsTab extends StatelessWidget { const SportsTab({super.key}); @override Widget build(BuildContext context) {
-  final player = Provider.of<YMusicPlayerProvider>(context, listen: false);
-  return Scaffold(body: ListView(children: [
-    ListTile(title: const Text('W Radio'), onTap: () => player.playItem(MediaItemModel(id: 'w', title: 'W Radio', author: 'Deportes', thumbnailUrl: '', duration: 'VIVO', directStreamUrl: 'https://stream.wradio.com.mx/wradio.mp3')))
-  ]));
-}}
-
-class SearchTab extends StatefulWidget { const SearchTab({super.key}); @override State<SearchTab> createState() => _SearchTabState(); }
-class _SearchTabState extends State<SearchTab> {
-  final _ctrl = TextEditingController();
-  List<yt_exp.Video> _res = [];
-  Future<void> _search(String q) async {
-    final results = await yt_exp.YoutubeExplode().search.search(q);
-    setState(() => _res = results.take(10).toList());
-  }
-  @override Widget build(BuildContext context) {
+class SportsTab extends StatelessWidget {
+  const SportsTab({super.key});
+  @override
+  Widget build(BuildContext context) {
     final player = Provider.of<YMusicPlayerProvider>(context, listen: false);
-    return Scaffold(body: Column(children: [
-      TextField(controller: _ctrl, onSubmitted: _search),
-      Expanded(child: ListView.builder(itemCount: _res.length, itemBuilder: (c, i) => ListTile(title: Text(_res[i].title), onTap: () => player.playItem(MediaItemModel(id: _res[i].id.value, title: _res[i].title, author: _res[i].author, thumbnailUrl: _res[i].thumbnails.highResUrl, duration: '')))))
-    ]));
+    return Scaffold(
+      appBar: AppBar(title: const Text('⚽ Deportes & Radio')),
+      body: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          Card(
+            child: ListTile(
+              leading: const Icon(Icons.radio, size: 36, color: Colors.deepPurple),
+              title: const Text('W Radio México'),
+              subtitle: const Text('Transmisión de Deportes 24/7'),
+              trailing: const Icon(Icons.play_circle_fill, size: 32),
+              onTap: () => player.playItem(
+                MediaItemModel(
+                  id: 'w_radio',
+                  title: 'W Radio México',
+                  author: 'Deportes',
+                  thumbnailUrl: 'https://images.unsplash.com/photo-1508098682722-e99c43a406b2?w=400',
+                  duration: 'EN VIVO',
+                  directStreamUrl: 'https://stream.wradio.com.mx/wradio.mp3',
+                ),
+              ),
+            ),
+          )
+        ],
+      ),
+    );
   }
 }
 
-class YMusicPlayerDetailScreen extends StatelessWidget { const YMusicPlayerDetailScreen({super.key}); @override Widget build(BuildContext context) {
-  final player = Provider.of<YMusicPlayerProvider>(context);
-  return Scaffold(appBar: AppBar(title: const Text('Reproductor')), body: Column(children: [
-    if (player.currentItem?.directStreamUrl == null && player.webViewController != null)
-      Expanded(child: WebViewWidget(controller: player.webViewController!))
-    else 
-      const Expanded(child: Icon(Icons.radio, size: 100))
-  ]));
-}}
+class SearchTab extends StatefulWidget {
+  const SearchTab({super.key});
+  @override
+  State<SearchTab> createState() => _SearchTabState();
+}
 
-class VaultTab extends StatelessWidget { const VaultTab({super.key}); @override Widget build(BuildContext context) => const Scaffold(); }
-class SettingsTab extends StatelessWidget { const SettingsTab({super.key}); @override Widget build(BuildContext context) => const Scaffold(); }
+class _SearchTabState extends State<SearchTab> {
+  final _ctrl = TextEditingController();
+  final yt_exp.YoutubeExplode _yt = yt_exp.YoutubeExplode();
+  List<yt_exp.Video> _res = [];
+  bool _isLoading = false;
+
+  Future<void> _search(String q) async {
+    if (q.trim().isEmpty) return;
+    setState(() => _isLoading = true);
+    try {
+      final results = await _yt.search.search(q);
+      setState(() => _res = results.take(15).toList());
+    } catch (_) {}
+    setState(() => _isLoading = false);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final player = Provider.of<YMusicPlayerProvider>(context, listen: false);
+    return Scaffold(
+      appBar: AppBar(title: const Text('🔍 Buscar Música')),
+      body: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          children: [
+            TextField(
+              controller: _ctrl,
+              decoration: InputDecoration(
+                hintText: 'Escribe una canción o artista...',
+                prefixIcon: const Icon(Icons.search),
+                suffixIcon: IconButton(icon: const Icon(Icons.arrow_forward), onPressed: () => _search(_ctrl.text)),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+              onSubmitted: _search,
+            ),
+            const SizedBox(height: 16),
+            if (_isLoading)
+              const Expanded(child: Center(child: CircularProgressIndicator()))
+            else
+              Expanded(
+                child: ListView.builder(
+                  itemCount: _res.length,
+                  itemBuilder: (c, i) {
+                    final video = _res[i];
+                    return Card(
+                      margin: const EdgeInsets.symmetric(vertical: 4),
+                      child: ListTile(
+                        leading: Image.network(video.thumbnails.lowResUrl, width: 50, fit: BoxFit.cover),
+                        title: Text(video.title, maxLines: 2, overflow: TextOverflow.ellipsis),
+                        subtitle: Text(video.author),
+                        trailing: const Icon(Icons.play_circle_fill, color: Colors.deepPurple, size: 32),
+                        onTap: () {
+                          player.playItem(
+                            MediaItemModel(
+                              id: video.id.value,
+                              title: video.title,
+                              author: video.author,
+                              thumbnailUrl: video.thumbnails.highResUrl,
+                              duration: '${video.duration?.inMinutes ?? 0} min',
+                            ),
+                          );
+                          Navigator.push(context, MaterialPageRoute(builder: (_) => const YMusicPlayerDetailScreen()));
+                        },
+                      ),
+                    );
+                  },
+                ),
+              )
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class YMusicPlayerDetailScreen extends StatelessWidget {
+  const YMusicPlayerDetailScreen({super.key});
+  @override
+  Widget build(BuildContext context) {
+    final player = Provider.of<YMusicPlayerProvider>(context);
+    return Scaffold(
+      appBar: AppBar(title: const Text('📻 Reproductor')),
+      body: Column(
+        children: [
+          if (player.currentItem?.directStreamUrl == null && player.webViewController != null)
+            SizedBox(
+              height: 240,
+              width: double.infinity,
+              child: WebViewWidget(controller: player.webViewController!),
+            )
+          else
+            const SizedBox(
+              height: 240,
+              child: Center(child: Icon(Icons.radio, size: 100, color: Colors.deepPurple)),
+            ),
+          Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Text(
+              player.currentItem?.title ?? '',
+              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              textAlign: TextAlign.center,
+            ),
+          )
+        ],
+      ),
+    );
+  }
+}
+
+class VaultTab extends StatelessWidget {
+  const VaultTab({super.key});
+  @override
+  Widget build(BuildContext context) => const Scaffold(body: Center(child: Text('Bóveda')));
+}
+
+class SettingsTab extends StatelessWidget {
+  const SettingsTab({super.key});
+  @override
+  Widget build(BuildContext context) => const Scaffold(body: Center(child: Text('Ajustes')));
+}
