@@ -11,12 +11,13 @@ dependencies:
     sdk: flutter
   cupertino_icons: ^1.0.6
   
-  # Librería del Reproductor Web Embebido Nativo
-  youtube_player_flutter: 9.0.3
+  # Reproductores y Sesión de Audio
+  just_audio: ^0.9.36
+  audio_session: ^0.1.18
   youtube_explode_dart: ^2.3.4
   http: ^1.2.0
   
-  # Base de datos local y estado
+  # Estado y utilidades
   provider: ^6.1.1
   share_plus: 7.2.2
 
