@@ -38,7 +38,7 @@ class MediaItemModel {
 }
 
 // ==========================================
-// GESTOR DE REPRODUCCIÓN (IFRAME EMBEDDED)
+// GESTOR DE REPRODUCCIÓN NATIVO
 // ==========================================
 class YMusicPlayerProvider extends ChangeNotifier {
   MediaItemModel? _currentItem;
@@ -56,7 +56,7 @@ class YMusicPlayerProvider extends ChangeNotifier {
       flags: const YoutubePlayerFlags(
         autoPlay: true,
         mute: false,
-        hideControls: true,
+        hideControls: false,
         isLive: false,
         forceHD: false,
       ),
@@ -182,7 +182,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
               children: tabs,
             ),
           ),
-          // MINI-BARRA PERSISTENTE
+          // MINI-BARRA PERSISTENTE AL NAVEGAR
           if (playerProvider.currentItem != null)
             GestureDetector(
               onTap: () {
@@ -486,65 +486,51 @@ class YMusicPlayerDetailScreen extends StatelessWidget {
           ),
         ],
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(24.0),
+      body: SingleChildScrollView(
         child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            ClipRRect(
-              borderRadius: BorderRadius.circular(20),
-              child: Image.network(
-                item.thumbnailUrl,
-                width: double.infinity,
-                height: 280,
-                fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) => Container(
-                  height: 280,
-                  color: Colors.grey[900],
-                  child: const Icon(Icons.music_note, size: 80, color: Colors.white70),
-                ),
-              ),
-            ),
-            const SizedBox(height: 28),
-            Text(
-              item.title,
-              textAlign: TextAlign.center,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              item.author,
-              textAlign: TextAlign.center,
-              style: const TextStyle(fontSize: 15, color: Colors.grey),
-            ),
-            const SizedBox(height: 20),
-            
-            // Player incrustado
+            // Reproductor nativo fluido visible
             if (playerProvider.controller != null)
-              SizedBox(
-                height: 1,
-                width: 1,
-                child: YoutubePlayer(
-                  controller: playerProvider.controller!,
-                  showVideoProgressIndicator: false,
-                ),
+              YoutubePlayer(
+                controller: playerProvider.controller!,
+                showVideoProgressIndicator: true,
+                progressIndicatorColor: Colors.deepPurple,
               ),
 
-            const SizedBox(height: 24),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-              decoration: BoxDecoration(
-                color: Colors.purple.withOpacity(0.15),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: const Row(
-                mainAxisSize: MainAxisSize.min,
+            Padding(
+              padding: const EdgeInsets.all(20.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Icon(Icons.check_circle_outline, color: Colors.greenAccent, size: 20),
-                  SizedBox(width: 8),
-                  Text('Conexión nativa activa', style: TextStyle(fontSize: 12)),
+                  Text(
+                    item.title,
+                    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    item.author,
+                    style: const TextStyle(fontSize: 14, color: Colors.grey),
+                  ),
+                  const Divider(height: 32),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    decoration: BoxDecoration(
+                      color: Colors.purple.withOpacity(0.15),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Row(
+                      children: [
+                        Icon(Icons.info_outline, color: Colors.purpleAccent, size: 22),
+                        SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            'Puedes presionar la flecha ← para regresar. La reproducción continuará en la mini-barra inferior.',
+                            style: TextStyle(fontSize: 13),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 ],
               ),
             ),
