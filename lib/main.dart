@@ -2,10 +2,16 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:just_audio/just_audio.dart';
+import 'package:audio_session/audio_session.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart' as yt_exp;
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  
+  // CONFIGURACIÓN DE AUDIO DE 1ER NIVEL EN ANDROID
+  final session = await AudioSession.instance;
+  await session.configure(const AudioSessionConfiguration.music());
+
   runApp(
     MultiProvider(
       providers: [
@@ -40,7 +46,7 @@ class MediaItemModel {
 }
 
 // ==========================================
-// GESTOR DE REPRODUCCIÓN NATIVO (JUST_AUDIO)
+// GESTOR DE REPRODUCCIÓN (JUST_AUDIO + SESSION)
 // ==========================================
 class YMusicPlayerProvider extends ChangeNotifier {
   final AudioPlayer _player = AudioPlayer();
@@ -83,7 +89,6 @@ class YMusicPlayerProvider extends ChangeNotifier {
         }
       }
 
-      // Configuración nativa de just_audio con Headers HTTP
       await _player.setAudioSource(
         AudioSource.uri(
           Uri.parse(audioUrl),
@@ -173,7 +178,7 @@ class MainNavigationScreen extends StatefulWidget {
 }
 
 class _MainNavigationScreenState extends State<MainNavigationScreen> {
-  int _currentIndex = 2;
+  int _currentIndex = 1; // Abrir en la pestaña Deportes por defecto
 
   @override
   Widget build(BuildContext context) {
@@ -260,17 +265,17 @@ class SportsTab extends StatelessWidget {
           Card(
             child: ListTile(
               leading: const Icon(Icons.radio, size: 36, color: Colors.deepPurple),
-              title: const Text('W Radio México'),
-              subtitle: const Text('Transmisión de Deportes 24/7'),
+              title: const Text('Radio Fórmula México'),
+              subtitle: const Text('Noticias y Deportes en vivo (Stream HTTPS)'),
               trailing: const Icon(Icons.play_circle_fill, size: 32),
               onTap: () => player.playItem(
                 MediaItemModel(
-                  id: 'w_radio',
-                  title: 'W Radio México',
-                  author: 'Deportes',
-                  thumbnailUrl: 'https://images.unsplash.com/photo-1508098682722-e99c43a406b2?w=400',
+                  id: 'radio_formula',
+                  title: 'Radio Fórmula México',
+                  author: 'Deportes / Noticias',
+                  thumbnailUrl: 'https://images.unsplash.com/photo-1540747913346-19e32dc3e97e?w=400',
                   duration: 'EN VIVO',
-                  directStreamUrl: 'https://stream.wradio.com.mx/wradio.mp3',
+                  directStreamUrl: 'https://stream.radioformula.com.mx/formula.mp3',
                 ),
               ),
             ),
