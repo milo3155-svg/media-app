@@ -38,7 +38,7 @@ class MediaItemModel {
 }
 
 // ==========================================
-// GESTOR DE REPRODUCCIÓN INFALIBLE (IFRAME)
+// GESTOR DE REPRODUCCIÓN (IFRAME EMBEDDED)
 // ==========================================
 class YMusicPlayerProvider extends ChangeNotifier {
   MediaItemModel? _currentItem;
@@ -491,7 +491,6 @@ class YMusicPlayerDetailScreen extends StatelessWidget {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            // Portada limpia
             ClipRRect(
               borderRadius: BorderRadius.circular(20),
               child: Image.network(
@@ -522,7 +521,7 @@ class YMusicPlayerDetailScreen extends StatelessWidget {
             ),
             const SizedBox(height: 20),
             
-            // Reproductor incrustado de YouTube oculto en tamaño para canalizar solo el audio
+            // Player incrustado
             if (playerProvider.controller != null)
               SizedBox(
                 height: 1,
@@ -545,7 +544,7 @@ class YMusicPlayerDetailScreen extends StatelessWidget {
                 children: [
                   Icon(Icons.check_circle_outline, color: Colors.greenAccent, size: 20),
                   SizedBox(width: 8),
-                  Text('Conexión nativa activa sin bloqueos', style: TextStyle(fontSize: 12)),
+                  Text('Conexión nativa activa', style: TextStyle(fontSize: 12)),
                 ],
               ),
             ),
