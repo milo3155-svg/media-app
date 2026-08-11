@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
-import 'package:audioplayers/audioplayers.dart';
+import 'package:just_audio/just_audio.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart' as yt_exp;
 
-void main() {
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   runApp(
     MultiProvider(
@@ -40,10 +40,10 @@ class MediaItemModel {
 }
 
 // ==========================================
-// GESTOR DE REPRODUCCIÓN NATIVO DE AUDIO
+// GESTOR DE REPRODUCCIÓN NATIVO (JUST_AUDIO)
 // ==========================================
 class YMusicPlayerProvider extends ChangeNotifier {
-  final AudioPlayer _audioPlayer = AudioPlayer();
+  final AudioPlayer _player = AudioPlayer();
   final yt_exp.YoutubeExplode _yt = yt_exp.YoutubeExplode();
   
   MediaItemModel? _currentItem;
@@ -57,8 +57,8 @@ class YMusicPlayerProvider extends ChangeNotifier {
   bool get hasError => _hasError;
 
   YMusicPlayerProvider() {
-    _audioPlayer.onPlayerStateChanged.listen((state) {
-      _isPlaying = (state == PlayerState.playing);
+    _player.playerStateStream.listen((state) {
+      _isPlaying = state.playing;
       notifyListeners();
     });
   }
@@ -70,23 +70,30 @@ class YMusicPlayerProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      await _audioPlayer.stop();
+      await _player.stop();
       String? audioUrl = item.directStreamUrl;
 
-      // Extracción limpia del archivo de audio directo de YouTube (.m4a)
       if (audioUrl == null) {
         final manifest = await _yt.videos.streamsClient.getManifest(item.id);
         final audioStreams = manifest.audioOnly;
-        
         if (audioStreams.isNotEmpty) {
           audioUrl = audioStreams.withHighestBitrate().url.toString();
         } else {
-          throw Exception("Sin audio disponible");
+          throw Exception("No audio streams");
         }
       }
 
-      // Se reproduce con el motor nativo del sistema
-      await _audioPlayer.play(UrlSource(audioUrl));
+      // Configuración nativa de just_audio con Headers HTTP
+      await _player.setAudioSource(
+        AudioSource.uri(
+          Uri.parse(audioUrl),
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+          },
+        ),
+      );
+
+      _player.play();
       _isLoading = false;
       notifyListeners();
     } catch (e) {
@@ -96,23 +103,23 @@ class YMusicPlayerProvider extends ChangeNotifier {
     }
   }
 
-  void togglePlayPause() async {
+  void togglePlayPause() {
     if (_isPlaying) {
-      await _audioPlayer.pause();
+      _player.pause();
     } else {
-      await _audioPlayer.resume();
+      _player.play();
     }
   }
 
   Future<void> stop() async {
-    await _audioPlayer.stop();
+    await _player.stop();
     _currentItem = null;
     notifyListeners();
   }
 
   @override
   void dispose() {
-    _audioPlayer.dispose();
+    _player.dispose();
     _yt.close();
     super.dispose();
   }
@@ -355,9 +362,6 @@ class _SearchTabState extends State<SearchTab> {
   }
 }
 
-// ==========================================
-// REPRODUCTOR CON PORTADA ESTILO YMUSIC
-// ==========================================
 class YMusicPlayerDetailScreen extends StatelessWidget {
   const YMusicPlayerDetailScreen({super.key});
 
@@ -403,7 +407,7 @@ class YMusicPlayerDetailScreen extends StatelessWidget {
             if (player.isLoading)
               const CircularProgressIndicator()
             else if (player.hasError)
-              const Text('Error al obtener el audio nativo', style: TextStyle(color: Colors.redAccent))
+              const Text('Error al conectar fuente nativa', style: TextStyle(color: Colors.redAccent))
             else
               IconButton(
                 icon: Icon(player.isPlaying ? Icons.pause_circle_filled : Icons.play_circle_filled, size: 72, color: Colors.deepPurple),
