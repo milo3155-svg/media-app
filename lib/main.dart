@@ -43,7 +43,7 @@ class MediaItemModel {
 }
 
 // ==========================================
-// GESTOR DE REPRODUCCIÓN ULTRA ESTABLE (PIPED API)
+// GESTOR DE REPRODUCCIÓN (MÚSICA + RADIO)
 // ==========================================
 class YMusicPlayerProvider extends ChangeNotifier {
   final ja.AudioPlayer _audioPlayer = ja.AudioPlayer();
@@ -61,12 +61,10 @@ class YMusicPlayerProvider extends ChangeNotifier {
   bool get isPlaying => _isPlaying;
   String get errorMessage => _errorMessage;
 
-  // Instancias públicas de Piped de alta velocidad
   final List<String> _pipedInstances = [
     'https://pipedapi.kavin.rocks',
     'https://api.piped.privacydev.net',
     'https://pipedapi.tokhmi.xyz',
-    'https://piped-api.garudalinux.org',
   ];
 
   YMusicPlayerProvider() {
@@ -102,14 +100,13 @@ class YMusicPlayerProvider extends ChangeNotifier {
           try {
             final response = await http.get(
               Uri.parse('$instance/streams/${item.id}'),
-            ).timeout(const Duration(seconds: 5));
+            ).timeout(const Duration(seconds: 4));
 
             if (response.statusCode == 200) {
               final data = jsonDecode(response.body);
               final audioStreams = data['audioStreams'] as List?;
 
               if (audioStreams != null && audioStreams.isNotEmpty) {
-                // Selecciona el stream de audio M4A con mejor calidad
                 final bestAudio = audioStreams.firstWhere(
                   (s) => s['format'] == 'M4A' || s['mimeType'].toString().contains('audio'),
                   orElse: () => audioStreams.first,
@@ -128,7 +125,16 @@ class YMusicPlayerProvider extends ChangeNotifier {
         throw Exception("No se pudo obtener el enlace de audio.");
       }
 
-      await _audioPlayer.setUrl(audioUrl);
+      // Inyección de AudioSource con encabezados HTTP de navegador
+      await _audioPlayer.setAudioSource(
+        ja.AudioSource.uri(
+          Uri.parse(audioUrl),
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Linux; Android 10; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
+          },
+        ),
+      );
+
       _audioPlayer.play();
 
       _isLoading = false;
@@ -411,9 +417,9 @@ class SportsTab extends StatelessWidget {
         'img': 'https://images.unsplash.com/photo-1508098682722-e99c43a406b2?w=400',
       },
       {
-        'title': 'ESPN Radio Deportes Stream',
+        'title': 'Radio Formula Deportes Stream',
         'author': 'Noticias & Análisis Deportivo',
-        'url': 'https://espnradio.stream/live.mp3',
+        'url': 'https://stream.radioformula.com.mx/formula.mp3',
         'img': 'https://images.unsplash.com/photo-1540747913346-19e32dc3e97e?w=400',
       },
       {
@@ -746,7 +752,7 @@ class YMusicPlayerDetailScreen extends StatelessWidget {
                 children: [
                   CircularProgressIndicator(),
                   SizedBox(height: 12),
-                  Text('Conectando vía Piped API...', style: TextStyle(color: Colors.grey)),
+                  Text('Conectando red nativa...', style: TextStyle(color: Colors.grey)),
                 ],
               )
             else if (playerProvider.hasError)
@@ -786,7 +792,7 @@ class YMusicPlayerDetailScreen extends StatelessWidget {
                 children: [
                   Icon(Icons.headset, color: Colors.purpleAccent, size: 20),
                   SizedBox(width: 8),
-                  Text('Piped API Nativa • Sin interrupciones', style: TextStyle(fontSize: 12)),
+                  Text('Red Nativa Activada • Puedes navegar libremente', style: TextStyle(fontSize: 12)),
                 ],
               ),
             ),
