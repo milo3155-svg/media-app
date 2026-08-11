@@ -1,8 +1,9 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:just_audio/just_audio.dart';
-import 'package:youtube_explode_dart/youtube_explode_dart.dart' as yt_exp;
+import 'package:http/http.dart' as http;
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -40,12 +41,18 @@ class MediaItemModel {
 }
 
 // ==========================================
-// GESTOR DE REPRODUCCIÓN ESTABLE
+// GESTOR DE REPRODUCCIÓN (PIPED PROXY BACKEND)
 // ==========================================
 class YMusicPlayerProvider extends ChangeNotifier {
   final AudioPlayer _player = AudioPlayer();
-  final yt_exp.YoutubeExplode _yt = yt_exp.YoutubeExplode();
   
+  // Instancias públicas de Piped API
+  final List<String> _pipedInstances = [
+    'https://pipedapi.kavin.rocks',
+    'https://api.piped.private.coffee',
+    'https://pipedapi.mha.fi',
+  ];
+
   MediaItemModel? _currentItem;
   bool _isLoading = false;
   bool _isPlaying = false;
@@ -63,6 +70,36 @@ class YMusicPlayerProvider extends ChangeNotifier {
     });
   }
 
+  // Método para consultar la API de Búsqueda de Piped
+  Future<List<MediaItemModel>> searchPiped(String query) async {
+    for (String instance in _pipedInstances) {
+      try {
+        final url = Uri.parse('$instance/search?q=${Uri.encodeComponent(query)}&filter=music');
+        final response = await http.get(url).timeout(const Duration(seconds: 5));
+
+        if (response.statusCode == 200) {
+          final data = json.decode(response.body);
+          final List items = data['items'] ?? [];
+          
+          return items.where((item) => item['type'] == 'stream').map((item) {
+            final String videoId = (item['url'] as String).replaceAll('/watch?v=', '');
+            return MediaItemModel(
+              id: videoId,
+              title: item['title'] ?? 'Sin título',
+              author: item['uploaderName'] ?? 'Desconocido',
+              thumbnailUrl: item['thumbnail'] ?? '',
+              duration: '${(item['duration'] ?? 0) ~/ 60} min',
+            );
+          }).toList();
+        }
+      } catch (_) {
+        continue; // Si falla una instancia, intenta con la siguiente
+      }
+    }
+    return [];
+  }
+
+  // Método para extraer el Stream Directo de Audio vía Proxy
   Future<void> playItem(MediaItemModel item) async {
     _currentItem = item;
     _isLoading = true;
@@ -73,20 +110,18 @@ class YMusicPlayerProvider extends ChangeNotifier {
       await _player.stop();
       String? audioUrl = item.directStreamUrl;
 
+      // Si es de YouTube, obtenemos el stream directo desde el Proxy
       if (audioUrl == null) {
-        final manifest = await _yt.videos.streamsClient.getManifest(item.id);
-        final audioStreams = manifest.audioOnly;
-        if (audioStreams.isNotEmpty) {
-          audioUrl = audioStreams.withHighestBitrate().url.toString();
-        } else {
-          throw Exception("No audio streams");
-        }
+        audioUrl = await _fetchAudioUrlFromProxy(item.id);
       }
 
-      // Carga directa y segura de la fuente de sonido
+      if (audioUrl == null || audioUrl.isEmpty) {
+        throw Exception("No se pudo obtener el audio desde el proxy");
+      }
+
       await _player.setUrl(audioUrl);
       await _player.play();
-      
+
       _isLoading = false;
       notifyListeners();
     } catch (e) {
@@ -94,6 +129,32 @@ class YMusicPlayerProvider extends ChangeNotifier {
       _hasError = true;
       notifyListeners();
     }
+  }
+
+  Future<String?> _fetchAudioUrlFromProxy(String videoId) async {
+    for (String instance in _pipedInstances) {
+      try {
+        final url = Uri.parse('$instance/streams/$videoId');
+        final response = await http.get(url).timeout(const Duration(seconds: 6));
+
+        if (response.statusCode == 200) {
+          final data = json.decode(response.body);
+          final List audioStreams = data['audioStreams'] ?? [];
+
+          if (audioStreams.isNotEmpty) {
+            // Seleccionar el stream de mejor calidad (M4A / AAC)
+            final bestStream = audioStreams.firstWhere(
+              (stream) => stream['mimeType']?.contains('audio/mp4') ?? false,
+              orElse: () => audioStreams.first,
+            );
+            return bestStream['url'] as String?;
+          }
+        }
+      } catch (_) {
+        continue; // Fallback a la siguiente instancia
+      }
+    }
+    return null;
   }
 
   void togglePlayPause() {
@@ -113,7 +174,6 @@ class YMusicPlayerProvider extends ChangeNotifier {
   @override
   void dispose() {
     _player.dispose();
-    _yt.close();
     super.dispose();
   }
 }
@@ -166,7 +226,7 @@ class MainNavigationScreen extends StatefulWidget {
 }
 
 class _MainNavigationScreenState extends State<MainNavigationScreen> {
-  int _currentIndex = 1; // Inicia en Deportes
+  int _currentIndex = 2; // Pestaña Buscar
 
   @override
   Widget build(BuildContext context) {
@@ -282,25 +342,25 @@ class SearchTab extends StatefulWidget {
 
 class _SearchTabState extends State<SearchTab> {
   final _ctrl = TextEditingController();
-  final yt_exp.YoutubeExplode _yt = yt_exp.YoutubeExplode();
-  List<yt_exp.Video> _res = [];
+  List<MediaItemModel> _res = [];
   bool _isLoading = false;
 
   Future<void> _search(String q) async {
     if (q.trim().isEmpty) return;
     setState(() => _isLoading = true);
-    try {
-      final results = await _yt.search.search(q);
-      setState(() => _res = results.take(15).toList());
-    } catch (_) {}
-    setState(() => _isLoading = false);
+    final player = Provider.of<YMusicPlayerProvider>(context, listen: false);
+    final results = await player.searchPiped(q);
+    setState(() {
+      _res = results;
+      _isLoading = false;
+    });
   }
 
   @override
   Widget build(BuildContext context) {
     final player = Provider.of<YMusicPlayerProvider>(context, listen: false);
     return Scaffold(
-      appBar: AppBar(title: const Text('🔍 Buscar Música')),
+      appBar: AppBar(title: const Text('🔍 Buscar Música (Piped Proxy)')),
       body: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
@@ -323,24 +383,16 @@ class _SearchTabState extends State<SearchTab> {
                 child: ListView.builder(
                   itemCount: _res.length,
                   itemBuilder: (c, i) {
-                    final video = _res[i];
+                    final item = _res[i];
                     return Card(
                       margin: const EdgeInsets.symmetric(vertical: 4),
                       child: ListTile(
-                        leading: Image.network(video.thumbnails.lowResUrl, width: 50, fit: BoxFit.cover),
-                        title: Text(video.title, maxLines: 2, overflow: TextOverflow.ellipsis),
-                        subtitle: Text(video.author),
+                        leading: Image.network(item.thumbnailUrl, width: 50, fit: BoxFit.cover, errorBuilder: (_, __, ___) => const Icon(Icons.music_note)),
+                        title: Text(item.title, maxLines: 2, overflow: TextOverflow.ellipsis),
+                        subtitle: Text(item.author),
                         trailing: const Icon(Icons.play_circle_fill, color: Colors.deepPurple, size: 32),
                         onTap: () {
-                          player.playItem(
-                            MediaItemModel(
-                              id: video.id.value,
-                              title: video.title,
-                              author: video.author,
-                              thumbnailUrl: video.thumbnails.highResUrl,
-                              duration: '${video.duration?.inMinutes ?? 0} min',
-                            ),
-                          );
+                          player.playItem(item);
                           Navigator.push(context, MaterialPageRoute(builder: (_) => const YMusicPlayerDetailScreen()));
                         },
                       ),
@@ -400,7 +452,7 @@ class YMusicPlayerDetailScreen extends StatelessWidget {
             if (player.isLoading)
               const CircularProgressIndicator()
             else if (player.hasError)
-              const Text('Error al conectar fuente nativa', style: TextStyle(color: Colors.redAccent))
+              const Text('Error al conectar con la fuente del Proxy', style: TextStyle(color: Colors.redAccent))
             else
               IconButton(
                 icon: Icon(player.isPlaying ? Icons.pause_circle_filled : Icons.play_circle_filled, size: 72, color: Colors.deepPurple),
