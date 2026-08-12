@@ -1,4 +1,4 @@
-import 'dart:convert';
+import 'dart0:convert';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:just_audio/just_audio.dart';
@@ -7,11 +7,19 @@ import 'package:http/http.dart' as http;
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await JustAudioBackground.init(
-    androidNotificationChannelId: 'com.example.media_app.channel.audio',
-    androidNotificationChannelName: 'Reproducción de Música',
-    androidNotificationOngoing: true,
-  );
+  
+  // Inicialización segura del servicio en segundo plano
+  try {
+    await JustAudioBackground.init(
+      androidNotificationChannelId: 'com.example.media_app.channel.audio',
+      androidNotificationChannelName: 'Reproducción de Música',
+      androidNotificationOngoing: true,
+      androidNotificationIcon: 'mipmap/ic_launcher',
+    );
+  } catch (e) {
+    debugPrint("Error al inicializar JustAudioBackground: $e");
+  }
+
   runApp(
     MultiProvider(
       providers: [
@@ -105,15 +113,22 @@ class YMusicPlayerProvider extends ChangeNotifier {
         throw Exception("Stream no disponible");
       }
 
-      final mediaItem = MediaItem(
-        id: item.id,
-        album: 'Media App',
-        title: item.title,
-        artist: item.author,
-        artUri: Uri.tryParse(item.thumbnailUrl),
-      );
+      MediaItem? mediaItem;
+      try {
+        mediaItem = MediaItem(
+          id: item.id,
+          album: 'Media App',
+          title: item.title,
+          artist: item.author,
+          artUri: Uri.tryParse(item.thumbnailUrl),
+        );
+      } catch (_) {}
 
-      await _player.setAudioSource(AudioSource.uri(Uri.parse(audioUrl), tag: mediaItem));
+      if (mediaItem != null) {
+        await _player.setAudioSource(AudioSource.uri(Uri.parse(audioUrl), tag: mediaItem));
+      } else {
+        await _player.setUrl(audioUrl);
+      }
       _player.play();
     } catch (e) {
       _isLoading = false;
