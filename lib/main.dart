@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package0:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 
@@ -50,8 +50,9 @@ class _HomeScreenState extends State<HomeScreen> {
       _isLoading = true;
     });
 
+    // Usamos namesearch que es el parametro oficial de Jamendo para buscar por texto
     final url = Uri.parse(
-      'https://api.jamendo.com/v3.0/tracks/?client_id=$_clientId&format=json&limit=20&search=$query',
+      'https://api.jamendo.com/v3.0/tracks/?client_id=$_clientId&format=json&limit=20&namesearch=${Uri.encodeComponent(query)}',
     );
 
     try {
@@ -62,7 +63,7 @@ class _HomeScreenState extends State<HomeScreen> {
           _tracks = data['results'] ?? [];
         });
       } else {
-        _showSnackBar('Error al consultar Jamendo');
+        _showSnackBar('Error al consultar Jamendo (Código: ${response.statusCode})');
       }
     } catch (e) {
       _showSnackBar('Error de conexión: $e');
