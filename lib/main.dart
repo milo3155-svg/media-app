@@ -13,10 +13,9 @@ Future<void> main() async {
       androidNotificationChannelId: 'com.example.media_app.channel.audio',
       androidNotificationChannelName: 'Reproducción de Música',
       androidNotificationOngoing: true,
-      androidNotificationIcon: 'mipmap/ic_launcher',
     );
   } catch (e) {
-    debugPrint("Error al inicializar JustAudioBackground: $e");
+    debugPrint("Error inicializando notificación: $e");
   }
 
   runApp(
@@ -51,7 +50,7 @@ class MediaItemModel {
 }
 
 // ==========================================
-// GESTOR DE REPRODUCCIÓN Y NOTIFICACIONES
+// GESTOR DE REPRODUCCIÓN
 // ==========================================
 class YMusicPlayerProvider extends ChangeNotifier {
   final AudioPlayer _player = AudioPlayer();
@@ -112,24 +111,23 @@ class YMusicPlayerProvider extends ChangeNotifier {
         throw Exception("Stream no disponible");
       }
 
-      MediaItem? mediaItem;
+      // Intentamos cargar con metadatos para la notificación
       try {
-        mediaItem = MediaItem(
+        final mediaItem = MediaItem(
           id: item.id,
           album: 'Media App',
           title: item.title,
           artist: item.author,
-          artUri: Uri.tryParse(item.thumbnailUrl),
         );
-      } catch (_) {}
-
-      if (mediaItem != null) {
         await _player.setAudioSource(AudioSource.uri(Uri.parse(audioUrl), tag: mediaItem));
-      } else {
+      } catch (_) {
+        // Fallback directo sin metadatos si la notificación estorba
         await _player.setUrl(audioUrl);
       }
+
       _player.play();
     } catch (e) {
+      debugPrint("Error al reproducir: $e");
       _isLoading = false;
       _hasError = true;
       notifyListeners();
@@ -159,7 +157,7 @@ class YMusicPlayerProvider extends ChangeNotifier {
 }
 
 // ==========================================
-// PROVEEDORES Y CONFIGURACIÓN
+// ESTRUCTURA PRINCIPAL Y VISTAS
 // ==========================================
 class VaultProvider extends ChangeNotifier {
   final List<MediaItemModel> _favorites = [];
@@ -268,9 +266,6 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
   }
 }
 
-// ==========================================
-// VISTAS DE PESTAÑAS
-// ==========================================
 class HomeTab extends StatelessWidget {
   const HomeTab({super.key});
   @override
@@ -316,6 +311,7 @@ class _SearchTabState extends State<SearchTab> {
           children: [
             TextField(
               controller: _ctrl,
+              textInputAction: TextInputAction.search,
               decoration: InputDecoration(
                 hintText: 'Buscar canción...',
                 prefixIcon: const Icon(Icons.search),
