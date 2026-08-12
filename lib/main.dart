@@ -1,4 +1,4 @@
-import 'package0:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 
@@ -50,7 +50,6 @@ class _HomeScreenState extends State<HomeScreen> {
       _isLoading = true;
     });
 
-    // Usamos namesearch que es el parametro oficial de Jamendo para buscar por texto
     final url = Uri.parse(
       'https://api.jamendo.com/v3.0/tracks/?client_id=$_clientId&format=json&limit=20&namesearch=${Uri.encodeComponent(query)}',
     );
