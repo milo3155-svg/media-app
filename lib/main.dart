@@ -105,7 +105,6 @@ class YMusicPlayerProvider extends ChangeNotifier {
         throw Exception("Stream no disponible");
       }
 
-      // Configura el elemento de medios para la barra de notificaciones de Android
       final mediaItem = MediaItem(
         id: item.id,
         album: 'Media App',
@@ -146,7 +145,7 @@ class YMusicPlayerProvider extends ChangeNotifier {
 }
 
 // ==========================================
-// VISTAS Y NAVEGACIÓN
+// PROVEEDORES Y CONFIGURACIÓN
 // ==========================================
 class VaultProvider extends ChangeNotifier {
   final List<MediaItemModel> _favorites = [];
@@ -255,6 +254,9 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
   }
 }
 
+// ==========================================
+// VISTAS DE PESTAÑAS
+// ==========================================
 class HomeTab extends StatelessWidget {
   const HomeTab({super.key});
   @override
@@ -270,13 +272,132 @@ class SportsTab extends StatelessWidget {
 class SearchTab extends StatefulWidget {
   const SearchTab({super.key});
   @override
-  Widget build(BuildContext context) => const Scaffold(body: Center(child: Text('Buscar')));
+  State<SearchTab> createState() => _SearchTabState();
+}
+
+class _SearchTabState extends State<SearchTab> {
+  final _ctrl = TextEditingController();
+  List<MediaItemModel> _res = [];
+  bool _isLoading = false;
+
+  Future<void> _search(String q) async {
+    if (q.trim().isEmpty) return;
+    setState(() => _isLoading = true);
+    final player = Provider.of<YMusicPlayerProvider>(context, listen: false);
+    final results = await player.searchMusic(q);
+    setState(() {
+      _res = results;
+      _isLoading = false;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final player = Provider.of<YMusicPlayerProvider>(context, listen: false);
+    return Scaffold(
+      appBar: AppBar(title: const Text('🔍 Buscar Música')),
+      body: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          children: [
+            TextField(
+              controller: _ctrl,
+              decoration: InputDecoration(
+                hintText: 'Buscar canción...',
+                prefixIcon: const Icon(Icons.search),
+                suffixIcon: IconButton(icon: const Icon(Icons.arrow_forward), onPressed: () => _search(_ctrl.text)),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+              onSubmitted: _search,
+            ),
+            const SizedBox(height: 16),
+            if (_isLoading)
+              const Expanded(child: Center(child: CircularProgressIndicator()))
+            else
+              Expanded(
+                child: ListView.builder(
+                  itemCount: _res.length,
+                  itemBuilder: (c, i) {
+                    final item = _res[i];
+                    return Card(
+                      margin: const EdgeInsets.symmetric(vertical: 4),
+                      child: ListTile(
+                        leading: Image.network(item.thumbnailUrl, width: 50, fit: BoxFit.cover, errorBuilder: (_, __, ___) => const Icon(Icons.music_note)),
+                        title: Text(item.title, maxLines: 2, overflow: TextOverflow.ellipsis),
+                        subtitle: Text(item.author),
+                        trailing: const Icon(Icons.play_circle_fill, color: Colors.deepPurple, size: 32),
+                        onTap: () {
+                          player.playItem(item);
+                          Navigator.push(context, MaterialPageRoute(builder: (_) => const YMusicPlayerDetailScreen()));
+                        },
+                      ),
+                    );
+                  },
+                ),
+              )
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 class YMusicPlayerDetailScreen extends StatelessWidget {
   const YMusicPlayerDetailScreen({super.key});
+
   @override
-  Widget build(BuildContext context) => const Scaffold(body: Center(child: Text('Reproductor')));
+  Widget build(BuildContext context) {
+    final player = Provider.of<YMusicPlayerProvider>(context);
+    final item = player.currentItem;
+
+    if (item == null) return const Scaffold(body: Center(child: Text('Sin selección')));
+
+    return Scaffold(
+      appBar: AppBar(title: const Text('📻 Reproductor')),
+      body: Padding(
+        padding: const EdgeInsets.all(24.0),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(20),
+              child: Image.network(
+                item.thumbnailUrl,
+                width: double.infinity,
+                height: 280,
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => Container(
+                  height: 280,
+                  color: Colors.grey[900],
+                  child: const Icon(Icons.music_note, size: 80, color: Colors.white70),
+                ),
+              ),
+            ),
+            const SizedBox(height: 24),
+            Text(
+              item.title,
+              textAlign: TextAlign.center,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 8),
+            Text(item.author, style: const TextStyle(color: Colors.grey)),
+            const SizedBox(height: 32),
+            if (player.isLoading)
+              const CircularProgressIndicator()
+            else if (player.hasError)
+              const Text('Error al reproducir audio', style: TextStyle(color: Colors.redAccent))
+            else
+              IconButton(
+                icon: Icon(player.isPlaying ? Icons.pause_circle_filled : Icons.play_circle_filled, size: 72, color: Colors.deepPurple),
+                onPressed: player.togglePlayPause,
+              ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 class VaultTab extends StatelessWidget {
