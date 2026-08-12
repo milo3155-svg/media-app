@@ -1,184 +1,10 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
-import 'package:just_audio/just_audio.dart';
-import 'package:just_audio_background/just_audio_background.dart';
 import 'package:http/http.dart' as http;
+import 'dart:convert';
+import 'package:audioplayers/audioplayers.dart';
 
-Future<void> main() async {
-  WidgetsFlutterBinding.ensureInitialized();
-  
-  try {
-    await JustAudioBackground.init(
-      androidNotificationChannelId: 'com.example.media_app.channel.audio',
-      androidNotificationChannelName: 'Reproducción de Música',
-      androidNotificationOngoing: true,
-    );
-  } catch (e) {
-    debugPrint("Error inicializando notificación: $e");
-  }
-
-  runApp(
-    MultiProvider(
-      providers: [
-        ChangeNotifierProvider(create: (_) => ThemeProvider()),
-        ChangeNotifierProvider(create: (_) => VaultProvider()),
-        ChangeNotifierProvider(create: (_) => YMusicPlayerProvider()),
-      ],
-      child: const MediaApp(),
-    ),
-  );
-}
-
-// ==========================================
-// MODELO DE DATOS
-// ==========================================
-class MediaItemModel {
-  final String id;
-  final String title;
-  final String author;
-  final String thumbnailUrl;
-  final String? directStreamUrl;
-
-  MediaItemModel({
-    required this.id,
-    required this.title,
-    required this.author,
-    required this.thumbnailUrl,
-    this.directStreamUrl,
-  });
-}
-
-// ==========================================
-// GESTOR DE REPRODUCCIÓN (CONEXIÓN DIRECTA)
-// ==========================================
-class YMusicPlayerProvider extends ChangeNotifier {
-  final AudioPlayer _player = AudioPlayer();
-  
-  // API Key directa de Jamendo para la app
-  final String _clientId = '56d3042f';
-
-  MediaItemModel? _currentItem;
-  bool _isLoading = false;
-  bool _isPlaying = false;
-  String? _errorMessage;
-
-  MediaItemModel? get currentItem => _currentItem;
-  bool get isLoading => _isLoading;
-  bool get isPlaying => _isPlaying;
-  String? get errorMessage => _errorMessage;
-
-  YMusicPlayerProvider() {
-    _player.playerStateStream.listen((state) {
-      _isPlaying = state.playing;
-      _isLoading = state.processingState == ProcessingState.loading || state.processingState == ProcessingState.buffering;
-      notifyListeners();
-    });
-
-    _player.playbackEventStream.listen((event) {}, onError: (Object e, StackTrace st) {
-      _errorMessage = "Error reproductor: $e";
-      _isLoading = false;
-      notifyListeners();
-    });
-  }
-
-  // Búsqueda directa a la API de Jamendo desde el celular
-  Future<List<MediaItemModel>> searchMusic(String query) async {
-    try {
-      final url = Uri.parse(
-        'https://api.jamendo.com/v3.0/tracks/?client_id=$_clientId&format=json&limit=20&search=${Uri.encodeComponent(query)}&include=musicinfo'
-      );
-      
-      final response = await http.get(url).timeout(const Duration(seconds: 8));
-
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        final List results = data['results'] ?? [];
-
-        return results.map((item) {
-          return MediaItemModel(
-            id: item['id'].toString(),
-            title: item['name'] ?? 'Sin título',
-            author: item['artist_name'] ?? 'Artista',
-            thumbnailUrl: item['album_image'] ?? item['image'] ?? '',
-            directStreamUrl: item['audio'] ?? '',
-          );
-        }).toList();
-      }
-    } catch (e) {
-      debugPrint("Error buscando música directo en Jamendo: $e");
-    }
-    return [];
-  }
-
-  // Reproducción directa del MP3 desde Jamendo CDN
-  Future<void> playItem(MediaItemModel item) async {
-    _currentItem = item;
-    _isLoading = true;
-    _errorMessage = null;
-    notifyListeners();
-
-    try {
-      await _player.stop();
-      final String? audioUrl = item.directStreamUrl;
-
-      if (audioUrl == null || audioUrl.isEmpty) {
-        throw Exception("URL de audio vacía");
-      }
-
-      // Conexión directa al stream MP3
-      await _player.setUrl(audioUrl);
-      _player.play();
-    } catch (e) {
-      _isLoading = false;
-      _errorMessage = "Fallo al cargar: ${e.toString()}";
-      notifyListeners();
-    }
-  }
-
-  void togglePlayPause() {
-    if (_isPlaying) {
-      _player.pause();
-    } else {
-      _player.play();
-    }
-    notifyListeners();
-  }
-
-  void stop() {
-    _player.stop();
-    _currentItem = null;
-    _errorMessage = null;
-    notifyListeners();
-  }
-
-  @override
-  void dispose() {
-    _player.dispose();
-    super.dispose();
-  }
-}
-
-// ==========================================
-// VISTAS Y NAVEGACIÓN
-// ==========================================
-class VaultProvider extends ChangeNotifier {
-  final List<MediaItemModel> _favorites = [];
-  List<MediaItemModel> get favorites => _favorites;
-  bool isFavorite(String id) => _favorites.any((item) => item.id == id);
-  void toggleFavorite(MediaItemModel item) {
-    final index = _favorites.indexWhere((e) => e.id == item.id);
-    if (index >= 0) _favorites.removeAt(index); else _favorites.add(item);
-    notifyListeners();
-  }
-}
-
-class ThemeProvider extends ChangeNotifier {
-  Color _primaryColor = Colors.deepPurple;
-  bool _isDarkMode = true;
-  Color get primaryColor => _primaryColor;
-  bool get isDarkMode => _isDarkMode;
-  void toggleThemeMode() { _isDarkMode = !_isDarkMode; notifyListeners(); }
+void main() {
+  runApp(const MediaApp());
 }
 
 class MediaApp extends StatelessWidget {
@@ -186,244 +12,196 @@ class MediaApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Provider.of<ThemeProvider>(context);
     return MaterialApp(
+      title: 'Media App',
       debugShowCheckedModeBanner: false,
-      themeMode: theme.isDarkMode ? ThemeMode.dark : ThemeMode.light,
-      theme: ThemeData(useMaterial3: true, brightness: Brightness.light, colorSchemeSeed: theme.primaryColor),
-      darkTheme: ThemeData(useMaterial3: true, brightness: Brightness.dark, colorSchemeSeed: theme.primaryColor),
-      home: const MainNavigationScreen(),
+      theme: ThemeData.dark().copyWith(
+        scaffoldBackgroundColor: const Color(0xFF121212),
+        primaryColor: Colors.deepPurple,
+      ),
+      home: const HomeScreen(),
     );
   }
 }
 
-class MainNavigationScreen extends StatefulWidget {
-  const MainNavigationScreen({super.key});
+class HomeScreen extends StatefulWidget {
+  const HomeScreen({super.key});
+
   @override
-  State<MainNavigationScreen> createState() => _MainNavigationScreenState();
+  State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _MainNavigationScreenState extends State<MainNavigationScreen> {
-  int _currentIndex = 2;
+class _HomeScreenState extends State<HomeScreen> {
+  final TextEditingController _searchController = TextEditingController();
+  final AudioPlayer _audioPlayer = AudioPlayer();
+
+  List<dynamic> _tracks = [];
+  bool _isLoading = false;
+  String? _currentlyPlayingUrl;
+  bool _isPlaying = false;
+
+  // IMPORTANTE: Reemplaza con tu Client ID de Jamendo si tienes uno propio
+  final String _clientId = '5672a80f'; 
+
+  @override
+  void initState() {
+    super.initState();
+    // Carga inicial de canciones populares
+    _searchTracks('rock');
+  }
+
+  Future<void> _searchTracks(String query) async {
+    if (query.trim().isEmpty) return;
+
+    setState(() {
+      _isLoading = true;
+    });
+
+    final url = Uri.parse(
+      'https://api.jamendo.com/v3.0/tracks/?client_id=$_clientId&format=json&limit=20&search=$query',
+    );
+
+    try {
+      final response = await http.get(url);
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        setState(() {
+          _tracks = data['results'] ?? [];
+        });
+      } else {
+        _showSnackBar('Error al consultar Jamendo');
+      }
+    } catch (e) {
+      _showSnackBar('Error de conexión: $e');
+    } finally {
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
+
+  Future<void> _playAudio(String audioUrl) async {
+    try {
+      if (_currentlyPlayingUrl == audioUrl && _isPlaying) {
+        await _audioPlayer.pause();
+        setState(() {
+          _isPlaying = false;
+        });
+      } else {
+        await _audioPlayer.stop();
+        await _audioPlayer.play(UrlSource(audioUrl));
+        setState(() {
+          _currentlyPlayingUrl = audioUrl;
+          _isPlaying = true;
+        });
+      }
+    } catch (e) {
+      _showSnackBar('No se pudo reproducir el audio');
+    }
+  }
+
+  void _showSnackBar(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message)),
+    );
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    _audioPlayer.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
-    final player = Provider.of<YMusicPlayerProvider>(context);
-
     return Scaffold(
+      appBar: AppBar(
+        title: const Text('Media App - Jamendo'),
+        centerTitle: true,
+        backgroundColor: const Color(0xFF1F1F1F),
+      ),
       body: Column(
         children: [
-          Expanded(
-            child: IndexedStack(
-              index: _currentIndex,
-              children: const [
-                HomeTab(),
-                SportsTab(),
-                SearchTab(),
-                VaultTab(),
-                SettingsTab(),
-              ],
+          // Barra de Búsqueda
+          Padding(
+            padding: const EdgeInsets.all(12.0),
+            child: TextField(
+              controller: _searchController,
+              decoration: InputDecoration(
+                hintText: 'Buscar artista, canción o género...',
+                prefixIcon: const Icon(Icons.search, color: Colors.purpleAccent),
+                suffixIcon: IconButton(
+                  icon: const Icon(Icons.send, color: Colors.purpleAccent),
+                  onPressed: () => _searchTracks(_searchController.text),
+                ),
+                filled: true,
+                fillColor: const Color(0xFF2C2C2C),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(30.0),
+                  borderSide: BorderSide.none,
+                ),
+              ),
+              onSubmitted: (value) => _searchTracks(value),
             ),
           ),
-          if (player.currentItem != null)
-            ListTile(
-              tileColor: Colors.deepPurple.shade900,
-              leading: ClipRRect(
-                borderRadius: BorderRadius.circular(6),
-                child: Image.network(
-                  player.currentItem!.thumbnailUrl,
-                  width: 44,
-                  height: 44,
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) => const Icon(Icons.music_note),
-                ),
-              ),
-              title: Text(player.currentItem!.title, maxLines: 1, overflow: TextOverflow.ellipsis),
-              subtitle: Text(player.currentItem!.author, maxLines: 1, overflow: TextOverflow.ellipsis),
-              trailing: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  IconButton(
-                    icon: Icon(player.isPlaying ? Icons.pause_circle_filled : Icons.play_circle_filled, size: 32),
-                    onPressed: player.togglePlayPause,
-                  ),
-                  IconButton(icon: const Icon(Icons.close), onPressed: player.stop),
-                ],
-              ),
-              onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const YMusicPlayerDetailScreen())),
-            )
-        ],
-      ),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _currentIndex,
-        onDestinationSelected: (i) => setState(() => _currentIndex = i),
-        destinations: const [
-          NavigationDestination(icon: Icon(Icons.home), label: 'Inicio'),
-          NavigationDestination(icon: Icon(Icons.sports_soccer), label: 'Deportes'),
-          NavigationDestination(icon: Icon(Icons.search), label: 'Buscar'),
-          NavigationDestination(icon: Icon(Icons.favorite), label: 'Bóveda'),
-          NavigationDestination(icon: Icon(Icons.settings), label: 'Ajustes'),
-        ],
-      ),
-    );
-  }
-}
 
-class HomeTab extends StatelessWidget {
-  const HomeTab({super.key});
-  @override
-  Widget build(BuildContext context) => const Scaffold(body: Center(child: Text('Inicio')));
-}
+          // Indicador de Carga o Lista de Canciones
+          Expanded(
+            child: _isLoading
+                ? const Center(child: CircularProgressIndicator(color: Colors.purpleAccent))
+                : _tracks.isEmpty
+                    ? const Center(child: Text('No se encontraron resultados'))
+                    : ListView.builder(
+                        itemCount: _tracks.length,
+                        itemBuilder: (context, index) {
+                          final track = _tracks[index];
+                          final audioUrl = track['audio'];
+                          final isCurrent = _currentlyPlayingUrl == audioUrl;
 
-class SportsTab extends StatelessWidget {
-  const SportsTab({super.key});
-  @override
-  Widget build(BuildContext context) => const Scaffold(body: Center(child: Text('Deportes')));
-}
-
-class SearchTab extends StatefulWidget {
-  const SearchTab({super.key});
-  @override
-  State<SearchTab> createState() => _SearchTabState();
-}
-
-class _SearchTabState extends State<SearchTab> {
-  final _ctrl = TextEditingController();
-  List<MediaItemModel> _res = [];
-  bool _isLoading = false;
-
-  Future<void> _search(String q) async {
-    if (q.trim().isEmpty) return;
-    setState(() => _isLoading = true);
-    final player = Provider.of<YMusicPlayerProvider>(context, listen: false);
-    final results = await player.searchMusic(q);
-    setState(() {
-      _res = results;
-      _isLoading = false;
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final player = Provider.of<YMusicPlayerProvider>(context, listen: false);
-    return Scaffold(
-      appBar: AppBar(title: const Text('🔍 Buscar Música')),
-      body: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          children: [
-            TextField(
-              controller: _ctrl,
-              textInputAction: TextInputAction.search,
-              decoration: InputDecoration(
-                hintText: 'Buscar canción (ej: rock, pop, jazz)...',
-                prefixIcon: const Icon(Icons.search),
-                suffixIcon: IconButton(icon: const Icon(Icons.arrow_forward), onPressed: () => _search(_ctrl.text)),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-              ),
-              onSubmitted: _search,
-            ),
-            const SizedBox(height: 16),
-            if (_isLoading)
-              const Expanded(child: Center(child: CircularProgressIndicator()))
-            else
-              Expanded(
-                child: ListView.builder(
-                  itemCount: _res.length,
-                  itemBuilder: (c, i) {
-                    final item = _res[i];
-                    return Card(
-                      margin: const EdgeInsets.symmetric(vertical: 4),
-                      child: ListTile(
-                        leading: Image.network(item.thumbnailUrl, width: 50, fit: BoxFit.cover, errorBuilder: (_, __, ___) => const Icon(Icons.music_note)),
-                        title: Text(item.title, maxLines: 2, overflow: TextOverflow.ellipsis),
-                        subtitle: Text(item.author),
-                        trailing: const Icon(Icons.play_circle_fill, color: Colors.deepPurple, size: 32),
-                        onTap: () {
-                          player.playItem(item);
-                          Navigator.push(context, MaterialPageRoute(builder: (_) => const YMusicPlayerDetailScreen()));
+                          return Card(
+                            color: const Color(0xFF1E1E1E),
+                            margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                            child: ListTile(
+                              leading: ClipRRect(
+                                borderRadius: BorderRadius.circular(8.0),
+                                child: Image.network(
+                                  track['album_image'] ?? '',
+                                  width: 50,
+                                  height: 50,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (context, error, stackTrace) =>
+                                      const Icon(Icons.music_note, size: 40),
+                                ),
+                              ),
+                              title: Text(
+                                track['name'] ?? 'Sin título',
+                                style: const TextStyle(fontWeight: FontWeight.bold),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              subtitle: Text(
+                                track['artist_name'] ?? 'Artista desconocido',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              trailing: IconButton(
+                                icon: Icon(
+                                  (isCurrent && _isPlaying)
+                                      ? Icons.pause_circle_filled
+                                      : Icons.play_circle_fill,
+                                  color: Colors.purpleAccent,
+                                  size: 36,
+                                ),
+                                onPressed: () => _playAudio(audioUrl),
+                              ),
+                            ),
+                          );
                         },
                       ),
-                    );
-                  },
-                ),
-              )
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
-}
-
-class YMusicPlayerDetailScreen extends StatelessWidget {
-  const YMusicPlayerDetailScreen({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    final player = Provider.of<YMusicPlayerProvider>(context);
-    final item = player.currentItem;
-
-    if (item == null) return const Scaffold(body: Center(child: Text('Sin selección')));
-
-    return Scaffold(
-      appBar: AppBar(title: const Text('📻 Reproductor')),
-      body: Padding(
-        padding: const EdgeInsets.all(24.0),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            ClipRRect(
-              borderRadius: BorderRadius.circular(20),
-              child: Image.network(
-                item.thumbnailUrl,
-                width: double.infinity,
-                height: 280,
-                fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) => Container(
-                  height: 280,
-                  color: Colors.grey[900],
-                  child: const Icon(Icons.music_note, size: 80, color: Colors.white70),
-                ),
-              ),
-            ),
-            const SizedBox(height: 24),
-            Text(
-              item.title,
-              textAlign: TextAlign.center,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 8),
-            Text(item.author, style: const TextStyle(color: Colors.grey)),
-            const SizedBox(height: 32),
-            if (player.isLoading)
-              const CircularProgressIndicator()
-            else if (player.errorMessage != null)
-              Padding(
-                padding: const EdgeInsets.all(8.0),
-                child: Text(player.errorMessage!, style: const TextStyle(color: Colors.redAccent), textAlign: TextAlign.center),
-              )
-            else
-              IconButton(
-                icon: Icon(player.isPlaying ? Icons.pause_circle_filled : Icons.play_circle_filled, size: 72, color: Colors.deepPurple),
-                onPressed: player.togglePlayPause,
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class VaultTab extends StatelessWidget {
-  const VaultTab({super.key});
-  @override
-  Widget build(BuildContext context) => const Scaffold(body: Center(child: Text('Bóveda')));
-}
-
-class SettingsTab extends StatelessWidget {
-  const SettingsTab({super.key});
-  @override
-  Widget build(BuildContext context) => const Scaffold(body: Center(child: Text('Ajustes')));
 }
