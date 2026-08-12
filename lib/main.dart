@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
-import 'package:audioplayers/audioplayers.dart';
 
 void main() {
   runApp(const MediaApp());
@@ -33,20 +32,14 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   final TextEditingController _searchController = TextEditingController();
-  final AudioPlayer _audioPlayer = AudioPlayer();
-
   List<dynamic> _tracks = [];
   bool _isLoading = false;
-  String? _currentlyPlayingUrl;
-  bool _isPlaying = false;
 
-  // IMPORTANTE: Reemplaza con tu Client ID de Jamendo si tienes uno propio
-  final String _clientId = '5672a80f'; 
+  final String _clientId = '5672a80f';
 
   @override
   void initState() {
     super.initState();
-    // Carga inicial de canciones populares
     _searchTracks('rock');
   }
 
@@ -80,26 +73,6 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  Future<void> _playAudio(String audioUrl) async {
-    try {
-      if (_currentlyPlayingUrl == audioUrl && _isPlaying) {
-        await _audioPlayer.pause();
-        setState(() {
-          _isPlaying = false;
-        });
-      } else {
-        await _audioPlayer.stop();
-        await _audioPlayer.play(UrlSource(audioUrl));
-        setState(() {
-          _currentlyPlayingUrl = audioUrl;
-          _isPlaying = true;
-        });
-      }
-    } catch (e) {
-      _showSnackBar('No se pudo reproducir el audio');
-    }
-  }
-
   void _showSnackBar(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(message)),
@@ -109,7 +82,6 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void dispose() {
     _searchController.dispose();
-    _audioPlayer.dispose();
     super.dispose();
   }
 
@@ -123,7 +95,6 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
       body: Column(
         children: [
-          // Barra de Búsqueda
           Padding(
             padding: const EdgeInsets.all(12.0),
             child: TextField(
@@ -145,8 +116,6 @@ class _HomeScreenState extends State<HomeScreen> {
               onSubmitted: (value) => _searchTracks(value),
             ),
           ),
-
-          // Indicador de Carga o Lista de Canciones
           Expanded(
             child: _isLoading
                 ? const Center(child: CircularProgressIndicator(color: Colors.purpleAccent))
@@ -156,8 +125,6 @@ class _HomeScreenState extends State<HomeScreen> {
                         itemCount: _tracks.length,
                         itemBuilder: (context, index) {
                           final track = _tracks[index];
-                          final audioUrl = track['audio'];
-                          final isCurrent = _currentlyPlayingUrl == audioUrl;
 
                           return Card(
                             color: const Color(0xFF1E1E1E),
@@ -185,15 +152,9 @@ class _HomeScreenState extends State<HomeScreen> {
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                               ),
-                              trailing: IconButton(
-                                icon: Icon(
-                                  (isCurrent && _isPlaying)
-                                      ? Icons.pause_circle_filled
-                                      : Icons.play_circle_fill,
-                                  color: Colors.purpleAccent,
-                                  size: 36,
-                                ),
-                                onPressed: () => _playAudio(audioUrl),
+                              trailing: const Icon(
+                                Icons.music_note,
+                                color: Colors.purpleAccent,
                               ),
                             ),
                           );
