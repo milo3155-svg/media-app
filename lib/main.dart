@@ -117,8 +117,21 @@ class YMusicPlayerProvider extends ChangeNotifier {
         throw Exception("URL de audio vacía");
       }
 
+      // --- WATCHDOG: Forzar error si carga > 8 segundos ---
+      bool loadFinished = false;
+      Future.delayed(const Duration(seconds: 8), () {
+        if (!loadFinished && _isLoading) {
+          _errorMessage = "El servidor tardó demasiado. Intenta otra canción.";
+          _isLoading = false;
+          _player.stop();
+          notifyListeners();
+        }
+      });
+      // ----------------------------------------------------
+
       await _player.setUrl(audioUrl);
       _player.play();
+      loadFinished = true;
     } catch (e) {
       _isLoading = false;
       _errorMessage = "Fallo al cargar: ${e.toString()}";
@@ -135,8 +148,8 @@ class YMusicPlayerProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> stop() async {
-    await _player.stop();
+  void stop() {
+    _player.stop();
     _currentItem = null;
     _errorMessage = null;
     notifyListeners();
@@ -150,7 +163,7 @@ class YMusicPlayerProvider extends ChangeNotifier {
 }
 
 // ==========================================
-// ESTRUCTURA PRINCIPAL Y VISTAS
+// ESTRUCTURA PRINCIPAL
 // ==========================================
 class VaultProvider extends ChangeNotifier {
   final List<MediaItemModel> _favorites = [];
