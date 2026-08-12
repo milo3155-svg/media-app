@@ -50,7 +50,7 @@ class MediaItemModel {
 }
 
 // ==========================================
-// GESTOR DE REPRODUCCIÓN Y DIAGNÓSTICO
+// GESTOR DE REPRODUCCIÓN
 // ==========================================
 class YMusicPlayerProvider extends ChangeNotifier {
   final AudioPlayer _player = AudioPlayer();
@@ -117,7 +117,7 @@ class YMusicPlayerProvider extends ChangeNotifier {
         throw Exception("URL de audio vacía");
       }
 
-      // --- WATCHDOG: Forzar error si carga > 8 segundos ---
+      // Watchdog de 8 segundos
       bool loadFinished = false;
       Future.delayed(const Duration(seconds: 8), () {
         if (!loadFinished && _isLoading) {
@@ -127,9 +127,16 @@ class YMusicPlayerProvider extends ChangeNotifier {
           notifyListeners();
         }
       });
-      // ----------------------------------------------------
 
-      await _player.setUrl(audioUrl);
+      // Reproducción con headers (Disfraz de navegador)
+      await _player.setUrl(
+        audioUrl,
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
+          'Referer': 'https://www.jamendo.com/',
+        },
+      );
+      
       _player.play();
       loadFinished = true;
     } catch (e) {
@@ -163,7 +170,7 @@ class YMusicPlayerProvider extends ChangeNotifier {
 }
 
 // ==========================================
-// ESTRUCTURA PRINCIPAL
+// VISTAS Y NAVEGACIÓN
 // ==========================================
 class VaultProvider extends ChangeNotifier {
   final List<MediaItemModel> _favorites = [];
