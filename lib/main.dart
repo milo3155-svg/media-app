@@ -1,4 +1,4 @@
-import 'dart0:convert';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:just_audio/just_audio.dart';
@@ -8,7 +8,6 @@ import 'package:http/http.dart' as http;
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   
-  // Inicialización segura del servicio en segundo plano
   try {
     await JustAudioBackground.init(
       androidNotificationChannelId: 'com.example.media_app.channel.audio',
