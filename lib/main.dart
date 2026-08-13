@@ -13,56 +13,270 @@ class MediaApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'iTunes Music',
+      title: 'Media App',
       debugShowCheckedModeBanner: false,
       theme: ThemeData.dark().copyWith(
         scaffoldBackgroundColor: const Color(0xFF121212),
-        primaryColor: Colors.deepPurple,
+        primaryColor: Colors.purpleAccent,
+        colorScheme: const ColorScheme.dark(
+          primary: Colors.purpleAccent,
+          secondary: Colors.purpleAccent,
+        ),
       ),
-      home: const HomeScreen(),
+      home: const MainScreen(),
     );
   }
 }
 
-class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key});
+class MainScreen extends StatefulWidget {
+  const MainScreen({super.key});
 
   @override
-  State<HomeScreen> createState() => _HomeScreenState();
+  State<MainScreen> createState() => _MainScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
-  final TextEditingController _searchController = TextEditingController();
+class _MainScreenState extends State<MainScreen> {
+  int _currentIndex = 0;
   final AudioPlayer _player = AudioPlayer();
-  List<dynamic> _tracks = [];
-  bool _isLoading = false;
-  String? _currentPlayingUrl;
+
+  // Estado del reproductor
+  Map<String, dynamic>? _currentTrack;
   bool _isPlaying = false;
+  Duration _position = Duration.zero;
+  Duration _duration = Duration.zero;
 
   @override
   void initState() {
     super.initState();
-    _searchTracks('nirvana');
 
+    // Escuchar el estado de reproducción
     _player.playerStateStream.listen((state) {
       if (mounted) {
         setState(() {
           _isPlaying = state.playing;
           if (state.processingState == ProcessingState.completed) {
             _isPlaying = false;
-            _currentPlayingUrl = null;
+            _position = Duration.zero;
           }
+        });
+      }
+    });
+
+    // Escuchar la posición actual de la canción
+    _player.positionStream.listen((pos) {
+      if (mounted) {
+        setState(() {
+          _position = pos;
+        });
+      }
+    });
+
+    // Escuchar la duración total del audio
+    _player.durationStream.listen((dur) {
+      if (mounted) {
+        setState(() {
+          _duration = dur ?? Duration.zero;
         });
       }
     });
   }
 
+  Future<void> _playTrack(Map<String, dynamic> track) async {
+    final previewUrl = track['previewUrl'] ?? '';
+    if (previewUrl.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Sin vista previa de audio')),
+      );
+      return;
+    }
+
+    try {
+      if (_currentTrack?['previewUrl'] == previewUrl) {
+        if (_isPlaying) {
+          await _player.pause();
+        } else {
+          await _player.play();
+        }
+      } else {
+        setState(() {
+          _currentTrack = track;
+        });
+        await _player.setUrl(previewUrl);
+        await _player.play();
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Error al reproducir audio')),
+      );
+    }
+  }
+
+  @override
+  void dispose() {
+    _player.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final List<Widget> pages = [
+      SearchTab(
+        onTrackSelected: _playTrack,
+        currentTrackUrl: _currentTrack?['previewUrl'],
+        isPlaying: _isPlaying,
+      ),
+      const FavoritesTab(),
+    ];
+
+    return Scaffold(
+      body: Column(
+        children: [
+          Expanded(child: pages[_currentIndex]),
+          if (_currentTrack != null) _buildMiniPlayer(),
+        ],
+      ),
+      bottomNavigationBar: BottomNavigationBar(
+        currentIndex: _currentIndex,
+        onTap: (index) => setState(() => _currentIndex = index),
+        selectedItemColor: Colors.purpleAccent,
+        unselectedItemColor: Colors.grey,
+        backgroundColor: const Color(0xFF1F1F1F),
+        items: const [
+          BottomNavigationBarItem(
+            icon: Icon(Icons.search),
+            label: 'Buscar',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.favorite),
+            label: 'Favoritos',
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Reproductor inferior flotante
+  Widget _buildMiniPlayer() {
+    final double maxSeconds = _duration.inSeconds > 0 ? _duration.inSeconds.toDouble() : 1.0;
+    final double currentSeconds = _position.inSeconds.toDouble().clamp(0.0, maxSeconds);
+
+    return Container(
+      color: const Color(0xFF222222),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Barra de progreso desizable
+          SliderTheme(
+            data: SliderTheme.of(context).copyWith(
+              trackHeight: 3.0,
+              thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6.0),
+              overlayShape: const RoundSliderOverlayShape(overlayRadius: 12.0),
+              activeTrackColor: Colors.purpleAccent,
+              inactiveTrackColor: Colors.grey[800],
+              thumbColor: Colors.purpleAccent,
+            ),
+            child: Slider(
+              value: currentSeconds,
+              min: 0.0,
+              max: maxSeconds,
+              onChanged: (value) {
+                _player.seek(Duration(seconds: value.toInt()));
+              },
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 4.0),
+            child: Row(
+              children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(6.0),
+                  child: Image.network(
+                    _currentTrack?['artworkUrl100'] ?? '',
+                    width: 45,
+                    height: 45,
+                    fit: BoxFit.cover,
+                    errorBuilder: (c, o, s) => const Icon(Icons.music_note, size: 30),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        _currentTrack?['trackName'] ?? 'Sin título',
+                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      Text(
+                        _currentTrack?['artistName'] ?? 'Artista desconocido',
+                        style: const TextStyle(color: Colors.grey, fontSize: 12),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ),
+                ),
+                Text(
+                  '${_formatDuration(_position)} / ${_formatDuration(_duration)}',
+                  style: const TextStyle(color: Colors.grey, fontSize: 10),
+                ),
+                IconButton(
+                  icon: Icon(
+                    _isPlaying ? Icons.pause_circle_filled : Icons.play_circle_fill,
+                    color: Colors.purpleAccent,
+                    size: 36,
+                  ),
+                  onPressed: () => _playTrack(_currentTrack!),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _formatDuration(Duration duration) {
+    String twoDigits(int n) => n.toString().padLeft(2, '0');
+    final minutes = twoDigits(duration.inMinutes.remainder(60));
+    final seconds = twoDigits(duration.inSeconds.remainder(60));
+    return '$minutes:$seconds';
+  }
+}
+
+// Pestana de Búsqueda
+class SearchTab extends StatefulWidget {
+  final Function(Map<String, dynamic>) onTrackSelected;
+  final String? currentTrackUrl;
+  final bool isPlaying;
+
+  const SearchTab({
+    super.key,
+    required this.onTrackSelected,
+    this.currentTrackUrl,
+    required this.isPlaying,
+  });
+
+  @override
+  State<SearchTab> createState() => _SearchTabState();
+}
+
+class _SearchTabState extends State<SearchTab> {
+  final TextEditingController _searchController = TextEditingController();
+  List<dynamic> _tracks = [];
+  bool _isLoading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _searchTracks('rock');
+  }
+
   Future<void> _searchTracks(String query) async {
     if (query.trim().isEmpty) return;
-
-    setState(() {
-      _isLoading = true;
-    });
+    setState(() => _isLoading = true);
 
     final url = Uri.parse(
       'https://itunes.apple.com/search?term=${Uri.encodeComponent(query)}&media=music&limit=25',
@@ -75,57 +289,19 @@ class _HomeScreenState extends State<HomeScreen> {
         setState(() {
           _tracks = data['results'] ?? [];
         });
-      } else {
-        _showSnackBar('Error de servidor: ${response.statusCode}');
       }
     } catch (e) {
-      _showSnackBar('Error de conexión');
+      // Manejar error silenciosamente
     } finally {
-      setState(() {
-        _isLoading = false;
-      });
+      setState(() => _isLoading = false);
     }
-  }
-
-  Future<void> _togglePlay(String audioUrl) async {
-    if (audioUrl.isEmpty) {
-      _showSnackBar('No hay vista previa de audio');
-      return;
-    }
-
-    try {
-      if (_currentPlayingUrl == audioUrl && _isPlaying) {
-        await _player.pause();
-      } else {
-        if (_currentPlayingUrl != audioUrl) {
-          await _player.setUrl(audioUrl);
-          _currentPlayingUrl = audioUrl;
-        }
-        await _player.play();
-      }
-    } catch (e) {
-      _showSnackBar('Error al reproducir audio');
-    }
-  }
-
-  void _showSnackBar(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
-    );
-  }
-
-  @override
-  void dispose() {
-    _player.dispose();
-    _searchController.dispose();
-    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('iTunes Music'),
+        title: const Text('Media App - iTunes'),
         centerTitle: true,
         backgroundColor: const Color(0xFF1F1F1F),
       ),
@@ -162,7 +338,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         itemBuilder: (context, index) {
                           final track = _tracks[index];
                           final previewUrl = track['previewUrl'] ?? '';
-                          final isThisPlaying = _currentPlayingUrl == previewUrl && _isPlaying;
+                          final isSelected = widget.currentTrackUrl == previewUrl && widget.isPlaying;
 
                           return Card(
                             color: const Color(0xFF1E1E1E),
@@ -175,8 +351,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                   width: 50,
                                   height: 50,
                                   fit: BoxFit.cover,
-                                  errorBuilder: (context, error, stackTrace) =>
-                                      const Icon(Icons.music_note, size: 40),
+                                  errorBuilder: (c, o, s) => const Icon(Icons.music_note, size: 40),
                                 ),
                               ),
                               title: Text(
@@ -192,11 +367,11 @@ class _HomeScreenState extends State<HomeScreen> {
                               ),
                               trailing: IconButton(
                                 icon: Icon(
-                                  isThisPlaying ? Icons.pause_circle_filled : Icons.play_circle_fill,
+                                  isSelected ? Icons.pause_circle_filled : Icons.play_circle_fill,
                                   color: Colors.purpleAccent,
-                                  size: 38,
+                                  size: 36,
                                 ),
-                                onPressed: () => _togglePlay(previewUrl),
+                                onPressed: () => widget.onTrackSelected(track),
                               ),
                             ),
                           );
@@ -204,6 +379,28 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+// Pestaña de Favoritos (Estructura lista para el siguiente paso)
+class FavoritesTab extends StatelessWidget {
+  const FavoritesTab({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Favoritos'),
+        centerTitle: true,
+        backgroundColor: const Color(0xFF1F1F1F),
+      ),
+      body: const Center(
+        child: Text(
+          'Aún no has agregado canciones a tus favoritos.',
+          style: TextStyle(color: Colors.grey),
+        ),
       ),
     );
   }
