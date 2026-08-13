@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'dart:io';
 import 'package:just_audio/just_audio.dart';
 import 'package:dio/dio.dart';
 import 'package:path_provider/path_provider.dart';
@@ -27,7 +28,6 @@ class _MediaAppState extends State<MediaApp> {
     _loadSavedColor();
   }
 
-  // Cargar el color de tema guardado
   Future<void> _loadSavedColor() async {
     final prefs = await SharedPreferences.getInstance();
     final colorValue = prefs.getInt('theme_color');
@@ -38,7 +38,6 @@ class _MediaAppState extends State<MediaApp> {
     }
   }
 
-  // Cambiar y guardar el color de tema
   Future<void> _changeThemeColor(Color color) async {
     setState(() {
       _primaryColor = color;
@@ -126,7 +125,6 @@ class _MainScreenState extends State<MainScreen> {
     });
   }
 
-  // Cargar datos locales de SharedPreferences
   Future<void> _loadSavedData() async {
     final prefs = await SharedPreferences.getInstance();
     final favString = prefs.getString('saved_favorites');
@@ -145,7 +143,6 @@ class _MainScreenState extends State<MainScreen> {
     }
   }
 
-  // Guardar datos locales
   Future<void> _saveLocalData() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('saved_favorites', json.encode(_favorites));
@@ -273,6 +270,37 @@ class _MainScreenState extends State<MainScreen> {
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Error al descargar')),
+      );
+    }
+  }
+
+  // Función para eliminar archivo local y quitarlo de la lista
+  Future<void> _deleteDownloadedTrack(Map<String, dynamic> track) async {
+    try {
+      final localPath = track['localPath'];
+      if (localPath != null) {
+        final file = File(localPath);
+        if (await file.exists()) {
+          await file.delete();
+        }
+      }
+
+      setState(() {
+        _downloadedTracks.removeWhere((t) => t['localPath'] == track['localPath']);
+        if (_currentTrack?['localPath'] == track['localPath']) {
+          _audioPlayer.stop();
+          _currentTrack = null;
+        }
+      });
+
+      await _saveLocalData();
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Canción eliminada del dispositivo 🗑️')),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Error al eliminar el archivo')),
       );
     }
   }
@@ -487,6 +515,7 @@ class _MainScreenState extends State<MainScreen> {
         onTrackSelected: (track, playlist, index) => _playTrack(track, playlist: playlist, index: index),
         currentTrackPath: _currentTrack?['localPath'],
         isPlaying: _isPlaying,
+        onDelete: _deleteDownloadedTrack,
       ),
     ];
 
@@ -889,6 +918,7 @@ class DownloadsTab extends StatelessWidget {
   final Function(Map<String, dynamic>, List<dynamic>, int) onTrackSelected;
   final String? currentTrackPath;
   final bool isPlaying;
+  final Function(Map<String, dynamic>) onDelete;
 
   const DownloadsTab({
     super.key,
@@ -897,6 +927,7 @@ class DownloadsTab extends StatelessWidget {
     required this.onTrackSelected,
     this.currentTrackPath,
     required this.isPlaying,
+    required this.onDelete,
   });
 
   @override
@@ -939,13 +970,22 @@ class DownloadsTab extends StatelessWidget {
               overflow: TextOverflow.ellipsis,
             ),
             subtitle: const Text('Descargado (Offline)', style: TextStyle(color: Colors.greenAccent, fontSize: 11)),
-            trailing: IconButton(
-              icon: Icon(
-                isSelected ? Icons.pause_circle_filled : Icons.play_circle_fill,
-                color: primaryColor,
-                size: 32,
-              ),
-              onPressed: () => onTrackSelected(track, downloadedTracks, index),
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.delete_outline, color: Colors.grey, size: 20),
+                  onPressed: () => onDelete(track),
+                ),
+                IconButton(
+                  icon: Icon(
+                    isSelected ? Icons.pause_circle_filled : Icons.play_circle_fill,
+                    color: primaryColor,
+                    size: 32,
+                  ),
+                  onPressed: () => onTrackSelected(track, downloadedTracks, index),
+                ),
+              ],
             ),
           ),
         );
