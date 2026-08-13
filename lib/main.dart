@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'dart:io';
 import 'package:just_audio/just_audio.dart';
+import 'package:dio/dio.dart';
+import 'package:path_provider/path_provider.dart';
 
 void main() {
   runApp(const MediaApp());
@@ -39,13 +42,11 @@ class _MainScreenState extends State<MainScreen> {
   int _currentIndex = 0;
   final AudioPlayer _player = AudioPlayer();
 
-  // Lista de Favoritos guardada en memoria
   final List<Map<String, dynamic>> _favorites = [];
+  final List<Map<String, dynamic>> _downloadedTracks = [];
+  List<dynamic> _currentPlaylist = [];
+  int _currentTrackIndex = -1;
 
-  // Calidad de Audio (Alta / Ahorro)
-  String _audioQuality = 'Alta';
-
-  // Estado del reproductor
   Map<String, dynamic>? _currentTrack;
   bool _isPlaying = false;
   Duration _position = Duration.zero;
@@ -62,6 +63,7 @@ class _MainScreenState extends State<MainScreen> {
           if (state.processingState == ProcessingState.completed) {
             _isPlaying = false;
             _position = Duration.zero;
+            _playNextTrack(); // Reproducción automática
           }
         });
       }
@@ -69,32 +71,35 @@ class _MainScreenState extends State<MainScreen> {
 
     _player.positionStream.listen((pos) {
       if (mounted) {
-        setState(() {
-          _position = pos;
-        });
+        setState(() => _position = pos);
       }
     });
 
     _player.durationStream.listen((dur) {
       if (mounted) {
-        setState(() {
-          _duration = dur ?? Duration.zero;
-        });
+        setState(() => _duration = dur ?? Duration.zero);
       }
     });
   }
 
-  Future<void> _playTrack(Map<String, dynamic> track) async {
-    final previewUrl = track['previewUrl'] ?? '';
-    if (previewUrl.isEmpty) {
+  Future<void> _playTrack(Map<String, dynamic> track, {List<dynamic>? playlist, int? index}) async {
+    if (playlist != null) {
+      _currentPlaylist = playlist;
+    }
+    if (index != null) {
+      _currentTrackIndex = index;
+    }
+
+    final audioUrl = track['localPath'] ?? track['previewUrl'] ?? '';
+    if (audioUrl.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Sin vista previa de audio')),
+        const SnackBar(content: Text('Sin audio disponible')),
       );
       return;
     }
 
     try {
-      if (_currentTrack?['previewUrl'] == previewUrl) {
+      if (_currentTrack?['previewUrl'] == track['previewUrl'] && _currentTrack?['localPath'] == track['localPath']) {
         if (_isPlaying) {
           await _player.pause();
         } else {
@@ -104,7 +109,12 @@ class _MainScreenState extends State<MainScreen> {
         setState(() {
           _currentTrack = track;
         });
-        await _player.setUrl(previewUrl);
+
+        if (track['localPath'] != null) {
+          await _player.setFilePath(track['localPath']);
+        } else {
+          await _player.setUrl(audioUrl);
+        }
         await _player.play();
       }
     } catch (e) {
@@ -114,20 +124,28 @@ class _MainScreenState extends State<MainScreen> {
     }
   }
 
+  void _playNextTrack() {
+    if (_currentPlaylist.isNotEmpty && _currentTrackIndex < _currentPlaylist.length - 1) {
+      _currentTrackIndex++;
+      _playTrack(_currentPlaylist[_currentTrackIndex], index: _currentTrackIndex);
+    }
+  }
+
+  void _playPreviousTrack() {
+    if (_currentPlaylist.isNotEmpty && _currentTrackIndex > 0) {
+      _currentTrackIndex--;
+      _playTrack(_currentPlaylist[_currentTrackIndex], index: _currentTrackIndex);
+    }
+  }
+
   void _toggleFavorite(Map<String, dynamic> track) {
     final trackId = track['trackId'] ?? track['previewUrl'];
     setState(() {
       final exists = _favorites.any((t) => (t['trackId'] ?? t['previewUrl']) == trackId);
       if (exists) {
         _favorites.removeWhere((t) => (t['trackId'] ?? t['previewUrl']) == trackId);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Removido de Favoritos')),
-        );
       } else {
         _favorites.add(track);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Agregado a Favoritos ❤️')),
-        );
       }
     });
   }
@@ -137,14 +155,35 @@ class _MainScreenState extends State<MainScreen> {
     return _favorites.any((t) => (t['trackId'] ?? t['previewUrl']) == trackId);
   }
 
-  void _seekRelative(int seconds) {
-    final newPosition = _position + Duration(seconds: seconds);
-    if (newPosition < Duration.zero) {
-      _player.seek(Duration.zero);
-    } else if (newPosition > _duration) {
-      _player.seek(_duration);
-    } else {
-      _player.seek(newPosition);
+  Future<void> _downloadTrack(Map<String, dynamic> track) async {
+    final url = track['previewUrl'];
+    if (url == null || url.isEmpty) return;
+
+    try {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Descargando canción...')),
+      );
+
+      final dir = await getApplicationDocumentsDirectory();
+      final fileName = '${track['trackId'] ?? DateTime.now().millisecondsSinceEpoch}.m4a';
+      final filePath = '${dir.path}/$fileName';
+
+      await Dio().download(url, filePath);
+
+      final downloadedTrack = Map<String, dynamic>.from(track);
+      downloadedTrack['localPath'] = filePath;
+
+      setState(() {
+        _downloadedTracks.add(downloadedTrack);
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('¡Descarga completada! 📥')),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Error al descargar')),
+      );
     }
   }
 
@@ -158,61 +197,39 @@ class _MainScreenState extends State<MainScreen> {
   Widget build(BuildContext context) {
     final List<Widget> pages = [
       SearchTab(
-        onTrackSelected: _playTrack,
+        onTrackSelected: (track, playlist, index) => _playTrack(track, playlist: playlist, index: index),
         currentTrackUrl: _currentTrack?['previewUrl'],
         isPlaying: _isPlaying,
         onToggleFavorite: _toggleFavorite,
         isFavorite: _isFavorite,
+        onDownload: _downloadTrack,
       ),
       FavoritesTab(
         favorites: _favorites,
-        onTrackSelected: _playTrack,
+        onTrackSelected: (track, playlist, index) => _playTrack(track, playlist: playlist, index: index),
         currentTrackUrl: _currentTrack?['previewUrl'],
         isPlaying: _isPlaying,
         onToggleFavorite: _toggleFavorite,
+      ),
+      DownloadsTab(
+        downloadedTracks: _downloadedTracks,
+        onTrackSelected: (track, playlist, index) => _playTrack(track, playlist: playlist, index: index),
+        currentTrackPath: _currentTrack?['localPath'],
+        isPlaying: _isPlaying,
       ),
     ];
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(_currentIndex == 0 ? 'Media App - Música' : 'Tus Favoritos'),
+        title: Text(
+          _currentIndex == 0
+              ? 'Media App - Música'
+              : _currentIndex == 1
+                  ? 'Tus Favoritos'
+                  : 'Descargas Offline',
+        ),
         centerTitle: true,
         backgroundColor: const Color(0xFF1F1F1F),
-        actions: [
-          PopupMenuButton<String>(
-            icon: const Icon(Icons.settings, color: Colors.purpleAccent),
-            onSelected: (val) {
-              setState(() {
-                _audioQuality = val;
-              });
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text('Calidad de audio ajustada a: $val')),
-              );
-            },
-            itemBuilder: (context) => [
-              PopupMenuItem(
-                value: 'Alta (HQ)',
-                child: Row(
-                  children: [
-                    Icon(Icons.high_quality, color: _audioQuality == 'Alta (HQ)' ? Colors.purpleAccent : Colors.grey),
-                    const SizedBox(width: 8),
-                    const Text('Alta Calidad (320kbps)'),
-                  ],
-                ),
-              ),
-              PopupMenuItem(
-                value: 'Ahorro de datos',
-                child: Row(
-                  children: [
-                    Icon(Icons.data_saver_on, color: _audioQuality == 'Ahorro de datos' ? Colors.purpleAccent : Colors.grey),
-                    const SizedBox(width: 8),
-                    const Text('Ahorro de Datos (128kbps)'),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ],
       ),
       body: Column(
         children: [
@@ -227,10 +244,7 @@ class _MainScreenState extends State<MainScreen> {
         unselectedItemColor: Colors.grey,
         backgroundColor: const Color(0xFF1F1F1F),
         items: [
-          const BottomNavigationBarItem(
-            icon: Icon(Icons.search),
-            label: 'Buscar',
-          ),
+          const BottomNavigationBarItem(icon: Icon(Icons.search), label: 'Buscar'),
           BottomNavigationBarItem(
             icon: Icon(
               _favorites.isNotEmpty ? Icons.favorite : Icons.favorite_border,
@@ -238,16 +252,18 @@ class _MainScreenState extends State<MainScreen> {
             ),
             label: 'Favoritos (${_favorites.length})',
           ),
+          BottomNavigationBarItem(
+            icon: const Icon(Icons.download_done_rounded),
+            label: 'Offline (${_downloadedTracks.length})',
+          ),
         ],
       ),
     );
   }
 
-  // Reproductor Flotante Completo con Controles +10s / -10s
   Widget _buildMiniPlayer() {
     final double maxSeconds = _duration.inSeconds > 0 ? _duration.inSeconds.toDouble() : 1.0;
     final double currentSeconds = _position.inSeconds.toDouble().clamp(0.0, maxSeconds);
-    final isFav = _isFavorite(_currentTrack!);
 
     return Container(
       color: const Color(0xFF222222),
@@ -258,7 +274,6 @@ class _MainScreenState extends State<MainScreen> {
             data: SliderTheme.of(context).copyWith(
               trackHeight: 3.0,
               thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6.0),
-              overlayShape: const RoundSliderOverlayShape(overlayRadius: 12.0),
               activeTrackColor: Colors.purpleAccent,
               inactiveTrackColor: Colors.grey[800],
               thumbColor: Colors.purpleAccent,
@@ -267,21 +282,19 @@ class _MainScreenState extends State<MainScreen> {
               value: currentSeconds,
               min: 0.0,
               max: maxSeconds,
-              onChanged: (value) {
-                _player.seek(Duration(seconds: value.toInt()));
-              },
+              onChanged: (value) => _player.seek(Duration(seconds: value.toInt())),
             ),
           ),
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 10.0, vertical: 4.0),
+            padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 2.0),
             child: Row(
               children: [
                 ClipRRect(
                   borderRadius: BorderRadius.circular(6.0),
                   child: Image.network(
                     _currentTrack?['artworkUrl100'] ?? '',
-                    width: 45,
-                    height: 45,
+                    width: 40,
+                    height: 40,
                     fit: BoxFit.cover,
                     errorBuilder: (c, o, s) => const Icon(Icons.music_note, size: 30),
                   ),
@@ -293,25 +306,25 @@ class _MainScreenState extends State<MainScreen> {
                     children: [
                       Text(
                         _currentTrack?['trackName'] ?? 'Sin título',
-                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
                       Text(
                         _currentTrack?['artistName'] ?? 'Artista desconocido',
-                        style: const TextStyle(color: Colors.grey, fontSize: 11),
+                        style: const TextStyle(color: Colors.grey, fontSize: 10),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
                     ],
                   ),
                 ),
-                // Botón -10s
+                // Botón Anterior ⏮️
                 IconButton(
-                  icon: const Icon(Icons.replay_10, color: Colors.white, size: 24),
-                  onPressed: () => _seekRelative(-10),
+                  icon: const Icon(Icons.skip_previous, color: Colors.white, size: 26),
+                  onPressed: _playPreviousTrack,
                 ),
-                // Play / Pausa
+                // Play / Pausa ⏯️
                 IconButton(
                   icon: Icon(
                     _isPlaying ? Icons.pause_circle_filled : Icons.play_circle_fill,
@@ -320,19 +333,10 @@ class _MainScreenState extends State<MainScreen> {
                   ),
                   onPressed: () => _playTrack(_currentTrack!),
                 ),
-                // Botón +10s
+                // Botón Siguiente ⏭️
                 IconButton(
-                  icon: const Icon(Icons.forward_10, color: Colors.white, size: 24),
-                  onPressed: () => _seekRelative(10),
-                ),
-                // Botón Favorito en mini player
-                IconButton(
-                  icon: Icon(
-                    isFav ? Icons.favorite : Icons.favorite_border,
-                    color: isFav ? Colors.redAccent : Colors.grey,
-                    size: 22,
-                  ),
-                  onPressed: () => _toggleFavorite(_currentTrack!),
+                  icon: const Icon(Icons.skip_next, color: Colors.white, size: 26),
+                  onPressed: _playNextTrack,
                 ),
               ],
             ),
@@ -343,13 +347,14 @@ class _MainScreenState extends State<MainScreen> {
   }
 }
 
-// Pestaña de Búsqueda
+// Búsqueda
 class SearchTab extends StatefulWidget {
-  final Function(Map<String, dynamic>) onTrackSelected;
+  final Function(Map<String, dynamic>, List<dynamic>, int) onTrackSelected;
   final String? currentTrackUrl;
   final bool isPlaying;
   final Function(Map<String, dynamic>) onToggleFavorite;
   final bool Function(Map<String, dynamic>) isFavorite;
+  final Function(Map<String, dynamic>) onDownload;
 
   const SearchTab({
     super.key,
@@ -358,6 +363,7 @@ class SearchTab extends StatefulWidget {
     required this.isPlaying,
     required this.onToggleFavorite,
     required this.isFavorite,
+    required this.onDownload,
   });
 
   @override
@@ -444,10 +450,10 @@ class _SearchTabState extends State<SearchTab> {
                               borderRadius: BorderRadius.circular(8.0),
                               child: Image.network(
                                 track['artworkUrl100'] ?? '',
-                                width: 50,
-                                height: 50,
+                                width: 45,
+                                height: 45,
                                 fit: BoxFit.cover,
-                                errorBuilder: (c, o, s) => const Icon(Icons.music_note, size: 40),
+                                errorBuilder: (c, o, s) => const Icon(Icons.music_note, size: 30),
                               ),
                             ),
                             title: Text(
@@ -465,9 +471,14 @@ class _SearchTabState extends State<SearchTab> {
                               mainAxisSize: MainAxisSize.min,
                               children: [
                                 IconButton(
+                                  icon: const Icon(Icons.download, color: Colors.grey, size: 22),
+                                  onPressed: () => widget.onDownload(track),
+                                ),
+                                IconButton(
                                   icon: Icon(
                                     isFav ? Icons.favorite : Icons.favorite_border,
                                     color: isFav ? Colors.redAccent : Colors.grey,
+                                    size: 22,
                                   ),
                                   onPressed: () => widget.onToggleFavorite(track),
                                 ),
@@ -475,9 +486,9 @@ class _SearchTabState extends State<SearchTab> {
                                   icon: Icon(
                                     isSelected ? Icons.pause_circle_filled : Icons.play_circle_fill,
                                     color: Colors.purpleAccent,
-                                    size: 34,
+                                    size: 32,
                                   ),
-                                  onPressed: () => widget.onTrackSelected(track),
+                                  onPressed: () => widget.onTrackSelected(track, _tracks, index),
                                 ),
                               ],
                             ),
@@ -491,10 +502,10 @@ class _SearchTabState extends State<SearchTab> {
   }
 }
 
-// Pestaña de Favoritos
+// Favoritos
 class FavoritesTab extends StatelessWidget {
   final List<Map<String, dynamic>> favorites;
-  final Function(Map<String, dynamic>) onTrackSelected;
+  final Function(Map<String, dynamic>, List<dynamic>, int) onTrackSelected;
   final String? currentTrackUrl;
   final bool isPlaying;
   final Function(Map<String, dynamic>) onToggleFavorite;
@@ -513,8 +524,7 @@ class FavoritesTab extends StatelessWidget {
     if (favorites.isEmpty) {
       return const Center(
         child: Text(
-          'Aún no has agregado canciones a tus favoritos.\nToca el ❤️ en cualquier canción.',
-          textAlign: TextAlign.center,
+          'Aún no has agregado canciones a favoritos.',
           style: TextStyle(color: Colors.grey),
         ),
       );
@@ -535,10 +545,10 @@ class FavoritesTab extends StatelessWidget {
               borderRadius: BorderRadius.circular(8.0),
               child: Image.network(
                 track['artworkUrl100'] ?? '',
-                width: 50,
-                height: 50,
+                width: 45,
+                height: 45,
                 fit: BoxFit.cover,
-                errorBuilder: (c, o, s) => const Icon(Icons.music_note, size: 40),
+                errorBuilder: (c, o, s) => const Icon(Icons.music_note, size: 30),
               ),
             ),
             title: Text(
@@ -556,18 +566,88 @@ class FavoritesTab extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 IconButton(
-                  icon: const Icon(Icons.favorite, color: Colors.redAccent),
+                  icon: const Icon(Icons.favorite, color: Colors.redAccent, size: 22),
                   onPressed: () => onToggleFavorite(track),
                 ),
                 IconButton(
                   icon: Icon(
                     isSelected ? Icons.pause_circle_filled : Icons.play_circle_fill,
                     color: Colors.purpleAccent,
-                    size: 34,
+                    size: 32,
                   ),
-                  onPressed: () => onTrackSelected(track),
+                  onPressed: () => onTrackSelected(track, favorites, index),
                 ),
               ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+// Descargas Offline
+class DownloadsTab extends StatelessWidget {
+  final List<Map<String, dynamic>> downloadedTracks;
+  final Function(Map<String, dynamic>, List<dynamic>, int) onTrackSelected;
+  final String? currentTrackPath;
+  final bool isPlaying;
+
+  const DownloadsTab({
+    super.key,
+    required this.downloadedTracks,
+    required this.onTrackSelected,
+    this.currentTrackPath,
+    required this.isPlaying,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (downloadedTracks.isEmpty) {
+      return const Center(
+        child: Text(
+          'No tienes canciones descargadas.\nToca el icono 📥 en la lista para bajar alguna.',
+          textAlign: TextAlign.center,
+          style: TextStyle(color: Colors.grey),
+        ),
+      );
+    }
+
+    return ListView.builder(
+      itemCount: downloadedTracks.length,
+      itemBuilder: (context, index) {
+        final track = downloadedTracks[index];
+        final localPath = track['localPath'] ?? '';
+        final isSelected = currentTrackPath == localPath && isPlaying;
+
+        return Card(
+          color: const Color(0xFF1E1E1E),
+          margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          child: ListTile(
+            leading: ClipRRect(
+              borderRadius: BorderRadius.circular(8.0),
+              child: Image.network(
+                track['artworkUrl100'] ?? '',
+                width: 45,
+                height: 45,
+                fit: BoxFit.cover,
+                errorBuilder: (c, o, s) => const Icon(Icons.music_note, size: 30),
+              ),
+            ),
+            title: Text(
+              track['trackName'] ?? 'Sin título',
+              style: const TextStyle(fontWeight: FontWeight.bold),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+            subtitle: const Text('Descargado (Offline)', style: TextStyle(color: Colors.greenAccent, fontSize: 11)),
+            trailing: IconButton(
+              icon: Icon(
+                isSelected ? Icons.pause_circle_filled : Icons.play_circle_fill,
+                color: Colors.purpleAccent,
+                size: 32,
+              ),
+              onPressed: () => onTrackSelected(track, downloadedTracks, index),
             ),
           ),
         );
