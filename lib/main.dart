@@ -39,6 +39,12 @@ class _MainScreenState extends State<MainScreen> {
   int _currentIndex = 0;
   final AudioPlayer _player = AudioPlayer();
 
+  // Lista de Favoritos guardada en memoria
+  final List<Map<String, dynamic>> _favorites = [];
+
+  // Calidad de Audio (Alta / Ahorro)
+  String _audioQuality = 'Alta';
+
   // Estado del reproductor
   Map<String, dynamic>? _currentTrack;
   bool _isPlaying = false;
@@ -49,7 +55,6 @@ class _MainScreenState extends State<MainScreen> {
   void initState() {
     super.initState();
 
-    // Escuchar el estado de reproducción
     _player.playerStateStream.listen((state) {
       if (mounted) {
         setState(() {
@@ -62,7 +67,6 @@ class _MainScreenState extends State<MainScreen> {
       }
     });
 
-    // Escuchar la posición actual de la canción
     _player.positionStream.listen((pos) {
       if (mounted) {
         setState(() {
@@ -71,7 +75,6 @@ class _MainScreenState extends State<MainScreen> {
       }
     });
 
-    // Escuchar la duración total del audio
     _player.durationStream.listen((dur) {
       if (mounted) {
         setState(() {
@@ -111,6 +114,40 @@ class _MainScreenState extends State<MainScreen> {
     }
   }
 
+  void _toggleFavorite(Map<String, dynamic> track) {
+    final trackId = track['trackId'] ?? track['previewUrl'];
+    setState(() {
+      final exists = _favorites.any((t) => (t['trackId'] ?? t['previewUrl']) == trackId);
+      if (exists) {
+        _favorites.removeWhere((t) => (t['trackId'] ?? t['previewUrl']) == trackId);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Removido de Favoritos')),
+        );
+      } else {
+        _favorites.add(track);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Agregado a Favoritos ❤️')),
+        );
+      }
+    });
+  }
+
+  bool _isFavorite(Map<String, dynamic> track) {
+    final trackId = track['trackId'] ?? track['previewUrl'];
+    return _favorites.any((t) => (t['trackId'] ?? t['previewUrl']) == trackId);
+  }
+
+  void _seekRelative(int seconds) {
+    final newPosition = _position + Duration(seconds: seconds);
+    if (newPosition < Duration.zero) {
+      _player.seek(Duration.zero);
+    } else if (newPosition > _duration) {
+      _player.seek(_duration);
+    } else {
+      _player.seek(newPosition);
+    }
+  }
+
   @override
   void dispose() {
     _player.dispose();
@@ -124,11 +161,59 @@ class _MainScreenState extends State<MainScreen> {
         onTrackSelected: _playTrack,
         currentTrackUrl: _currentTrack?['previewUrl'],
         isPlaying: _isPlaying,
+        onToggleFavorite: _toggleFavorite,
+        isFavorite: _isFavorite,
       ),
-      const FavoritesTab(),
+      FavoritesTab(
+        favorites: _favorites,
+        onTrackSelected: _playTrack,
+        currentTrackUrl: _currentTrack?['previewUrl'],
+        isPlaying: _isPlaying,
+        onToggleFavorite: _toggleFavorite,
+      ),
     ];
 
     return Scaffold(
+      appBar: AppBar(
+        title: Text(_currentIndex == 0 ? 'Media App - Música' : 'Tus Favoritos'),
+        centerTitle: true,
+        backgroundColor: const Color(0xFF1F1F1F),
+        actions: [
+          PopupMenuButton<String>(
+            icon: const Icon(Icons.settings, color: Colors.purpleAccent),
+            onSelected: (val) {
+              setState(() {
+                _audioQuality = val;
+              });
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text('Calidad de audio ajustada a: $val')),
+              );
+            },
+            itemBuilder: (context) => [
+              PopupMenuItem(
+                value: 'Alta (HQ)',
+                child: Row(
+                  children: [
+                    Icon(Icons.high_quality, color: _audioQuality == 'Alta (HQ)' ? Colors.purpleAccent : Colors.grey),
+                    const SizedBox(width: 8),
+                    const Text('Alta Calidad (320kbps)'),
+                  ],
+                ),
+              ),
+              PopupMenuItem(
+                value: 'Ahorro de datos',
+                child: Row(
+                  children: [
+                    Icon(Icons.data_saver_on, color: _audioQuality == 'Ahorro de datos' ? Colors.purpleAccent : Colors.grey),
+                    const SizedBox(width: 8),
+                    const Text('Ahorro de Datos (128kbps)'),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
       body: Column(
         children: [
           Expanded(child: pages[_currentIndex]),
@@ -141,31 +226,34 @@ class _MainScreenState extends State<MainScreen> {
         selectedItemColor: Colors.purpleAccent,
         unselectedItemColor: Colors.grey,
         backgroundColor: const Color(0xFF1F1F1F),
-        items: const [
-          BottomNavigationBarItem(
+        items: [
+          const BottomNavigationBarItem(
             icon: Icon(Icons.search),
             label: 'Buscar',
           ),
           BottomNavigationBarItem(
-            icon: Icon(Icons.favorite),
-            label: 'Favoritos',
+            icon: Icon(
+              _favorites.isNotEmpty ? Icons.favorite : Icons.favorite_border,
+              color: _favorites.isNotEmpty ? Colors.redAccent : Colors.grey,
+            ),
+            label: 'Favoritos (${_favorites.length})',
           ),
         ],
       ),
     );
   }
 
-  // Reproductor inferior flotante
+  // Reproductor Flotante Completo con Controles +10s / -10s
   Widget _buildMiniPlayer() {
     final double maxSeconds = _duration.inSeconds > 0 ? _duration.inSeconds.toDouble() : 1.0;
     final double currentSeconds = _position.inSeconds.toDouble().clamp(0.0, maxSeconds);
+    final isFav = _isFavorite(_currentTrack!);
 
     return Container(
       color: const Color(0xFF222222),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // Barra de progreso desizable
           SliderTheme(
             data: SliderTheme.of(context).copyWith(
               trackHeight: 3.0,
@@ -185,7 +273,7 @@ class _MainScreenState extends State<MainScreen> {
             ),
           ),
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 4.0),
+            padding: const EdgeInsets.symmetric(horizontal: 10.0, vertical: 4.0),
             child: Row(
               children: [
                 ClipRRect(
@@ -198,37 +286,53 @@ class _MainScreenState extends State<MainScreen> {
                     errorBuilder: (c, o, s) => const Icon(Icons.music_note, size: 30),
                   ),
                 ),
-                const SizedBox(width: 12),
+                const SizedBox(width: 8),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
                         _currentTrack?['trackName'] ?? 'Sin título',
-                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
                       Text(
                         _currentTrack?['artistName'] ?? 'Artista desconocido',
-                        style: const TextStyle(color: Colors.grey, fontSize: 12),
+                        style: const TextStyle(color: Colors.grey, fontSize: 11),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
                     ],
                   ),
                 ),
-                Text(
-                  '${_formatDuration(_position)} / ${_formatDuration(_duration)}',
-                  style: const TextStyle(color: Colors.grey, fontSize: 10),
+                // Botón -10s
+                IconButton(
+                  icon: const Icon(Icons.replay_10, color: Colors.white, size: 24),
+                  onPressed: () => _seekRelative(-10),
                 ),
+                // Play / Pausa
                 IconButton(
                   icon: Icon(
                     _isPlaying ? Icons.pause_circle_filled : Icons.play_circle_fill,
                     color: Colors.purpleAccent,
-                    size: 36,
+                    size: 34,
                   ),
                   onPressed: () => _playTrack(_currentTrack!),
+                ),
+                // Botón +10s
+                IconButton(
+                  icon: const Icon(Icons.forward_10, color: Colors.white, size: 24),
+                  onPressed: () => _seekRelative(10),
+                ),
+                // Botón Favorito en mini player
+                IconButton(
+                  icon: Icon(
+                    isFav ? Icons.favorite : Icons.favorite_border,
+                    color: isFav ? Colors.redAccent : Colors.grey,
+                    size: 22,
+                  ),
+                  onPressed: () => _toggleFavorite(_currentTrack!),
                 ),
               ],
             ),
@@ -237,26 +341,23 @@ class _MainScreenState extends State<MainScreen> {
       ),
     );
   }
-
-  String _formatDuration(Duration duration) {
-    String twoDigits(int n) => n.toString().padLeft(2, '0');
-    final minutes = twoDigits(duration.inMinutes.remainder(60));
-    final seconds = twoDigits(duration.inSeconds.remainder(60));
-    return '$minutes:$seconds';
-  }
 }
 
-// Pestana de Búsqueda
+// Pestaña de Búsqueda
 class SearchTab extends StatefulWidget {
   final Function(Map<String, dynamic>) onTrackSelected;
   final String? currentTrackUrl;
   final bool isPlaying;
+  final Function(Map<String, dynamic>) onToggleFavorite;
+  final bool Function(Map<String, dynamic>) isFavorite;
 
   const SearchTab({
     super.key,
     required this.onTrackSelected,
     this.currentTrackUrl,
     required this.isPlaying,
+    required this.onToggleFavorite,
+    required this.isFavorite,
   });
 
   @override
@@ -291,7 +392,7 @@ class _SearchTabState extends State<SearchTab> {
         });
       }
     } catch (e) {
-      // Manejar error silenciosamente
+      // Manejo silencioso
     } finally {
       setState(() => _isLoading = false);
     }
@@ -299,109 +400,178 @@ class _SearchTabState extends State<SearchTab> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Media App - iTunes'),
-        centerTitle: true,
-        backgroundColor: const Color(0xFF1F1F1F),
-      ),
-      body: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(12.0),
-            child: TextField(
-              controller: _searchController,
-              decoration: InputDecoration(
-                hintText: 'Buscar artista o canción...',
-                prefixIcon: const Icon(Icons.search, color: Colors.purpleAccent),
-                suffixIcon: IconButton(
-                  icon: const Icon(Icons.send, color: Colors.purpleAccent),
-                  onPressed: () => _searchTracks(_searchController.text),
-                ),
-                filled: true,
-                fillColor: const Color(0xFF2C2C2C),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(30.0),
-                  borderSide: BorderSide.none,
-                ),
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.all(12.0),
+          child: TextField(
+            controller: _searchController,
+            decoration: InputDecoration(
+              hintText: 'Buscar artista o canción...',
+              prefixIcon: const Icon(Icons.search, color: Colors.purpleAccent),
+              suffixIcon: IconButton(
+                icon: const Icon(Icons.send, color: Colors.purpleAccent),
+                onPressed: () => _searchTracks(_searchController.text),
               ),
-              onSubmitted: (value) => _searchTracks(value),
+              filled: true,
+              fillColor: const Color(0xFF2C2C2C),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(30.0),
+                borderSide: BorderSide.none,
+              ),
             ),
+            onSubmitted: (value) => _searchTracks(value),
           ),
-          Expanded(
-            child: _isLoading
-                ? const Center(child: CircularProgressIndicator(color: Colors.purpleAccent))
-                : _tracks.isEmpty
-                    ? const Center(child: Text('No se encontraron resultados'))
-                    : ListView.builder(
-                        itemCount: _tracks.length,
-                        itemBuilder: (context, index) {
-                          final track = _tracks[index];
-                          final previewUrl = track['previewUrl'] ?? '';
-                          final isSelected = widget.currentTrackUrl == previewUrl && widget.isPlaying;
+        ),
+        Expanded(
+          child: _isLoading
+              ? const Center(child: CircularProgressIndicator(color: Colors.purpleAccent))
+              : _tracks.isEmpty
+                  ? const Center(child: Text('No se encontraron resultados'))
+                  : ListView.builder(
+                      itemCount: _tracks.length,
+                      itemBuilder: (context, index) {
+                        final track = _tracks[index];
+                        final previewUrl = track['previewUrl'] ?? '';
+                        final isSelected = widget.currentTrackUrl == previewUrl && widget.isPlaying;
+                        final isFav = widget.isFavorite(track);
 
-                          return Card(
-                            color: const Color(0xFF1E1E1E),
-                            margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                            child: ListTile(
-                              leading: ClipRRect(
-                                borderRadius: BorderRadius.circular(8.0),
-                                child: Image.network(
-                                  track['artworkUrl100'] ?? '',
-                                  width: 50,
-                                  height: 50,
-                                  fit: BoxFit.cover,
-                                  errorBuilder: (c, o, s) => const Icon(Icons.music_note, size: 40),
-                                ),
-                              ),
-                              title: Text(
-                                track['trackName'] ?? 'Sin título',
-                                style: const TextStyle(fontWeight: FontWeight.bold),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                              subtitle: Text(
-                                track['artistName'] ?? 'Artista desconocido',
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                              trailing: IconButton(
-                                icon: Icon(
-                                  isSelected ? Icons.pause_circle_filled : Icons.play_circle_fill,
-                                  color: Colors.purpleAccent,
-                                  size: 36,
-                                ),
-                                onPressed: () => widget.onTrackSelected(track),
+                        return Card(
+                          color: const Color(0xFF1E1E1E),
+                          margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                          child: ListTile(
+                            leading: ClipRRect(
+                              borderRadius: BorderRadius.circular(8.0),
+                              child: Image.network(
+                                track['artworkUrl100'] ?? '',
+                                width: 50,
+                                height: 50,
+                                fit: BoxFit.cover,
+                                errorBuilder: (c, o, s) => const Icon(Icons.music_note, size: 40),
                               ),
                             ),
-                          );
-                        },
-                      ),
-          ),
-        ],
-      ),
+                            title: Text(
+                              track['trackName'] ?? 'Sin título',
+                              style: const TextStyle(fontWeight: FontWeight.bold),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            subtitle: Text(
+                              track['artistName'] ?? 'Artista desconocido',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            trailing: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                IconButton(
+                                  icon: Icon(
+                                    isFav ? Icons.favorite : Icons.favorite_border,
+                                    color: isFav ? Colors.redAccent : Colors.grey,
+                                  ),
+                                  onPressed: () => widget.onToggleFavorite(track),
+                                ),
+                                IconButton(
+                                  icon: Icon(
+                                    isSelected ? Icons.pause_circle_filled : Icons.play_circle_fill,
+                                    color: Colors.purpleAccent,
+                                    size: 34,
+                                  ),
+                                  onPressed: () => widget.onTrackSelected(track),
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+        ),
+      ],
     );
   }
 }
 
-// Pestaña de Favoritos (Estructura lista para el siguiente paso)
+// Pestaña de Favoritos
 class FavoritesTab extends StatelessWidget {
-  const FavoritesTab({super.key});
+  final List<Map<String, dynamic>> favorites;
+  final Function(Map<String, dynamic>) onTrackSelected;
+  final String? currentTrackUrl;
+  final bool isPlaying;
+  final Function(Map<String, dynamic>) onToggleFavorite;
+
+  const FavoritesTab({
+    super.key,
+    required this.favorites,
+    required this.onTrackSelected,
+    this.currentTrackUrl,
+    required this.isPlaying,
+    required this.onToggleFavorite,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Favoritos'),
-        centerTitle: true,
-        backgroundColor: const Color(0xFF1F1F1F),
-      ),
-      body: const Center(
+    if (favorites.isEmpty) {
+      return const Center(
         child: Text(
-          'Aún no has agregado canciones a tus favoritos.',
+          'Aún no has agregado canciones a tus favoritos.\nToca el ❤️ en cualquier canción.',
+          textAlign: TextAlign.center,
           style: TextStyle(color: Colors.grey),
         ),
-      ),
+      );
+    }
+
+    return ListView.builder(
+      itemCount: favorites.length,
+      itemBuilder: (context, index) {
+        final track = favorites[index];
+        final previewUrl = track['previewUrl'] ?? '';
+        final isSelected = currentTrackUrl == previewUrl && isPlaying;
+
+        return Card(
+          color: const Color(0xFF1E1E1E),
+          margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          child: ListTile(
+            leading: ClipRRect(
+              borderRadius: BorderRadius.circular(8.0),
+              child: Image.network(
+                track['artworkUrl100'] ?? '',
+                width: 50,
+                height: 50,
+                fit: BoxFit.cover,
+                errorBuilder: (c, o, s) => const Icon(Icons.music_note, size: 40),
+              ),
+            ),
+            title: Text(
+              track['trackName'] ?? 'Sin título',
+              style: const TextStyle(fontWeight: FontWeight.bold),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+            subtitle: Text(
+              track['artistName'] ?? 'Artista desconocido',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.favorite, color: Colors.redAccent),
+                  onPressed: () => onToggleFavorite(track),
+                ),
+                IconButton(
+                  icon: Icon(
+                    isSelected ? Icons.pause_circle_filled : Icons.play_circle_fill,
+                    color: Colors.purpleAccent,
+                    size: 34,
+                  ),
+                  onPressed: () => onTrackSelected(track),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 }
