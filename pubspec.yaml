@@ -1,7 +1,6 @@
 name: media_app
-description: "Aplicacion de streaming de medios"
+description: "A new Flutter project."
 publish_to: 'none'
-
 version: 1.0.0+1
 
 environment:
@@ -10,12 +9,8 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  provider: ^6.1.1
-  just_audio: ^0.9.36
-  audio_service: ^0.18.12
-  just_audio_background: ^0.0.1-beta.11
   http: ^1.2.0
-  cupertino_icons: ^1.0.6
+  audioplayers: ^6.0.0
 
 dev_dependencies:
   flutter_test:
