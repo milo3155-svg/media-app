@@ -5,13 +5,47 @@ import 'package:just_audio/just_audio.dart';
 import 'package:dio/dio.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:video_player/video_player.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
   runApp(const MediaApp());
 }
 
-class MediaApp extends StatelessWidget {
+class MediaApp extends StatefulWidget {
   const MediaApp({super.key});
+
+  @override
+  State<MediaApp> createState() => _MediaAppState();
+}
+
+class _MediaAppState extends State<MediaApp> {
+  Color _primaryColor = Colors.purpleAccent;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSavedColor();
+  }
+
+  // Cargar el color de tema guardado
+  Future<void> _loadSavedColor() async {
+    final prefs = await SharedPreferences.getInstance();
+    final colorValue = prefs.getInt('theme_color');
+    if (colorValue != null) {
+      setState(() {
+        _primaryColor = Color(colorValue);
+      });
+    }
+  }
+
+  // Cambiar y guardar el color de tema
+  Future<void> _changeThemeColor(Color color) async {
+    setState(() {
+      _primaryColor = color;
+    });
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt('theme_color', color.value);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -20,19 +54,29 @@ class MediaApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       theme: ThemeData.dark().copyWith(
         scaffoldBackgroundColor: const Color(0xFF121212),
-        primaryColor: Colors.purpleAccent,
-        colorScheme: const ColorScheme.dark(
-          primary: Colors.purpleAccent,
-          secondary: Colors.purpleAccent,
+        primaryColor: _primaryColor,
+        colorScheme: ColorScheme.dark(
+          primary: _primaryColor,
+          secondary: _primaryColor,
         ),
       ),
-      home: const MainScreen(),
+      home: MainScreen(
+        primaryColor: _primaryColor,
+        onChangeColor: _changeThemeColor,
+      ),
     );
   }
 }
 
 class MainScreen extends StatefulWidget {
-  const MainScreen({super.key});
+  final Color primaryColor;
+  final Function(Color) onChangeColor;
+
+  const MainScreen({
+    super.key,
+    required this.primaryColor,
+    required this.onChangeColor,
+  });
 
   @override
   State<MainScreen> createState() => _MainScreenState();
@@ -43,8 +87,8 @@ class _MainScreenState extends State<MainScreen> {
   final AudioPlayer _audioPlayer = AudioPlayer();
   VideoPlayerController? _videoController;
 
-  final List<Map<String, dynamic>> _favorites = [];
-  final List<Map<String, dynamic>> _downloadedTracks = [];
+  List<Map<String, dynamic>> _favorites = [];
+  List<Map<String, dynamic>> _downloadedTracks = [];
   List<dynamic> _currentPlaylist = [];
   int _currentTrackIndex = -1;
 
@@ -53,14 +97,13 @@ class _MainScreenState extends State<MainScreen> {
   Duration _position = Duration.zero;
   Duration _duration = Duration.zero;
 
-  String _selectedQuality = '720p';
   bool _audioOnlyMode = false;
 
   @override
   void initState() {
     super.initState();
+    _loadSavedData();
 
-    // Listener para estado de reproducción y paso automático al siguiente track
     _audioPlayer.playerStateStream.listen((state) {
       if (mounted) {
         setState(() {
@@ -68,7 +111,7 @@ class _MainScreenState extends State<MainScreen> {
           if (state.processingState == ProcessingState.completed) {
             _isPlaying = false;
             _position = Duration.zero;
-            _playNextTrack(); // REPRODUCCIÓN CONTINUA AUTOMÁTICA
+            _playNextTrack();
           }
         });
       }
@@ -83,17 +126,38 @@ class _MainScreenState extends State<MainScreen> {
     });
   }
 
+  // Cargar datos locales de SharedPreferences
+  Future<void> _loadSavedData() async {
+    final prefs = await SharedPreferences.getInstance();
+    final favString = prefs.getString('saved_favorites');
+    final downString = prefs.getString('saved_downloads');
+
+    if (favString != null) {
+      setState(() {
+        _favorites = List<Map<String, dynamic>>.from(json.decode(favString));
+      });
+    }
+
+    if (downString != null) {
+      setState(() {
+        _downloadedTracks = List<Map<String, dynamic>>.from(json.decode(downString));
+      });
+    }
+  }
+
+  // Guardar datos locales
+  Future<void> _saveLocalData() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('saved_favorites', json.encode(_favorites));
+    await prefs.setString('saved_downloads', json.encode(_downloadedTracks));
+  }
+
   Future<void> _playTrack(Map<String, dynamic> track, {List<dynamic>? playlist, int? index}) async {
     if (playlist != null) _currentPlaylist = playlist;
     if (index != null) _currentTrackIndex = index;
 
     final mediaUrl = track['localPath'] ?? track['previewUrl'] ?? '';
-    if (mediaUrl.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Sin contenido disponible')),
-      );
-      return;
-    }
+    if (mediaUrl.isEmpty) return;
 
     try {
       if (_currentTrack?['previewUrl'] == track['previewUrl'] && _currentTrack?['localPath'] == track['localPath']) {
@@ -171,6 +235,7 @@ class _MainScreenState extends State<MainScreen> {
         _favorites.add(track);
       }
     });
+    _saveLocalData();
   }
 
   bool _isFavorite(Map<String, dynamic> track) {
@@ -200,8 +265,10 @@ class _MainScreenState extends State<MainScreen> {
         _downloadedTracks.add(downloadedTrack);
       });
 
+      await _saveLocalData();
+
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('¡Descarga completada! 📥')),
+        const SnackBar(content: Text('¡Descarga completada y guardada! 📥')),
       );
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -210,7 +277,6 @@ class _MainScreenState extends State<MainScreen> {
     }
   }
 
-  // Desplegar reproductor en pantalla completa
   void _openExpandedPlayer() {
     showModalBottomSheet(
       context: context,
@@ -228,7 +294,6 @@ class _MainScreenState extends State<MainScreen> {
               child: Column(
                 children: [
                   const SizedBox(height: 12),
-                  // Indicador para deslizar hacia abajo
                   Container(
                     width: 40,
                     height: 5,
@@ -244,10 +309,7 @@ class _MainScreenState extends State<MainScreen> {
                         icon: const Icon(Icons.keyboard_arrow_down, size: 30),
                         onPressed: () => Navigator.pop(context),
                       ),
-                      const Text(
-                        'Reproduciendo ahora',
-                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-                      ),
+                      const Text('Reproduciendo ahora', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
                       IconButton(
                         icon: Icon(
                           isFav ? Icons.favorite : Icons.favorite_border,
@@ -261,7 +323,6 @@ class _MainScreenState extends State<MainScreen> {
                     ],
                   ),
                   const Spacer(),
-                  // Portada Grande o Video
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 24.0),
                     child: _videoController != null && _videoController!.value.isInitialized && !_audioOnlyMode
@@ -281,7 +342,6 @@ class _MainScreenState extends State<MainScreen> {
                           ),
                   ),
                   const Spacer(),
-                  // Título y Artista
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 24.0),
                     child: Column(
@@ -291,7 +351,6 @@ class _MainScreenState extends State<MainScreen> {
                           style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 20),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          textAlign: TextAlign.center,
                         ),
                         const SizedBox(height: 4),
                         Text(
@@ -299,13 +358,11 @@ class _MainScreenState extends State<MainScreen> {
                           style: const TextStyle(color: Colors.grey, fontSize: 15),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          textAlign: TextAlign.center,
                         ),
                       ],
                     ),
                   ),
                   const SizedBox(height: 20),
-                  // Slider de Tiempo Expandido
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 20.0),
                     child: Column(
@@ -314,17 +371,15 @@ class _MainScreenState extends State<MainScreen> {
                           data: SliderTheme.of(context).copyWith(
                             trackHeight: 4.0,
                             thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 8.0),
-                            activeTrackColor: Colors.purpleAccent,
+                            activeTrackColor: widget.primaryColor,
                             inactiveTrackColor: Colors.grey[800],
-                            thumbColor: Colors.purpleAccent,
+                            thumbColor: widget.primaryColor,
                           ),
                           child: Slider(
                             value: currentSeconds,
                             min: 0.0,
                             max: maxSeconds,
-                            onChanged: (value) {
-                              _audioPlayer.seek(Duration(seconds: value.toInt()));
-                            },
+                            onChanged: (value) => _audioPlayer.seek(Duration(seconds: value.toInt())),
                           ),
                         ),
                         Row(
@@ -338,7 +393,6 @@ class _MainScreenState extends State<MainScreen> {
                     ),
                   ),
                   const SizedBox(height: 10),
-                  // Controles Grandes
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                     children: [
@@ -360,7 +414,7 @@ class _MainScreenState extends State<MainScreen> {
                         icon: Icon(
                           _isPlaying ? Icons.pause_circle_filled : Icons.play_circle_fill,
                           size: 64,
-                          color: Colors.purpleAccent,
+                          color: widget.primaryColor,
                         ),
                         onPressed: () {
                           _playTrack(_currentTrack!);
@@ -411,6 +465,7 @@ class _MainScreenState extends State<MainScreen> {
   Widget build(BuildContext context) {
     final List<Widget> pages = [
       SearchTab(
+        primaryColor: widget.primaryColor,
         onTrackSelected: (track, playlist, index) => _playTrack(track, playlist: playlist, index: index),
         currentTrackUrl: _currentTrack?['previewUrl'],
         isPlaying: _isPlaying,
@@ -419,6 +474,7 @@ class _MainScreenState extends State<MainScreen> {
         onDownload: _downloadTrack,
       ),
       FavoritesTab(
+        primaryColor: widget.primaryColor,
         favorites: _favorites,
         onTrackSelected: (track, playlist, index) => _playTrack(track, playlist: playlist, index: index),
         currentTrackUrl: _currentTrack?['previewUrl'],
@@ -426,6 +482,7 @@ class _MainScreenState extends State<MainScreen> {
         onToggleFavorite: _toggleFavorite,
       ),
       DownloadsTab(
+        primaryColor: widget.primaryColor,
         downloadedTracks: _downloadedTracks,
         onTrackSelected: (track, playlist, index) => _playTrack(track, playlist: playlist, index: index),
         currentTrackPath: _currentTrack?['localPath'],
@@ -437,7 +494,7 @@ class _MainScreenState extends State<MainScreen> {
       appBar: AppBar(
         title: Text(
           _currentIndex == 0
-              ? 'Media App - Player'
+              ? 'Media App'
               : _currentIndex == 1
                   ? 'Tus Favoritos'
                   : 'Descargas Offline',
@@ -445,47 +502,25 @@ class _MainScreenState extends State<MainScreen> {
         centerTitle: true,
         backgroundColor: const Color(0xFF1F1F1F),
         actions: [
-          PopupMenuButton<String>(
-            icon: const Icon(Icons.tune_rounded, color: Colors.purpleAccent),
-            onSelected: (val) {
-              setState(() {
-                if (val == 'audio_only') {
-                  _audioOnlyMode = !_audioOnlyMode;
-                  if (_audioOnlyMode) _videoController?.pause();
-                } else {
-                  _selectedQuality = val;
-                }
-              });
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text('Ajuste: $val')),
-              );
-            },
+          PopupMenuButton<Color>(
+            icon: Icon(Icons.palette_rounded, color: widget.primaryColor),
+            onSelected: widget.onChangeColor,
             itemBuilder: (context) => [
-              PopupMenuItem(
-                value: '1080p',
-                child: Text('1080p HD ${_selectedQuality == '1080p' ? '✓' : ''}'),
+              const PopupMenuItem(
+                value: Colors.purpleAccent,
+                child: Row(children: [CircleAvatar(backgroundColor: Colors.purpleAccent, radius: 8), SizedBox(width: 8), Text('Púrpura Neón')]),
               ),
-              PopupMenuItem(
-                value: '720p',
-                child: Text('720p Normal ${_selectedQuality == '720p' ? '✓' : ''}'),
+              const PopupMenuItem(
+                value: Colors.blueAccent,
+                child: Row(children: [CircleAvatar(backgroundColor: Colors.blueAccent, radius: 8), SizedBox(width: 8), Text('Azul Eléctrico')]),
               ),
-              PopupMenuItem(
-                value: '360p',
-                child: Text('360p Ahorro ${_selectedQuality == '360p' ? '✓' : ''}'),
+              const PopupMenuItem(
+                value: Colors.tealAccent,
+                child: Row(children: [CircleAvatar(backgroundColor: Colors.tealAccent, radius: 8), SizedBox(width: 8), Text('Verde Esmeralda')]),
               ),
-              const PopupMenuDivider(),
-              PopupMenuItem(
-                value: 'audio_only',
-                child: Row(
-                  children: [
-                    Icon(
-                      _audioOnlyMode ? Icons.check_box : Icons.check_box_outline_blank,
-                      color: Colors.purpleAccent,
-                    ),
-                    const SizedBox(width: 8),
-                    const Text('Modo Solo Audio'),
-                  ],
-                ),
+              const PopupMenuItem(
+                value: Colors.redAccent,
+                child: Row(children: [CircleAvatar(backgroundColor: Colors.redAccent, radius: 8), SizedBox(width: 8), Text('Rojo Carmesí')]),
               ),
             ],
           ),
@@ -500,7 +535,7 @@ class _MainScreenState extends State<MainScreen> {
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _currentIndex,
         onTap: (index) => setState(() => _currentIndex = index),
-        selectedItemColor: Colors.purpleAccent,
+        selectedItemColor: widget.primaryColor,
         unselectedItemColor: Colors.grey,
         backgroundColor: const Color(0xFF1F1F1F),
         items: [
@@ -521,7 +556,6 @@ class _MainScreenState extends State<MainScreen> {
     );
   }
 
-  // Mini-player flotante táctil (al tocar la barra se expande a pantalla completa)
   Widget _buildMiniPlayer() {
     final double maxSeconds = _duration.inSeconds > 0 ? _duration.inSeconds.toDouble() : 1.0;
     final double currentSeconds = _position.inSeconds.toDouble().clamp(0.0, maxSeconds);
@@ -537,9 +571,9 @@ class _MainScreenState extends State<MainScreen> {
               data: SliderTheme.of(context).copyWith(
                 trackHeight: 3.0,
                 thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6.0),
-                activeTrackColor: Colors.purpleAccent,
+                activeTrackColor: widget.primaryColor,
                 inactiveTrackColor: Colors.grey[800],
-                thumbColor: Colors.purpleAccent,
+                thumbColor: widget.primaryColor,
               ),
               child: Slider(
                 value: currentSeconds,
@@ -589,7 +623,7 @@ class _MainScreenState extends State<MainScreen> {
                   IconButton(
                     icon: Icon(
                       _isPlaying ? Icons.pause_circle_filled : Icons.play_circle_fill,
-                      color: Colors.purpleAccent,
+                      color: widget.primaryColor,
                       size: 32,
                     ),
                     onPressed: () => _playTrack(_currentTrack!),
@@ -608,8 +642,8 @@ class _MainScreenState extends State<MainScreen> {
   }
 }
 
-// Búsqueda
 class SearchTab extends StatefulWidget {
+  final Color primaryColor;
   final Function(Map<String, dynamic>, List<dynamic>, int) onTrackSelected;
   final String? currentTrackUrl;
   final bool isPlaying;
@@ -619,6 +653,7 @@ class SearchTab extends StatefulWidget {
 
   const SearchTab({
     super.key,
+    required this.primaryColor,
     required this.onTrackSelected,
     this.currentTrackUrl,
     required this.isPlaying,
@@ -675,9 +710,9 @@ class _SearchTabState extends State<SearchTab> {
             controller: _searchController,
             decoration: InputDecoration(
               hintText: 'Buscar artista o canción...',
-              prefixIcon: const Icon(Icons.search, color: Colors.purpleAccent),
+              prefixIcon: Icon(Icons.search, color: widget.primaryColor),
               suffixIcon: IconButton(
-                icon: const Icon(Icons.send, color: Colors.purpleAccent),
+                icon: Icon(Icons.send, color: widget.primaryColor),
                 onPressed: () => _searchTracks(_searchController.text),
               ),
               filled: true,
@@ -692,7 +727,7 @@ class _SearchTabState extends State<SearchTab> {
         ),
         Expanded(
           child: _isLoading
-              ? const Center(child: CircularProgressIndicator(color: Colors.purpleAccent))
+              ? Center(child: CircularProgressIndicator(color: widget.primaryColor))
               : _tracks.isEmpty
                   ? const Center(child: Text('No se encontraron resultados'))
                   : ListView.builder(
@@ -746,7 +781,7 @@ class _SearchTabState extends State<SearchTab> {
                                 IconButton(
                                   icon: Icon(
                                     isSelected ? Icons.pause_circle_filled : Icons.play_circle_fill,
-                                    color: Colors.purpleAccent,
+                                    color: widget.primaryColor,
                                     size: 32,
                                   ),
                                   onPressed: () => widget.onTrackSelected(track, _tracks, index),
@@ -763,8 +798,8 @@ class _SearchTabState extends State<SearchTab> {
   }
 }
 
-// Favoritos
 class FavoritesTab extends StatelessWidget {
+  final Color primaryColor;
   final List<Map<String, dynamic>> favorites;
   final Function(Map<String, dynamic>, List<dynamic>, int) onTrackSelected;
   final String? currentTrackUrl;
@@ -773,6 +808,7 @@ class FavoritesTab extends StatelessWidget {
 
   const FavoritesTab({
     super.key,
+    required this.primaryColor,
     required this.favorites,
     required this.onTrackSelected,
     this.currentTrackUrl,
@@ -833,7 +869,7 @@ class FavoritesTab extends StatelessWidget {
                 IconButton(
                   icon: Icon(
                     isSelected ? Icons.pause_circle_filled : Icons.play_circle_fill,
-                    color: Colors.purpleAccent,
+                    color: primaryColor,
                     size: 32,
                   ),
                   onPressed: () => onTrackSelected(track, favorites, index),
@@ -847,8 +883,8 @@ class FavoritesTab extends StatelessWidget {
   }
 }
 
-// Descargas Offline
 class DownloadsTab extends StatelessWidget {
+  final Color primaryColor;
   final List<Map<String, dynamic>> downloadedTracks;
   final Function(Map<String, dynamic>, List<dynamic>, int) onTrackSelected;
   final String? currentTrackPath;
@@ -856,6 +892,7 @@ class DownloadsTab extends StatelessWidget {
 
   const DownloadsTab({
     super.key,
+    required this.primaryColor,
     required this.downloadedTracks,
     required this.onTrackSelected,
     this.currentTrackPath,
@@ -905,7 +942,7 @@ class DownloadsTab extends StatelessWidget {
             trailing: IconButton(
               icon: Icon(
                 isSelected ? Icons.pause_circle_filled : Icons.play_circle_fill,
-                color: Colors.purpleAccent,
+                color: primaryColor,
                 size: 32,
               ),
               onPressed: () => onTrackSelected(track, downloadedTracks, index),
