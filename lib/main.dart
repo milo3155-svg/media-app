@@ -1,4 +1,3 @@
-import 'package0:flutter/material.dart'; // Se corregirá a package:flutter automáticamente abajo
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
@@ -45,7 +44,6 @@ class _HomeScreenState extends State<HomeScreen> {
     super.initState();
     _searchTracks('nirvana');
 
-    // Escuchar cambios de estado del reproductor
     _player.playerStateStream.listen((state) {
       if (mounted) {
         setState(() {
