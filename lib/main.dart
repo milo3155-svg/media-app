@@ -3,14 +3,19 @@ import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'dart:io';
 import 'package:just_audio/just_audio.dart';
+import 'package:just_audio_background/just_audio_background.dart';
 import 'package:audio_session/audio_session.dart';
 import 'package:dio/dio.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-void main() {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await JustAudioBackground.init(
+    androidNotificationChannelId: 'com.example.media_app.channel.audio',
+    androidNotificationChannelName: 'Media Playback',
+    androidNotificationOngoing: true,
+  );
   runApp(const MediaApp());
 }
 
@@ -29,6 +34,16 @@ class _MediaAppState extends State<MediaApp> {
     super.initState();
     _loadSavedColor();
     _configureAudioSession();
+    _requestInitialPermissions();
+  }
+
+  Future<void> _requestInitialPermissions() async {
+    if (Platform.isAndroid) {
+      await [
+        Permission.audio,
+        Permission.notification,
+      ].request();
+    }
   }
 
   Future<void> _configureAudioSession() async {
@@ -157,10 +172,22 @@ class _MainScreenState extends State<MainScreen> {
           _currentTrack = track;
         });
 
+        final mediaItem = MediaItem(
+          id: track['trackId']?.toString() ?? track['previewUrl'] ?? '0',
+          album: track['collectionName'] ?? 'Álbum',
+          title: track['trackName'] ?? 'Sin título',
+          artist: track['artistName'] ?? 'Artista desconocido',
+          artUri: Uri.tryParse(track['artworkUrl100'] ?? ''),
+        );
+
         if (track['localPath'] != null) {
-          await _audioPlayer.setFilePath(track['localPath']);
+          await _audioPlayer.setAudioSource(
+            AudioSource.uri(Uri.file(track['localPath']), tag: mediaItem),
+          );
         } else {
-          await _audioPlayer.setUrl(mediaUrl);
+          await _audioPlayer.setAudioSource(
+            AudioSource.uri(Uri.parse(mediaUrl), tag: mediaItem),
+          );
         }
 
         await _audioPlayer.play();
@@ -215,16 +242,6 @@ class _MainScreenState extends State<MainScreen> {
     return _favorites.any((t) => (t['trackId'] ?? t['previewUrl']) == trackId);
   }
 
-  Future<Directory> _getDownloadDirectory() async {
-    if (Platform.isAndroid) {
-      final dirs = await getExternalStorageDirectories(type: StorageDirectory.downloads);
-      if (dirs != null && dirs.isNotEmpty) {
-        return dirs.first;
-      }
-    }
-    return await getApplicationDocumentsDirectory();
-  }
-
   Future<void> _downloadTrack(Map<String, dynamic> track) async {
     final url = track['previewUrl'];
     if (url == null || url.isEmpty) return;
@@ -236,7 +253,7 @@ class _MainScreenState extends State<MainScreen> {
         const SnackBar(content: Text('Descargando pista...')),
       );
 
-      final dir = await _getDownloadDirectory();
+      final dir = Directory('/storage/emulated/0/Download');
       if (!await dir.exists()) {
         await dir.create(recursive: true);
       }
@@ -258,7 +275,7 @@ class _MainScreenState extends State<MainScreen> {
       await _saveLocalData();
 
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('¡Guardado correctamente! 📥')),
+        SnackBar(content: Text('¡Guardado en Descargas! 📥: $fileName')),
       );
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
