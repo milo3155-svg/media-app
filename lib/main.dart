@@ -3,20 +3,14 @@ import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'dart:io';
 import 'package:just_audio/just_audio.dart';
-import 'package:just_audio_background/just_audio_background.dart';
 import 'package:audio_session/audio_session.dart';
 import 'package:dio/dio.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-Future<void> main() async {
+void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  await JustAudioBackground.init(
-    androidNotificationChannelId: 'com.example.media_app.channel.audio',
-    androidNotificationChannelName: 'Media Playback',
-    androidNotificationOngoing: true,
-  );
   runApp(const MediaApp());
 }
 
@@ -38,8 +32,10 @@ class _MediaAppState extends State<MediaApp> {
   }
 
   Future<void> _configureAudioSession() async {
-    final session = await AudioSession.instance;
-    await session.configure(const AudioSessionConfiguration.music());
+    try {
+      final session = await AudioSession.instance;
+      await session.configure(const AudioSessionConfiguration.music());
+    } catch (_) {}
   }
 
   Future<void> _loadSavedColor() async {
@@ -161,22 +157,10 @@ class _MainScreenState extends State<MainScreen> {
           _currentTrack = track;
         });
 
-        final mediaItem = MediaItem(
-          id: track['trackId']?.toString() ?? track['previewUrl'] ?? '0',
-          album: track['collectionName'] ?? 'Álbum',
-          title: track['trackName'] ?? 'Sin título',
-          artist: track['artistName'] ?? 'Artista desconocido',
-          artUri: Uri.parse(track['artworkUrl100'] ?? ''),
-        );
-
         if (track['localPath'] != null) {
-          await _audioPlayer.setAudioSource(
-            AudioSource.uri(Uri.file(track['localPath']), tag: mediaItem),
-          );
+          await _audioPlayer.setFilePath(track['localPath']);
         } else {
-          await _audioPlayer.setAudioSource(
-            AudioSource.uri(Uri.parse(mediaUrl), tag: mediaItem),
-          );
+          await _audioPlayer.setUrl(mediaUrl);
         }
 
         await _audioPlayer.play();
