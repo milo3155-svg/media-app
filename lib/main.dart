@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
-import 'dart:io';
 import 'package:just_audio/just_audio.dart';
 import 'package:dio/dio.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:video_player/video_player.dart';
 
 void main() {
   runApp(const MediaApp());
@@ -40,7 +40,8 @@ class MainScreen extends StatefulWidget {
 
 class _MainScreenState extends State<MainScreen> {
   int _currentIndex = 0;
-  final AudioPlayer _player = AudioPlayer();
+  final AudioPlayer _audioPlayer = AudioPlayer();
+  VideoPlayerController? _videoController;
 
   final List<Map<String, dynamic>> _favorites = [];
   final List<Map<String, dynamic>> _downloadedTracks = [];
@@ -52,48 +53,44 @@ class _MainScreenState extends State<MainScreen> {
   Duration _position = Duration.zero;
   Duration _duration = Duration.zero;
 
+  // Calidad de streaming / Ahorro
+  String _selectedQuality = '720p';
+  bool _audioOnlyMode = false;
+
   @override
   void initState() {
     super.initState();
 
-    _player.playerStateStream.listen((state) {
+    _audioPlayer.playerStateStream.listen((state) {
       if (mounted) {
         setState(() {
           _isPlaying = state.playing;
           if (state.processingState == ProcessingState.completed) {
             _isPlaying = false;
             _position = Duration.zero;
-            _playNextTrack(); // Reproducción automática
+            _playNextTrack();
           }
         });
       }
     });
 
-    _player.positionStream.listen((pos) {
-      if (mounted) {
-        setState(() => _position = pos);
-      }
+    _audioPlayer.positionStream.listen((pos) {
+      if (mounted) setState(() => _position = pos);
     });
 
-    _player.durationStream.listen((dur) {
-      if (mounted) {
-        setState(() => _duration = dur ?? Duration.zero);
-      }
+    _audioPlayer.durationStream.listen((dur) {
+      if (mounted) setState(() => _duration = dur ?? Duration.zero);
     });
   }
 
   Future<void> _playTrack(Map<String, dynamic> track, {List<dynamic>? playlist, int? index}) async {
-    if (playlist != null) {
-      _currentPlaylist = playlist;
-    }
-    if (index != null) {
-      _currentTrackIndex = index;
-    }
+    if (playlist != null) _currentPlaylist = playlist;
+    if (index != null) _currentTrackIndex = index;
 
-    final audioUrl = track['localPath'] ?? track['previewUrl'] ?? '';
-    if (audioUrl.isEmpty) {
+    final mediaUrl = track['localPath'] ?? track['previewUrl'] ?? '';
+    if (mediaUrl.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Sin audio disponible')),
+        const SnackBar(content: Text('Sin contenido disponible')),
       );
       return;
     }
@@ -101,25 +98,43 @@ class _MainScreenState extends State<MainScreen> {
     try {
       if (_currentTrack?['previewUrl'] == track['previewUrl'] && _currentTrack?['localPath'] == track['localPath']) {
         if (_isPlaying) {
-          await _player.pause();
+          await _audioPlayer.pause();
+          _videoController?.pause();
         } else {
-          await _player.play();
+          await _audioPlayer.play();
+          _videoController?.play();
         }
       } else {
         setState(() {
           _currentTrack = track;
         });
 
+        // Limpiar controlador de video previo si existe
+        await _videoController?.dispose();
+        _videoController = null;
+
+        // Configurar audio
         if (track['localPath'] != null) {
-          await _player.setFilePath(track['localPath']);
+          await _audioPlayer.setFilePath(track['localPath']);
         } else {
-          await _player.setUrl(audioUrl);
+          await _audioPlayer.setUrl(mediaUrl);
         }
-        await _player.play();
+
+        // Si la pista tiene URL de video y no estamos en modo "Solo Audio"
+        final videoUrl = track['previewVideoUrl'];
+        if (videoUrl != null && videoUrl.toString().isNotEmpty && !_audioOnlyMode) {
+          _videoController = VideoPlayerController.networkUrl(Uri.parse(videoUrl))
+            ..initialize().then((_) {
+              setState(() {});
+              _videoController?.play();
+            });
+        }
+
+        await _audioPlayer.play();
       }
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Error al reproducir audio')),
+        const SnackBar(content: Text('Error al reproducir')),
       );
     }
   }
@@ -135,6 +150,17 @@ class _MainScreenState extends State<MainScreen> {
     if (_currentPlaylist.isNotEmpty && _currentTrackIndex > 0) {
       _currentTrackIndex--;
       _playTrack(_currentPlaylist[_currentTrackIndex], index: _currentTrackIndex);
+    }
+  }
+
+  void _seekRelative(int seconds) {
+    final newPosition = _position + Duration(seconds: seconds);
+    if (newPosition < Duration.zero) {
+      _audioPlayer.seek(Duration.zero);
+    } else if (newPosition > _duration) {
+      _audioPlayer.seek(_duration);
+    } else {
+      _audioPlayer.seek(newPosition);
     }
   }
 
@@ -161,7 +187,7 @@ class _MainScreenState extends State<MainScreen> {
 
     try {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Descargando canción...')),
+        const SnackBar(content: Text('Descargando pista...')),
       );
 
       final dir = await getApplicationDocumentsDirectory();
@@ -189,7 +215,8 @@ class _MainScreenState extends State<MainScreen> {
 
   @override
   void dispose() {
-    _player.dispose();
+    _audioPlayer.dispose();
+    _videoController?.dispose();
     super.dispose();
   }
 
@@ -223,16 +250,68 @@ class _MainScreenState extends State<MainScreen> {
       appBar: AppBar(
         title: Text(
           _currentIndex == 0
-              ? 'Media App - Música'
+              ? 'Media App - Player'
               : _currentIndex == 1
                   ? 'Tus Favoritos'
                   : 'Descargas Offline',
         ),
         centerTitle: true,
         backgroundColor: const Color(0xFF1F1F1F),
+        actions: [
+          PopupMenuButton<String>(
+            icon: const Icon(Icons.tune_rounded, color: Colors.purpleAccent),
+            onSelected: (val) {
+              setState(() {
+                if (val == 'audio_only') {
+                  _audioOnlyMode = !_audioOnlyMode;
+                  if (_audioOnlyMode) _videoController?.pause();
+                } else {
+                  _selectedQuality = val;
+                }
+              });
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text('Ajuste: $val')),
+              );
+            },
+            itemBuilder: (context) => [
+              PopupMenuItem(
+                value: '1080p',
+                child: Text('1080p HD ${_selectedQuality == '1080p' ? '✓' : ''}'),
+              ),
+              PopupMenuItem(
+                value: '720p',
+                child: Text('720p Normal ${_selectedQuality == '720p' ? '✓' : ''}'),
+              ),
+              PopupMenuItem(
+                value: '360p',
+                child: Text('360p Ahorro ${_selectedQuality == '360p' ? '✓' : ''}'),
+              ),
+              const PopupMenuDivider(),
+              PopupMenuItem(
+                value: 'audio_only',
+                child: Row(
+                  children: [
+                    Icon(
+                      _audioOnlyMode ? Icons.check_box : Icons.check_box_outline_blank,
+                      color: Colors.purpleAccent,
+                    ),
+                    const SizedBox(width: 8),
+                    const Text('Modo Solo Audio'),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ],
       ),
       body: Column(
         children: [
+          // Reproductores de video superior (si aplica)
+          if (_videoController != null && _videoController!.value.isInitialized && !_audioOnlyMode)
+            AspectRatio(
+              aspectRatio: _videoController!.value.aspectRatio,
+              child: VideoPlayer(_videoController!),
+            ),
           Expanded(child: pages[_currentIndex]),
           if (_currentTrack != null) _buildMiniPlayer(),
         ],
@@ -261,6 +340,7 @@ class _MainScreenState extends State<MainScreen> {
     );
   }
 
+  // Mini-player flotante con botones ⏮️, -10s, ⏯️, +10s, ⏭️
   Widget _buildMiniPlayer() {
     final double maxSeconds = _duration.inSeconds > 0 ? _duration.inSeconds.toDouble() : 1.0;
     final double currentSeconds = _position.inSeconds.toDouble().clamp(0.0, maxSeconds);
@@ -282,60 +362,70 @@ class _MainScreenState extends State<MainScreen> {
               value: currentSeconds,
               min: 0.0,
               max: maxSeconds,
-              onChanged: (value) => _player.seek(Duration(seconds: value.toInt())),
+              onChanged: (value) => _audioPlayer.seek(Duration(seconds: value.toInt())),
             ),
           ),
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 2.0),
+            padding: const EdgeInsets.symmetric(horizontal: 4.0, vertical: 2.0),
             child: Row(
               children: [
                 ClipRRect(
                   borderRadius: BorderRadius.circular(6.0),
                   child: Image.network(
                     _currentTrack?['artworkUrl100'] ?? '',
-                    width: 40,
-                    height: 40,
+                    width: 38,
+                    height: 38,
                     fit: BoxFit.cover,
-                    errorBuilder: (c, o, s) => const Icon(Icons.music_note, size: 30),
+                    errorBuilder: (c, o, s) => const Icon(Icons.music_note, size: 28),
                   ),
                 ),
-                const SizedBox(width: 8),
+                const SizedBox(width: 6),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
                         _currentTrack?['trackName'] ?? 'Sin título',
-                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 11),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
                       Text(
                         _currentTrack?['artistName'] ?? 'Artista desconocido',
-                        style: const TextStyle(color: Colors.grey, fontSize: 10),
+                        style: const TextStyle(color: Colors.grey, fontSize: 9),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
                     ],
                   ),
                 ),
-                // Botón Anterior ⏮️
+                // Botón Anterior ⏭️
                 IconButton(
-                  icon: const Icon(Icons.skip_previous, color: Colors.white, size: 26),
+                  icon: const Icon(Icons.skip_previous, color: Colors.white, size: 22),
                   onPressed: _playPreviousTrack,
+                ),
+                // Botón -10s
+                IconButton(
+                  icon: const Icon(Icons.replay_10, color: Colors.grey, size: 20),
+                  onPressed: () => _seekRelative(-10),
                 ),
                 // Play / Pausa ⏯️
                 IconButton(
                   icon: Icon(
                     _isPlaying ? Icons.pause_circle_filled : Icons.play_circle_fill,
                     color: Colors.purpleAccent,
-                    size: 34,
+                    size: 32,
                   ),
                   onPressed: () => _playTrack(_currentTrack!),
                 ),
+                // Botón +10s
+                IconButton(
+                  icon: const Icon(Icons.forward_10, color: Colors.grey, size: 20),
+                  onPressed: () => _seekRelative(10),
+                ),
                 // Botón Siguiente ⏭️
                 IconButton(
-                  icon: const Icon(Icons.skip_next, color: Colors.white, size: 26),
+                  icon: const Icon(Icons.skip_next, color: Colors.white, size: 22),
                   onPressed: _playNextTrack,
                 ),
               ],
@@ -471,14 +561,14 @@ class _SearchTabState extends State<SearchTab> {
                               mainAxisSize: MainAxisSize.min,
                               children: [
                                 IconButton(
-                                  icon: const Icon(Icons.download, color: Colors.grey, size: 22),
+                                  icon: const Icon(Icons.download, color: Colors.grey, size: 20),
                                   onPressed: () => widget.onDownload(track),
                                 ),
                                 IconButton(
                                   icon: Icon(
                                     isFav ? Icons.favorite : Icons.favorite_border,
                                     color: isFav ? Colors.redAccent : Colors.grey,
-                                    size: 22,
+                                    size: 20,
                                   ),
                                   onPressed: () => widget.onToggleFavorite(track),
                                 ),
@@ -566,7 +656,7 @@ class FavoritesTab extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 IconButton(
-                  icon: const Icon(Icons.favorite, color: Colors.redAccent, size: 22),
+                  icon: const Icon(Icons.favorite, color: Colors.redAccent, size: 20),
                   onPressed: () => onToggleFavorite(track),
                 ),
                 IconButton(
