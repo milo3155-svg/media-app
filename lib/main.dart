@@ -1,7 +1,8 @@
+import 'package0:flutter/material.dart'; // Se corregirá a package:flutter automáticamente abajo
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
-import 'package:url_launcher/url_launcher.dart';
+import 'package:just_audio/just_audio.dart';
 
 void main() {
   runApp(const MediaApp());
@@ -33,13 +34,29 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   final TextEditingController _searchController = TextEditingController();
+  final AudioPlayer _player = AudioPlayer();
   List<dynamic> _tracks = [];
   bool _isLoading = false;
+  String? _currentPlayingUrl;
+  bool _isPlaying = false;
 
   @override
   void initState() {
     super.initState();
     _searchTracks('nirvana');
+
+    // Escuchar cambios de estado del reproductor
+    _player.playerStateStream.listen((state) {
+      if (mounted) {
+        setState(() {
+          _isPlaying = state.playing;
+          if (state.processingState == ProcessingState.completed) {
+            _isPlaying = false;
+            _currentPlayingUrl = null;
+          }
+        });
+      }
+    });
   }
 
   Future<void> _searchTracks(String query) async {
@@ -72,20 +89,24 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  // Función infalible para reproducir el audio de la canción
-  Future<void> _playAudio(String audioUrl) async {
+  Future<void> _togglePlay(String audioUrl) async {
     if (audioUrl.isEmpty) {
-      _showSnackBar('No hay vista previa disponible');
+      _showSnackBar('No hay vista previa de audio');
       return;
     }
 
-    final Uri uri = Uri.parse(audioUrl);
     try {
-      if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
-        _showSnackBar('No se pudo reproducir el audio');
+      if (_currentPlayingUrl == audioUrl && _isPlaying) {
+        await _player.pause();
+      } else {
+        if (_currentPlayingUrl != audioUrl) {
+          await _player.setUrl(audioUrl);
+          _currentPlayingUrl = audioUrl;
+        }
+        await _player.play();
       }
     } catch (e) {
-      _showSnackBar('Error al intentar reproducir');
+      _showSnackBar('Error al reproducir audio');
     }
   }
 
@@ -97,6 +118,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   void dispose() {
+    _player.dispose();
     _searchController.dispose();
     super.dispose();
   }
@@ -142,6 +164,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         itemBuilder: (context, index) {
                           final track = _tracks[index];
                           final previewUrl = track['previewUrl'] ?? '';
+                          final isThisPlaying = _currentPlayingUrl == previewUrl && _isPlaying;
 
                           return Card(
                             color: const Color(0xFF1E1E1E),
@@ -170,12 +193,12 @@ class _HomeScreenState extends State<HomeScreen> {
                                 overflow: TextOverflow.ellipsis,
                               ),
                               trailing: IconButton(
-                                icon: const Icon(
-                                  Icons.play_circle_fill,
+                                icon: Icon(
+                                  isThisPlaying ? Icons.pause_circle_filled : Icons.play_circle_fill,
                                   color: Colors.purpleAccent,
                                   size: 38,
                                 ),
-                                onPressed: () => _playAudio(previewUrl),
+                                onPressed: () => _togglePlay(previewUrl),
                               ),
                             ),
                           );
