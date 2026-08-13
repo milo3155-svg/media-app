@@ -4,7 +4,9 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:just_audio/just_audio.dart';
 import 'package:audio_session/audio_session.dart';
+import 'package0:audio_session/audio_session.dart';
 import 'package:dio/dio.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -211,6 +213,16 @@ class _MainScreenState extends State<MainScreen> {
     return _favorites.any((t) => (t['trackId'] ?? t['previewUrl']) == trackId);
   }
 
+  Future<Directory> _getDownloadDirectory() async {
+    if (Platform.isAndroid) {
+      final dirs = await getExternalStorageDirectories(type: StorageDirectory.downloads);
+      if (dirs != null && dirs.isNotEmpty) {
+        return dirs.first;
+      }
+    }
+    return await getApplicationDocumentsDirectory();
+  }
+
   Future<void> _downloadTrack(Map<String, dynamic> track) async {
     final url = track['previewUrl'];
     if (url == null || url.isEmpty) return;
@@ -222,7 +234,7 @@ class _MainScreenState extends State<MainScreen> {
         const SnackBar(content: Text('Descargando pista...')),
       );
 
-      final dir = Directory('/storage/emulated/0/Download');
+      final dir = await _getDownloadDirectory();
       if (!await dir.exists()) {
         await dir.create(recursive: true);
       }
@@ -244,7 +256,7 @@ class _MainScreenState extends State<MainScreen> {
       await _saveLocalData();
 
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('¡Guardado en Descargas! 📥: $fileName')),
+        SnackBar(content: Text('¡Guardado correctamente! 📥')),
       );
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
