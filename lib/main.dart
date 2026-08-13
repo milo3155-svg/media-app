@@ -3,14 +3,20 @@ import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'dart:io';
 import 'package:just_audio/just_audio.dart';
+import 'package:just_audio_background/just_audio_background.dart';
 import 'package:audio_session/audio_session.dart';
-import 'package0:audio_session/audio_session.dart';
 import 'package:dio/dio.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-void main() {
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await JustAudioBackground.init(
+    androidNotificationChannelId: 'com.example.media_app.channel.audio',
+    androidNotificationChannelName: 'Media Playback',
+    androidNotificationOngoing: true,
+  );
   runApp(const MediaApp());
 }
 
@@ -155,10 +161,22 @@ class _MainScreenState extends State<MainScreen> {
           _currentTrack = track;
         });
 
+        final mediaItem = MediaItem(
+          id: track['trackId']?.toString() ?? track['previewUrl'] ?? '0',
+          album: track['collectionName'] ?? 'Álbum',
+          title: track['trackName'] ?? 'Sin título',
+          artist: track['artistName'] ?? 'Artista desconocido',
+          artUri: Uri.parse(track['artworkUrl100'] ?? ''),
+        );
+
         if (track['localPath'] != null) {
-          await _audioPlayer.setFilePath(track['localPath']);
+          await _audioPlayer.setAudioSource(
+            AudioSource.uri(Uri.file(track['localPath']), tag: mediaItem),
+          );
         } else {
-          await _audioPlayer.setUrl(mediaUrl);
+          await _audioPlayer.setAudioSource(
+            AudioSource.uri(Uri.parse(mediaUrl), tag: mediaItem),
+          );
         }
 
         await _audioPlayer.play();
@@ -256,7 +274,7 @@ class _MainScreenState extends State<MainScreen> {
       await _saveLocalData();
 
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('¡Guardado correctamente! 📥')),
+        const SnackBar(content: Text('¡Guardado correctamente! 📥')),
       );
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
