@@ -35,8 +35,6 @@ class _HomeScreenState extends State<HomeScreen> {
   List<dynamic> _tracks = [];
   bool _isLoading = false;
 
-  final String _clientId = '5672a80f';
-
   @override
   void initState() {
     super.initState();
@@ -50,8 +48,9 @@ class _HomeScreenState extends State<HomeScreen> {
       _isLoading = true;
     });
 
+    // API pública y libre de iTunes (sin necesidad de Client ID)
     final url = Uri.parse(
-      'https://api.jamendo.com/v3.0/tracks/?client_id=$_clientId&format=json&limit=20&namesearch=${Uri.encodeComponent(query)}',
+      'https://itunes.apple.com/search?term=${Uri.encodeComponent(query)}&media=music&limit=25',
     );
 
     try {
@@ -62,10 +61,10 @@ class _HomeScreenState extends State<HomeScreen> {
           _tracks = data['results'] ?? [];
         });
       } else {
-        _showSnackBar('Error al consultar Jamendo (Código: ${response.statusCode})');
+        _showSnackBar('Error al conectar con el servidor');
       }
     } catch (e) {
-      _showSnackBar('Error de conexión: $e');
+      _showSnackBar('Error de red: $e');
     } finally {
       setState(() {
         _isLoading = false;
@@ -89,7 +88,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Media App - Jamendo'),
+        title: const Text('Media App'),
         centerTitle: true,
         backgroundColor: const Color(0xFF1F1F1F),
       ),
@@ -133,7 +132,7 @@ class _HomeScreenState extends State<HomeScreen> {
                               leading: ClipRRect(
                                 borderRadius: BorderRadius.circular(8.0),
                                 child: Image.network(
-                                  track['album_image'] ?? '',
+                                  track['artworkUrl100'] ?? '',
                                   width: 50,
                                   height: 50,
                                   fit: BoxFit.cover,
@@ -142,13 +141,13 @@ class _HomeScreenState extends State<HomeScreen> {
                                 ),
                               ),
                               title: Text(
-                                track['name'] ?? 'Sin título',
+                                track['trackName'] ?? 'Sin título',
                                 style: const TextStyle(fontWeight: FontWeight.bold),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                               ),
                               subtitle: Text(
-                                track['artist_name'] ?? 'Artista desconocido',
+                                track['artistName'] ?? 'Artista desconocido',
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                               ),
