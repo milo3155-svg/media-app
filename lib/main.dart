@@ -53,7 +53,6 @@ class _MainScreenState extends State<MainScreen> {
   Duration _position = Duration.zero;
   Duration _duration = Duration.zero;
 
-  // Calidad de streaming / Ahorro
   String _selectedQuality = '720p';
   bool _audioOnlyMode = false;
 
@@ -61,6 +60,7 @@ class _MainScreenState extends State<MainScreen> {
   void initState() {
     super.initState();
 
+    // Listener para estado de reproducción y paso automático al siguiente track
     _audioPlayer.playerStateStream.listen((state) {
       if (mounted) {
         setState(() {
@@ -68,7 +68,7 @@ class _MainScreenState extends State<MainScreen> {
           if (state.processingState == ProcessingState.completed) {
             _isPlaying = false;
             _position = Duration.zero;
-            _playNextTrack();
+            _playNextTrack(); // REPRODUCCIÓN CONTINUA AUTOMÁTICA
           }
         });
       }
@@ -109,18 +109,15 @@ class _MainScreenState extends State<MainScreen> {
           _currentTrack = track;
         });
 
-        // Limpiar controlador de video previo si existe
         await _videoController?.dispose();
         _videoController = null;
 
-        // Configurar audio
         if (track['localPath'] != null) {
           await _audioPlayer.setFilePath(track['localPath']);
         } else {
           await _audioPlayer.setUrl(mediaUrl);
         }
 
-        // Si la pista tiene URL de video y no estamos en modo "Solo Audio"
         final videoUrl = track['previewVideoUrl'];
         if (videoUrl != null && videoUrl.toString().isNotEmpty && !_audioOnlyMode) {
           _videoController = VideoPlayerController.networkUrl(Uri.parse(videoUrl))
@@ -211,6 +208,196 @@ class _MainScreenState extends State<MainScreen> {
         const SnackBar(content: Text('Error al descargar')),
       );
     }
+  }
+
+  // Desplegar reproductor en pantalla completa
+  void _openExpandedPlayer() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF181818),
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            final double maxSeconds = _duration.inSeconds > 0 ? _duration.inSeconds.toDouble() : 1.0;
+            final double currentSeconds = _position.inSeconds.toDouble().clamp(0.0, maxSeconds);
+            final isFav = _isFavorite(_currentTrack!);
+
+            return SizedBox(
+              height: MediaQuery.of(context).size.height * 0.9,
+              child: Column(
+                children: [
+                  const SizedBox(height: 12),
+                  // Indicador para deslizar hacia abajo
+                  Container(
+                    width: 40,
+                    height: 5,
+                    decoration: BoxDecoration(
+                      color: Colors.grey[600],
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      IconButton(
+                        icon: const Icon(Icons.keyboard_arrow_down, size: 30),
+                        onPressed: () => Navigator.pop(context),
+                      ),
+                      const Text(
+                        'Reproduciendo ahora',
+                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                      ),
+                      IconButton(
+                        icon: Icon(
+                          isFav ? Icons.favorite : Icons.favorite_border,
+                          color: isFav ? Colors.redAccent : Colors.white,
+                        ),
+                        onPressed: () {
+                          _toggleFavorite(_currentTrack!);
+                          setModalState(() {});
+                        },
+                      ),
+                    ],
+                  ),
+                  const Spacer(),
+                  // Portada Grande o Video
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 24.0),
+                    child: _videoController != null && _videoController!.value.isInitialized && !_audioOnlyMode
+                        ? AspectRatio(
+                            aspectRatio: _videoController!.value.aspectRatio,
+                            child: VideoPlayer(_videoController!),
+                          )
+                        : ClipRRect(
+                            borderRadius: BorderRadius.circular(16.0),
+                            child: Image.network(
+                              _currentTrack?['artworkUrl100']?.replaceAll('100x100bb', '600x600bb') ?? '',
+                              width: 280,
+                              height: 280,
+                              fit: BoxFit.cover,
+                              errorBuilder: (c, o, s) => const Icon(Icons.music_note, size: 120),
+                            ),
+                          ),
+                  ),
+                  const Spacer(),
+                  // Título y Artista
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 24.0),
+                    child: Column(
+                      children: [
+                        Text(
+                          _currentTrack?['trackName'] ?? 'Sin título',
+                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 20),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          textAlign: TextAlign.center,
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          _currentTrack?['artistName'] ?? 'Artista desconocido',
+                          style: const TextStyle(color: Colors.grey, fontSize: 15),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          textAlign: TextAlign.center,
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  // Slider de Tiempo Expandido
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 20.0),
+                    child: Column(
+                      children: [
+                        SliderTheme(
+                          data: SliderTheme.of(context).copyWith(
+                            trackHeight: 4.0,
+                            thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 8.0),
+                            activeTrackColor: Colors.purpleAccent,
+                            inactiveTrackColor: Colors.grey[800],
+                            thumbColor: Colors.purpleAccent,
+                          ),
+                          child: Slider(
+                            value: currentSeconds,
+                            min: 0.0,
+                            max: maxSeconds,
+                            onChanged: (value) {
+                              _audioPlayer.seek(Duration(seconds: value.toInt()));
+                            },
+                          ),
+                        ),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(_formatDuration(_position), style: const TextStyle(color: Colors.grey, fontSize: 12)),
+                            Text(_formatDuration(_duration), style: const TextStyle(color: Colors.grey, fontSize: 12)),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  // Controles Grandes
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                    children: [
+                      IconButton(
+                        icon: const Icon(Icons.skip_previous, size: 38, color: Colors.white),
+                        onPressed: () {
+                          _playPreviousTrack();
+                          setModalState(() {});
+                        },
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.replay_10, size: 30, color: Colors.grey),
+                        onPressed: () {
+                          _seekRelative(-10);
+                          setModalState(() {});
+                        },
+                      ),
+                      IconButton(
+                        icon: Icon(
+                          _isPlaying ? Icons.pause_circle_filled : Icons.play_circle_fill,
+                          size: 64,
+                          color: Colors.purpleAccent,
+                        ),
+                        onPressed: () {
+                          _playTrack(_currentTrack!);
+                          setModalState(() {});
+                        },
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.forward_10, size: 30, color: Colors.grey),
+                        onPressed: () {
+                          _seekRelative(10);
+                          setModalState(() {});
+                        },
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.skip_next, size: 38, color: Colors.white),
+                        onPressed: () {
+                          _playNextTrack();
+                          setModalState(() {});
+                        },
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 30),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  String _formatDuration(Duration duration) {
+    String twoDigits(int n) => n.toString().padLeft(2, '0');
+    final minutes = twoDigits(duration.inMinutes.remainder(60));
+    final seconds = twoDigits(duration.inSeconds.remainder(60));
+    return '$minutes:$seconds';
   }
 
   @override
@@ -306,12 +493,6 @@ class _MainScreenState extends State<MainScreen> {
       ),
       body: Column(
         children: [
-          // Reproductores de video superior (si aplica)
-          if (_videoController != null && _videoController!.value.isInitialized && !_audioOnlyMode)
-            AspectRatio(
-              aspectRatio: _videoController!.value.aspectRatio,
-              child: VideoPlayer(_videoController!),
-            ),
           Expanded(child: pages[_currentIndex]),
           if (_currentTrack != null) _buildMiniPlayer(),
         ],
@@ -340,98 +521,88 @@ class _MainScreenState extends State<MainScreen> {
     );
   }
 
-  // Mini-player flotante con botones ⏮️, -10s, ⏯️, +10s, ⏭️
+  // Mini-player flotante táctil (al tocar la barra se expande a pantalla completa)
   Widget _buildMiniPlayer() {
     final double maxSeconds = _duration.inSeconds > 0 ? _duration.inSeconds.toDouble() : 1.0;
     final double currentSeconds = _position.inSeconds.toDouble().clamp(0.0, maxSeconds);
 
-    return Container(
-      color: const Color(0xFF222222),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          SliderTheme(
-            data: SliderTheme.of(context).copyWith(
-              trackHeight: 3.0,
-              thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6.0),
-              activeTrackColor: Colors.purpleAccent,
-              inactiveTrackColor: Colors.grey[800],
-              thumbColor: Colors.purpleAccent,
+    return GestureDetector(
+      onTap: _openExpandedPlayer,
+      child: Container(
+        color: const Color(0xFF222222),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            SliderTheme(
+              data: SliderTheme.of(context).copyWith(
+                trackHeight: 3.0,
+                thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6.0),
+                activeTrackColor: Colors.purpleAccent,
+                inactiveTrackColor: Colors.grey[800],
+                thumbColor: Colors.purpleAccent,
+              ),
+              child: Slider(
+                value: currentSeconds,
+                min: 0.0,
+                max: maxSeconds,
+                onChanged: (value) => _audioPlayer.seek(Duration(seconds: value.toInt())),
+              ),
             ),
-            child: Slider(
-              value: currentSeconds,
-              min: 0.0,
-              max: maxSeconds,
-              onChanged: (value) => _audioPlayer.seek(Duration(seconds: value.toInt())),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4.0, vertical: 2.0),
+              child: Row(
+                children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(6.0),
+                    child: Image.network(
+                      _currentTrack?['artworkUrl100'] ?? '',
+                      width: 38,
+                      height: 38,
+                      fit: BoxFit.cover,
+                      errorBuilder: (c, o, s) => const Icon(Icons.music_note, size: 28),
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          _currentTrack?['trackName'] ?? 'Sin título',
+                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 11),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        Text(
+                          _currentTrack?['artistName'] ?? 'Artista desconocido',
+                          style: const TextStyle(color: Colors.grey, fontSize: 9),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.skip_previous, color: Colors.white, size: 22),
+                    onPressed: _playPreviousTrack,
+                  ),
+                  IconButton(
+                    icon: Icon(
+                      _isPlaying ? Icons.pause_circle_filled : Icons.play_circle_fill,
+                      color: Colors.purpleAccent,
+                      size: 32,
+                    ),
+                    onPressed: () => _playTrack(_currentTrack!),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.skip_next, color: Colors.white, size: 22),
+                    onPressed: _playNextTrack,
+                  ),
+                ],
+              ),
             ),
-          ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 4.0, vertical: 2.0),
-            child: Row(
-              children: [
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(6.0),
-                  child: Image.network(
-                    _currentTrack?['artworkUrl100'] ?? '',
-                    width: 38,
-                    height: 38,
-                    fit: BoxFit.cover,
-                    errorBuilder: (c, o, s) => const Icon(Icons.music_note, size: 28),
-                  ),
-                ),
-                const SizedBox(width: 6),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        _currentTrack?['trackName'] ?? 'Sin título',
-                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 11),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      Text(
-                        _currentTrack?['artistName'] ?? 'Artista desconocido',
-                        style: const TextStyle(color: Colors.grey, fontSize: 9),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ],
-                  ),
-                ),
-                // Botón Anterior ⏭️
-                IconButton(
-                  icon: const Icon(Icons.skip_previous, color: Colors.white, size: 22),
-                  onPressed: _playPreviousTrack,
-                ),
-                // Botón -10s
-                IconButton(
-                  icon: const Icon(Icons.replay_10, color: Colors.grey, size: 20),
-                  onPressed: () => _seekRelative(-10),
-                ),
-                // Play / Pausa ⏯️
-                IconButton(
-                  icon: Icon(
-                    _isPlaying ? Icons.pause_circle_filled : Icons.play_circle_fill,
-                    color: Colors.purpleAccent,
-                    size: 32,
-                  ),
-                  onPressed: () => _playTrack(_currentTrack!),
-                ),
-                // Botón +10s
-                IconButton(
-                  icon: const Icon(Icons.forward_10, color: Colors.grey, size: 20),
-                  onPressed: () => _seekRelative(10),
-                ),
-                // Botón Siguiente ⏭️
-                IconButton(
-                  icon: const Icon(Icons.skip_next, color: Colors.white, size: 22),
-                  onPressed: _playNextTrack,
-                ),
-              ],
-            ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
