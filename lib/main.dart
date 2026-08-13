@@ -6,9 +6,7 @@ import 'package:just_audio/just_audio.dart';
 import 'package:just_audio_background/just_audio_background.dart';
 import 'package:audio_session/audio_session.dart';
 import 'package:dio/dio.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
-import 'package0:shared_preferences/shared_preferences.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 Future<void> main() async {
@@ -36,10 +34,10 @@ class _MediaAppState extends State<MediaApp> {
     super.initState();
     _loadSavedColor();
     _configureAudioSession();
-    _requestPermissions();
+    _requestInitialPermissions();
   }
 
-  Future<void> _requestPermissions() async {
+  Future<void> _requestInitialPermissions() async {
     if (Platform.isAndroid) {
       await [
         Permission.audio,
