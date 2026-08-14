@@ -73,7 +73,7 @@ class _MediaAppState extends State<MediaApp> {
 }
 
 // ==========================================
-// 🏠 PANTALLA PRINCIPAL (EXPLORADOR)
+// 🏠 PANTALLA PRINCIPAL (TENDENCIAS Y MENÚ)
 // ==========================================
 class HomeScreen extends StatefulWidget {
   final Color primaryColor;
@@ -88,16 +88,14 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   int _currentIndex = 0;
   List<Map<String, dynamic>> _favorites = [];
-
-  final TextEditingController _searchController = TextEditingController();
-  List<Map<String, dynamic>> _videos = [];
-  bool _isLoading = false;
+  List<Map<String, dynamic>> _trendingVideos = [];
+  bool _isLoading = true;
 
   @override
   void initState() {
     super.initState();
     _loadSavedData();
-    _searchVideos('Lo más escuchado 2026');
+    _loadTrending();
   }
 
   Future<void> _loadSavedData() async {
@@ -115,28 +113,25 @@ class _HomeScreenState extends State<HomeScreen> {
     await prefs.setString('saved_favorites', json.encode(_favorites));
   }
 
-  Future<void> _searchVideos(String query) async {
-    if (query.trim().isEmpty) return;
+  Future<void> _loadTrending() async {
     setState(() => _isLoading = true);
-
     try {
       final ytExplode = yt.YoutubeExplode();
-      final searchResults = await ytExplode.search.search(query);
+      final searchResults = await ytExplode.search.search('Lo más escuchado en México 2026');
       ytExplode.close();
 
       if (mounted) {
         setState(() {
-          _videos = searchResults.map((video) => {
+          _trendingVideos = searchResults.map((video) => {
             'id': video.id.value,
             'title': video.title,
             'uploader': video.author,
             'thumbnail': video.thumbnails.highResUrl,
           }).toList();
+          _isLoading = false;
         });
       }
     } catch (e) {
-      if (mounted) setState(() => _videos = []);
-    } finally {
       if (mounted) setState(() => _isLoading = false);
     }
   }
@@ -167,83 +162,102 @@ class _HomeScreenState extends State<HomeScreen> {
           onToggleFavorite: _toggleFavorite,
         ),
       ),
-    ).then((_) => setState(() {}));
+    ).then((_) => setState(() {})); // Refresca al volver
   }
 
   @override
   Widget build(BuildContext context) {
-    final activeList = _currentIndex == 0 ? _videos : _favorites;
+    final activeList = _currentIndex == 0 ? _trendingVideos : _favorites;
 
     return Scaffold(
+      // MENÚ DE 3 LÍNEAS (DRAWER)
+      drawer: Drawer(
+        backgroundColor: const Color(0xFF1E1E1E),
+        child: ListView(
+          padding: EdgeInsets.zero,
+          children: [
+            DrawerHeader(
+              decoration: BoxDecoration(color: widget.primaryColor.withOpacity(0.2)),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  Icon(Icons.library_music, size: 48, color: widget.primaryColor),
+                  const SizedBox(height: 10),
+                  const Text('Media App', style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold)),
+                ],
+              ),
+            ),
+            ListTile(
+              leading: const Icon(Icons.video_library, color: Colors.white),
+              title: const Text('Video', style: TextStyle(fontSize: 16)),
+              onTap: () => Navigator.pop(context),
+            ),
+            ListTile(
+              leading: const Icon(Icons.music_note, color: Colors.white),
+              title: const Text('Música', style: TextStyle(fontSize: 16)),
+              onTap: () => Navigator.pop(context),
+            ),
+            const Divider(color: Colors.grey),
+            ListTile(
+              leading: const Icon(Icons.palette),
+              title: const Text('Cambiar Tema'),
+              trailing: PopupMenuButton<Color>(
+                icon: Icon(Icons.circle, color: widget.primaryColor),
+                onSelected: widget.onChangeColor,
+                itemBuilder: (context) => [
+                  const PopupMenuItem(value: Colors.purpleAccent, child: Text('Púrpura Neón')),
+                  const PopupMenuItem(value: Colors.blueAccent, child: Text('Azul Eléctrico')),
+                  const PopupMenuItem(value: Colors.tealAccent, child: Text('Verde Esmeralda')),
+                  const PopupMenuItem(value: Colors.redAccent, child: Text('Rojo Carmesí')),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
       appBar: AppBar(
-        title: Text(_currentIndex == 0 ? 'Explorar' : 'Mis Favoritos', style: const TextStyle(fontWeight: FontWeight.bold)),
+        title: Text(_currentIndex == 0 ? 'Tendencias' : 'Mis Favoritos', style: const TextStyle(fontWeight: FontWeight.bold)),
         backgroundColor: const Color(0xFF1F1F1F),
         elevation: 0,
         actions: [
-          PopupMenuButton<Color>(
-            icon: Icon(Icons.palette_rounded, color: widget.primaryColor),
-            onSelected: widget.onChangeColor,
-            itemBuilder: (context) => [
-              const PopupMenuItem(value: Colors.purpleAccent, child: Text('Púrpura Neón')),
-              const PopupMenuItem(value: Colors.blueAccent, child: Text('Azul Eléctrico')),
-              const PopupMenuItem(value: Colors.tealAccent, child: Text('Verde Esmeralda')),
-              const PopupMenuItem(value: Colors.redAccent, child: Text('Rojo Carmesí')),
-            ],
+          // BOTÓN DE LUPA QUE ABRE LA NUEVA PANTALLA
+          IconButton(
+            icon: const Icon(Icons.search, size: 28),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => SearchScreen(
+                  primaryColor: widget.primaryColor,
+                  favorites: _favorites,
+                  onToggleFavorite: _toggleFavorite,
+                )),
+              ).then((_) => setState(() {}));
+            },
           ),
+          const SizedBox(width: 8),
         ],
       ),
-      body: Column(
-        children: [
-          if (_currentIndex == 0)
-            Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: TextField(
-                controller: _searchController,
-                decoration: InputDecoration(
-                  hintText: 'Buscar canciones, artistas, videos...',
-                  prefixIcon: Icon(Icons.search, color: widget.primaryColor),
-                  suffixIcon: IconButton(
-                    icon: Icon(Icons.send, color: widget.primaryColor), 
-                    onPressed: () {
-                      FocusManager.instance.primaryFocus?.unfocus(); // FIX DE TECLADO
-                      _searchVideos(_searchController.text);
-                    }
-                  ),
-                  filled: true,
-                  fillColor: const Color(0xFF2C2C2C),
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(30.0), borderSide: BorderSide.none),
-                ),
-                onSubmitted: (val) {
-                  FocusManager.instance.primaryFocus?.unfocus(); // FIX DE TECLADO
-                  _searchVideos(val);
-                },
-              ),
-            ),
-          
-          Expanded(
-            child: _isLoading
-                ? Center(child: CircularProgressIndicator(color: widget.primaryColor))
-                : activeList.isEmpty
-                    ? Center(child: Text(_currentIndex == 0 ? 'No hay resultados.' : 'Tu lista de favoritos está vacía.', style: const TextStyle(color: Colors.grey)))
-                    : ListView.builder(
-                        itemCount: activeList.length,
-                        itemBuilder: (context, index) {
-                          final video = activeList[index];
-                          return ListTile(
-                            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                            leading: ClipRRect(
-                              borderRadius: BorderRadius.circular(8.0),
-                              child: Image.network(video['thumbnail'], width: 80, height: 60, fit: BoxFit.cover),
-                            ),
-                            title: Text(video['title'], maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-                            subtitle: Text(video['uploader'], maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.grey, fontSize: 12)),
-                            onTap: () => _openPlayer(video, activeList, index),
-                          );
-                        },
+      body: _isLoading
+          ? Center(child: CircularProgressIndicator(color: widget.primaryColor))
+          : activeList.isEmpty
+              ? Center(child: Text(_currentIndex == 0 ? 'No hay tendencias.' : 'Tu lista de favoritos está vacía.', style: const TextStyle(color: Colors.grey)))
+              : ListView.builder(
+                  itemCount: activeList.length,
+                  itemBuilder: (context, index) {
+                    final video = activeList[index];
+                    return ListTile(
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      leading: ClipRRect(
+                        borderRadius: BorderRadius.circular(8.0),
+                        child: Image.network(video['thumbnail'], width: 80, height: 60, fit: BoxFit.cover),
                       ),
-          ),
-        ],
-      ),
+                      title: Text(video['title'], maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                      subtitle: Text(video['uploader'], maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.grey, fontSize: 12)),
+                      onTap: () => _openPlayer(video, activeList, index),
+                    );
+                  },
+                ),
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _currentIndex,
         onTap: (index) => setState(() => _currentIndex = index),
@@ -251,10 +265,214 @@ class _HomeScreenState extends State<HomeScreen> {
         unselectedItemColor: Colors.grey,
         backgroundColor: const Color(0xFF1F1F1F),
         items: const [
-          BottomNavigationBarItem(icon: Icon(Icons.explore), label: 'Explorar'),
+          BottomNavigationBarItem(icon: Icon(Icons.local_fire_department), label: 'Tendencias'),
           BottomNavigationBarItem(icon: Icon(Icons.favorite), label: 'Favoritos'),
         ],
       ),
+    );
+  }
+}
+
+// ==========================================
+// 🔍 PANTALLA DE BÚSQUEDA DEDICADA
+// ==========================================
+class SearchScreen extends StatefulWidget {
+  final Color primaryColor;
+  final List<Map<String, dynamic>> favorites;
+  final Function(Map<String, dynamic>) onToggleFavorite;
+
+  const SearchScreen({super.key, required this.primaryColor, required this.favorites, required this.onToggleFavorite});
+
+  @override
+  State<SearchScreen> createState() => _SearchScreenState();
+}
+
+class _SearchScreenState extends State<SearchScreen> {
+  final TextEditingController _searchController = TextEditingController();
+  List<String> _searchHistory = [];
+  List<String> _suggestions = [];
+  List<Map<String, dynamic>> _searchResults = [];
+  
+  bool _isSearching = false;
+  bool _showResults = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadHistory();
+  }
+
+  Future<void> _loadHistory() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      _searchHistory = prefs.getStringList('search_history') ?? [];
+    });
+  }
+
+  Future<void> _saveToHistory(String query) async {
+    if (query.trim().isEmpty) return;
+    final prefs = await SharedPreferences.getInstance();
+    _searchHistory.remove(query); // Evitar duplicados
+    _searchHistory.insert(0, query); // Poner al principio
+    if (_searchHistory.length > 10) _searchHistory = _searchHistory.sublist(0, 10); // Límite de 10
+    await prefs.setStringList('search_history', _searchHistory);
+  }
+
+  Future<void> _getSuggestions(String query) async {
+    if (query.trim().isEmpty) {
+      setState(() => _suggestions = []);
+      return;
+    }
+    try {
+      final ytExplode = yt.YoutubeExplode();
+      final results = await ytExplode.search.getSearchSuggestions(query);
+      ytExplode.close();
+      if (mounted) setState(() => _suggestions = results);
+    } catch (e) {
+      // Ignorar errores de sugerencias para no interrumpir
+    }
+  }
+
+  Future<void> _performSearch(String query) async {
+    FocusManager.instance.primaryFocus?.unfocus();
+    _searchController.text = query;
+    _saveToHistory(query);
+    
+    setState(() {
+      _showResults = true;
+      _isSearching = true;
+      _suggestions = [];
+    });
+
+    try {
+      final ytExplode = yt.YoutubeExplode();
+      final results = await ytExplode.search.search(query);
+      ytExplode.close();
+
+      if (mounted) {
+        setState(() {
+          _searchResults = results.map((video) => {
+            'id': video.id.value,
+            'title': video.title,
+            'uploader': video.author,
+            'thumbnail': video.thumbnails.highResUrl,
+          }).toList();
+          _isSearching = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) setState(() => _isSearching = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        backgroundColor: const Color(0xFF1F1F1F),
+        title: TextField(
+          controller: _searchController,
+          autofocus: true,
+          onChanged: (val) {
+            setState(() => _showResults = false);
+            _getSuggestions(val);
+          },
+          onSubmitted: _performSearch,
+          decoration: InputDecoration(
+            hintText: 'Buscar...',
+            border: InputBorder.none,
+            suffixIcon: IconButton(
+              icon: Icon(Icons.clear, color: widget.primaryColor),
+              onPressed: () {
+                _searchController.clear();
+                setState(() {
+                  _showResults = false;
+                  _suggestions = [];
+                });
+              },
+            ),
+          ),
+        ),
+      ),
+      body: _showResults 
+          ? _buildResults() 
+          : _buildAutocompleteAndHistory(),
+    );
+  }
+
+  Widget _buildAutocompleteAndHistory() {
+    if (_searchController.text.isEmpty) {
+      // MOSTRAR HISTORIAL
+      if (_searchHistory.isEmpty) return const Center(child: Text('Busca tu música favorita', style: TextStyle(color: Colors.grey)));
+      return ListView.builder(
+        itemCount: _searchHistory.length,
+        itemBuilder: (context, index) {
+          return ListTile(
+            leading: const Icon(Icons.history, color: Colors.grey),
+            title: Text(_searchHistory[index], style: const TextStyle(color: Colors.white70)),
+            onTap: () => _performSearch(_searchHistory[index]),
+            trailing: IconButton(
+              icon: const Icon(Icons.close, size: 20, color: Colors.grey),
+              onPressed: () async {
+                final prefs = await SharedPreferences.getInstance();
+                setState(() => _searchHistory.removeAt(index));
+                prefs.setStringList('search_history', _searchHistory);
+              },
+            ),
+          );
+        },
+      );
+    } else {
+      // MOSTRAR SUGERENCIAS (DISEÑO MODO CLARO)
+      return Container(
+        color: const Color(0xFFE0E0E0), // Fondo claro para resaltar
+        child: ListView.builder(
+          itemCount: _suggestions.length,
+          itemBuilder: (context, index) {
+            return ListTile(
+              leading: Icon(Icons.search, color: widget.primaryColor),
+              title: Text(_suggestions[index], style: const TextStyle(color: Colors.black87, fontWeight: FontWeight.w600)),
+              onTap: () => _performSearch(_suggestions[index]),
+            );
+          },
+        ),
+      );
+    }
+  }
+
+  Widget _buildResults() {
+    if (_isSearching) return Center(child: CircularProgressIndicator(color: widget.primaryColor));
+    if (_searchResults.isEmpty) return const Center(child: Text('No se encontraron resultados', style: TextStyle(color: Colors.grey)));
+    
+    return ListView.builder(
+      itemCount: _searchResults.length,
+      itemBuilder: (context, index) {
+        final video = _searchResults[index];
+        return ListTile(
+          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          leading: ClipRRect(
+            borderRadius: BorderRadius.circular(8.0),
+            child: Image.network(video['thumbnail'], width: 80, height: 60, fit: BoxFit.cover),
+          ),
+          title: Text(video['title'], maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+          subtitle: Text(video['uploader'], maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.grey, fontSize: 12)),
+          onTap: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => PlayerScreen(
+                  primaryColor: widget.primaryColor,
+                  initialVideo: video,
+                  playlist: _searchResults,
+                  initialIndex: index,
+                  favorites: widget.favorites,
+                  onToggleFavorite: widget.onToggleFavorite,
+                ),
+              ),
+            );
+          },
+        );
+      },
     );
   }
 }
@@ -291,12 +509,12 @@ class _PlayerScreenState extends State<PlayerScreen> {
   VideoPlayerController? _videoController;
   final AudioPlayer _audioPlayer = AudioPlayer();
   
-  List<yt.MuxedStreamInfo> _videoStreams = [];
-  String _audioFallbackUrl = '';
+  String _videoUrl = '';
+  String _audioUrl = '';
+  String _errorMessage = '';
   
   bool _isLoading = true;
   bool _isAudioMode = false;
-  String _currentQualityLabel = 'Alta Calidad';
 
   @override
   void initState() {
@@ -307,31 +525,45 @@ class _PlayerScreenState extends State<PlayerScreen> {
   }
 
   Future<void> _initExtract() async {
-    setState(() => _isLoading = true);
+    setState(() {
+      _isLoading = true;
+      _errorMessage = '';
+    });
+
     try {
       final ytExplode = yt.YoutubeExplode();
       final manifest = await ytExplode.videos.streamsClient.getManifest(_currentVideo['id']);
       ytExplode.close();
 
-      _videoStreams = manifest.muxed.sortByVideoQuality().toList();
-      
-      if (_videoStreams.isNotEmpty) {
-        final audioStreams = manifest.audioOnly.where((s) => s.container.name == 'mp4' || s.audioCodec.contains('mp4a'));
-        if (audioStreams.isNotEmpty) {
-          _audioFallbackUrl = audioStreams.withHighestBitrate().url.toString();
-        } else {
-          _audioFallbackUrl = manifest.audioOnly.withHighestBitrate().url.toString(); 
-        }
-        
-        if (_isAudioMode) {
-          await _startAudio(Duration.zero);
-        } else {
-          _currentQualityLabel = '${_videoStreams.first.videoQuality.name}p';
-          await _startVideo(_videoStreams.first.url.toString(), Duration.zero);
-        }
+      // EXTRAER URL DE VIDEO
+      final mp4Muxed = manifest.muxed.where((s) => s.container.name == 'mp4');
+      if (mp4Muxed.isNotEmpty) {
+         _videoUrl = mp4Muxed.withHighestBitrate().url.toString();
+      } else {
+         _videoUrl = manifest.muxed.withHighestBitrate().url.toString();
       }
+
+      // EXTRAER URL DE AUDIO
+      final mp4Audio = manifest.audioOnly.where((s) => s.container.name == 'mp4' || s.audioCodec.contains('mp4a'));
+      if (mp4Audio.isNotEmpty) {
+         _audioUrl = mp4Audio.withHighestBitrate().url.toString();
+      } else {
+         _audioUrl = manifest.audioOnly.withHighestBitrate().url.toString();
+      }
+      
+      if (_isAudioMode) {
+        await _startAudio(Duration.zero);
+      } else {
+        await _startVideo(_videoUrl, Duration.zero);
+      }
+      
     } catch (e) {
-      if (mounted) setState(() => _isLoading = false);
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _errorMessage = 'No se pudo obtener el formato de este video.';
+        });
+      }
     }
   }
 
@@ -360,7 +592,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
     try {
       await _audioPlayer.setAudioSource(
         AudioSource.uri(
-          Uri.parse(_audioFallbackUrl),
+          Uri.parse(_audioUrl),
           tag: MediaItem(
             id: _currentVideo['id'],
             title: _currentVideo['title'],
@@ -383,7 +615,12 @@ class _PlayerScreenState extends State<PlayerScreen> {
         });
       }
     } catch (e) {
-      print("Error audio: $e");
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _errorMessage = 'Error al reproducir el audio.';
+        });
+      }
     }
   }
 
@@ -399,8 +636,9 @@ class _PlayerScreenState extends State<PlayerScreen> {
     }
   }
 
-  Future<void> _changeMode(String modeUrl, String label) async {
-    Navigator.pop(context); 
+  Future<void> _changeMode(bool toAudio) async {
+    if (_isAudioMode == toAudio) return;
+
     setState(() => _isLoading = true);
     
     Duration currentPos = Duration.zero;
@@ -412,45 +650,11 @@ class _PlayerScreenState extends State<PlayerScreen> {
       await _videoController!.pause();
     }
 
-    setState(() => _currentQualityLabel = label);
-
-    if (modeUrl == 'audio_only') {
+    if (toAudio) {
       await _startAudio(currentPos);
     } else {
-      await _startVideo(modeUrl, currentPos);
+      await _startVideo(_videoUrl, currentPos);
     }
-  }
-
-  void _showSettingsBottomSheet() {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: const Color(0xFF1E1E1E),
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (context) {
-        return SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 16),
-                child: Text('Calidad de Reproducción', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white)),
-              ),
-              ..._videoStreams.map((stream) => ListTile(
-                leading: const Icon(Icons.hd, color: Colors.white70),
-                title: Text('Video ${stream.videoQuality.name}p', style: const TextStyle(color: Colors.white)),
-                onTap: () => _changeMode(stream.url.toString(), '${stream.videoQuality.name}p'),
-              )),
-              const Divider(color: Colors.grey),
-              ListTile(
-                leading: Icon(Icons.headphones, color: widget.primaryColor),
-                title: Text('Solo Audio (Permite 2do Plano)', style: TextStyle(color: widget.primaryColor, fontWeight: FontWeight.bold)),
-                onTap: () => _changeMode('audio_only', 'Solo Audio'),
-              ),
-            ],
-          ),
-        );
-      },
-    );
   }
 
   void _seekRelative(int seconds) {
@@ -498,12 +702,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
         backgroundColor: Colors.transparent,
         elevation: 0,
         leading: IconButton(icon: const Icon(Icons.keyboard_arrow_down, size: 32), onPressed: () => Navigator.pop(context)),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.settings, color: Colors.white),
-            onPressed: _showSettingsBottomSheet,
-          ),
-        ],
       ),
       body: Stack(
         children: [
@@ -515,14 +713,43 @@ class _PlayerScreenState extends State<PlayerScreen> {
                   color: Colors.black,
                   child: _isLoading
                       ? Center(child: CircularProgressIndicator(color: widget.primaryColor))
-                      : _isAudioMode
-                          ? Image.network(_currentVideo['thumbnail'], fit: BoxFit.cover, color: Colors.black54, colorBlendMode: BlendMode.darken)
-                          : (_videoController != null && _videoController!.value.isInitialized)
-                              ? VideoPlayer(_videoController!)
-                              : const SizedBox(),
+                      : _errorMessage.isNotEmpty
+                          ? Center(child: Text(_errorMessage, style: const TextStyle(color: Colors.redAccent)))
+                          : _isAudioMode
+                              ? Image.network(_currentVideo['thumbnail'], fit: BoxFit.cover, color: Colors.black54, colorBlendMode: BlendMode.darken)
+                              : (_videoController != null && _videoController!.value.isInitialized)
+                                  ? VideoPlayer(_videoController!)
+                                  : const SizedBox(),
                 ),
               ),
               
+              const SizedBox(height: 16),
+
+              // BOTONES DE MODO DE REPRODUCCIÓN (PASTILLAS)
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    ChoiceChip(
+                      label: const Text('🎬 MODO VIDEO', style: TextStyle(fontWeight: FontWeight.bold)),
+                      selected: !_isAudioMode,
+                      onSelected: (val) => _changeMode(false),
+                      selectedColor: widget.primaryColor.withOpacity(0.3),
+                      labelStyle: TextStyle(color: !_isAudioMode ? widget.primaryColor : Colors.white),
+                    ),
+                    const SizedBox(width: 15),
+                    ChoiceChip(
+                      label: const Text('🎧 MODO 2DO PLANO', style: TextStyle(fontWeight: FontWeight.bold)),
+                      selected: _isAudioMode,
+                      onSelected: (val) => _changeMode(true),
+                      selectedColor: widget.primaryColor.withOpacity(0.3),
+                      labelStyle: TextStyle(color: _isAudioMode ? widget.primaryColor : Colors.white),
+                    ),
+                  ],
+                ),
+              ),
+
               const SizedBox(height: 16),
 
               Padding(
@@ -537,8 +764,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
                           Text(_currentVideo['title'], style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white), maxLines: 2, overflow: TextOverflow.ellipsis),
                           const SizedBox(height: 4),
                           Text(_currentVideo['uploader'], style: const TextStyle(fontSize: 14, color: Colors.grey)),
-                          const SizedBox(height: 4),
-                          Text('Calidad actual: $_currentQualityLabel', style: TextStyle(fontSize: 12, color: widget.primaryColor)),
                         ],
                       ),
                     ),
