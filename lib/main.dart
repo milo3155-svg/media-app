@@ -1,15 +1,13 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'dart:convert';
 import 'dart:io';
-import 'package:youtube_player_flutter/youtube_player_flutter.dart';
+import 'package:youtube_player_iframe/youtube_player_iframe.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart' as yt;
 import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
   runApp(const MediaApp());
 }
 
@@ -79,7 +77,6 @@ class _MainScreenState extends State<MainScreen> {
 
   Map<String, dynamic>? _currentVideo;
   YoutubePlayerController? _youtubeController;
-  bool _isPlayerReady = false;
 
   @override
   void initState() {
@@ -108,32 +105,23 @@ class _MainScreenState extends State<MainScreen> {
     if (videoId.isEmpty) return;
 
     if (_youtubeController != null) {
-      _youtubeController!.load(videoId);
+      _youtubeController!.loadVideoById(videoId: videoId);
     } else {
-      _youtubeController = YoutubePlayerController(
-        initialVideoId: videoId,
-        flags: const YoutubePlayerFlags(
-          autoPlay: true,
+      _youtubeController = YoutubePlayerController.fromVideoId(
+        videoId: videoId,
+        autoPlay: true,
+        params: const YoutubePlayerParams(
+          showControls: true,
+          showFullscreenButton: true,
           mute: false,
-          disableDragSeek: false,
-          loop: false,
-          isLive: false,
-          forceHD: false,
-          enableCaption: false,
+          origin: 'https://www.youtube.com', // TRUCO PARA EVITAR ERROR 152
         ),
-      )..addListener(_listener);
+      );
     }
 
     setState(() {
       _currentVideo = videoItem;
-      _isPlayerReady = false;
     });
-  }
-
-  void _listener() {
-    if (_isPlayerReady && mounted && !_youtubeController!.value.isFullScreen) {
-      setState(() {});
-    }
   }
 
   void _toggleFavorite(Map<String, dynamic> videoItem) {
@@ -156,7 +144,7 @@ class _MainScreenState extends State<MainScreen> {
 
   @override
   void dispose() {
-    _youtubeController?.dispose();
+    _youtubeController?.close();
     super.dispose();
   }
 
@@ -219,15 +207,7 @@ class _MainScreenState extends State<MainScreen> {
               height: 220,
               child: YoutubePlayer(
                 controller: _youtubeController!,
-                showVideoProgressIndicator: true,
-                progressIndicatorColor: widget.primaryColor,
-                progressColors: ProgressBarColors(
-                  playedColor: widget.primaryColor,
-                  handleColor: widget.primaryColor,
-                ),
-                onReady: () {
-                  _isPlayerReady = true;
-                },
+                aspectRatio: 16 / 9,
               ),
             ),
           Expanded(child: pages[_currentIndex]),
