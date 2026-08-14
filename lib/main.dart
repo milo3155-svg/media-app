@@ -114,10 +114,7 @@ class _MainScreenState extends State<MainScreen> {
   void _playVideo(Map<String, dynamic> videoItem, {List<Map<String, dynamic>>? playlist, int? index}) {
     if (playlist != null) _currentPlaylist = playlist;
     if (index != null) _currentPlaylistIndex = index;
-
-    setState(() {
-      _currentVideo = videoItem;
-    });
+    setState(() => _currentVideo = videoItem);
   }
 
   void _playNext() {
@@ -148,8 +145,7 @@ class _MainScreenState extends State<MainScreen> {
   }
 
   bool _isFavorite(Map<String, dynamic> videoItem) {
-    final videoId = videoItem['id'];
-    return _favorites.any((v) => v['id'] == videoId);
+    return _favorites.any((v) => v['id'] == videoItem['id']);
   }
 
   @override
@@ -199,11 +195,7 @@ class _MainScreenState extends State<MainScreen> {
               videoData: _currentVideo!, 
               primaryColor: widget.primaryColor,
               initialAudioMode: _globalAudioMode,
-              onModeChanged: (isAudio) {
-                setState(() {
-                  _globalAudioMode = isAudio;
-                });
-              },
+              onModeChanged: (isAudio) => setState(() => _globalAudioMode = isAudio),
               onNext: hasNext ? _playNext : null,
               onPrevious: hasPrev ? _playPrevious : null,
               key: ValueKey(_currentVideo!['id']),
@@ -224,7 +216,7 @@ class _MainScreenState extends State<MainScreen> {
               _favorites.isNotEmpty ? Icons.favorite : Icons.favorite_border,
               color: _favorites.isNotEmpty ? Colors.redAccent : Colors.grey,
             ),
-            label: 'Favoritos (${_favorites.length})',
+            label: 'Favoritos',
           ),
         ],
       ),
@@ -233,7 +225,7 @@ class _MainScreenState extends State<MainScreen> {
 }
 
 // ==========================================
-// 🎛️ EL REPRODUCTOR HÍBRIDO (CORREGIDO PARA MP4 AUDIO)
+// 🎛️ EL REPRODUCTOR (DISEÑO SEPARADO)
 // ==========================================
 class HybridPlayerWidget extends StatefulWidget {
   final Map<String, dynamic> videoData;
@@ -262,11 +254,11 @@ class _HybridPlayerWidgetState extends State<HybridPlayerWidget> {
   final AudioPlayer _audioPlayer = AudioPlayer();
   
   List<yt.MuxedStreamInfo> _videoStreams = [];
-  String _audioUrl = '';
+  String _audioFallbackUrl = '';
   
   bool _isLoading = true;
   late bool _isAudioMode;
-  bool _showControls = true;
+  String _currentQualityLabel = 'Auto';
 
   @override
   void initState() {
@@ -281,20 +273,18 @@ class _HybridPlayerWidgetState extends State<HybridPlayerWidget> {
       final manifest = await ytExplode.videos.streamsClient.getManifest(widget.videoData['id']);
       ytExplode.close();
 
-      // FIX CRÍTICO: Forzar audio en MP4(AAC) para evitar que JustAudio se trabe con WebM(Opus)
-      final audioStreams = manifest.audioOnly.where((s) => s.container.name == 'mp4' || s.audioCodec.contains('mp4a'));
-      if (audioStreams.isNotEmpty) {
-        _audioUrl = audioStreams.withHighestBitrate().url.toString();
-      } else {
-        _audioUrl = manifest.audioOnly.withHighestBitrate().url.toString(); // Fallback
-      }
-
       _videoStreams = manifest.muxed.sortByVideoQuality().toList();
       
+      // EL HACK ANTIBLOQUEOS: Usamos el video de peor calidad como fuente de audio
+      // Esto evita el Error 403 que Google lanza en los archivos de "Solo Audio"
       if (_videoStreams.isNotEmpty) {
+        _audioFallbackUrl = _videoStreams.last.url.toString();
+        
         if (_isAudioMode) {
+          _currentQualityLabel = '2do Plano';
           await _startAudio(Duration.zero);
         } else {
+          _currentQualityLabel = '${_videoStreams.first.videoQuality.name}p';
           await _startVideo(_videoStreams.first.url.toString(), Duration.zero);
         }
       }
@@ -328,7 +318,7 @@ class _HybridPlayerWidgetState extends State<HybridPlayerWidget> {
     try {
       await _audioPlayer.setAudioSource(
         AudioSource.uri(
-          Uri.parse(_audioUrl),
+          Uri.parse(_audioFallbackUrl),
           tag: MediaItem(
             id: widget.videoData['id'],
             title: widget.videoData['title'],
@@ -351,11 +341,11 @@ class _HybridPlayerWidgetState extends State<HybridPlayerWidget> {
         });
       }
     } catch (e) {
-      print("Error reproduciendo audio: $e");
+      print("Error audio: $e");
     }
   }
 
-  Future<void> _changeQuality(String option) async {
+  Future<void> _changeMode(String modeUrl, String label) async {
     setState(() => _isLoading = true);
     Duration currentPos = Duration.zero;
     
@@ -367,12 +357,14 @@ class _HybridPlayerWidgetState extends State<HybridPlayerWidget> {
       await _videoController!.pause();
     }
 
-    if (option == 'audio_only') {
+    setState(() => _currentQualityLabel = label);
+
+    if (modeUrl == 'audio_only') {
       widget.onModeChanged(true);
       await _startAudio(currentPos);
     } else {
       widget.onModeChanged(false);
-      await _startVideo(option, currentPos);
+      await _startVideo(modeUrl, currentPos);
     }
   }
 
@@ -390,10 +382,7 @@ class _HybridPlayerWidgetState extends State<HybridPlayerWidget> {
     if (_videoController == null || _isAudioMode) return;
     
     Navigator.of(context).push(MaterialPageRoute(builder: (context) {
-      return FullScreenPlayerPage(
-        controller: _videoController!,
-        primaryColor: widget.primaryColor,
-      );
+      return FullScreenPlayerPage(controller: _videoController!, primaryColor: widget.primaryColor);
     })).then((_) {
       SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
       SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
@@ -416,167 +405,165 @@ class _HybridPlayerWidgetState extends State<HybridPlayerWidget> {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      height: 240,
-      color: Colors.black,
-      child: _isLoading
-          ? Center(
-              child: Column(
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        // ==========================
+        // ÁREA DE PANTALLA (VIDEO LIMPIO)
+        // ==========================
+        AspectRatio(
+          aspectRatio: 16 / 9,
+          child: Container(
+            color: Colors.black,
+            child: _isLoading
+                ? Center(child: CircularProgressIndicator(color: widget.primaryColor))
+                : _isAudioMode
+                    ? Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          Image.network(widget.videoData['thumbnail'], fit: BoxFit.cover, color: Colors.black54, colorBlendMode: BlendMode.darken),
+                          const Center(child: Icon(Icons.audiotrack, size: 60, color: Colors.white54)),
+                        ],
+                      )
+                    : (_videoController != null && _videoController!.value.isInitialized)
+                        ? VideoPlayer(_videoController!)
+                        : const SizedBox(),
+          ),
+        ),
+
+        // ==========================
+        // ÁREA DE CONTROLES (SEPARADA)
+        // ==========================
+        Container(
+          color: const Color(0xFF181818),
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+          child: Column(
+            children: [
+              // 1. Barra de progreso
+              Row(
+                children: [
+                  Text(_formatDuration(_isAudioMode ? _audioPlayer.position : (_videoController?.value.position ?? Duration.zero)), style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                  Expanded(
+                    child: SliderTheme(
+                      data: SliderTheme.of(context).copyWith(
+                        trackHeight: 3.0,
+                        thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6.0),
+                        activeTrackColor: widget.primaryColor,
+                        thumbColor: widget.primaryColor,
+                      ),
+                      child: Slider(
+                        min: 0.0,
+                        max: _isAudioMode ? (_audioPlayer.duration?.inSeconds.toDouble() ?? 1.0) : (_videoController?.value.duration.inSeconds.toDouble() ?? 1.0),
+                        value: _isAudioMode 
+                            ? _audioPlayer.position.inSeconds.toDouble().clamp(0.0, _audioPlayer.duration?.inSeconds.toDouble() ?? 1.0)
+                            : (_videoController?.value.position.inSeconds.toDouble().clamp(0.0, _videoController?.value.duration.inSeconds.toDouble() ?? 1.0) ?? 0.0),
+                        onChanged: (val) {
+                          final newPos = Duration(seconds: val.toInt());
+                          _isAudioMode ? _audioPlayer.seek(newPos) : _videoController?.seekTo(newPos);
+                        },
+                      ),
+                    ),
+                  ),
+                  Text(_formatDuration(_isAudioMode ? (_audioPlayer.duration ?? Duration.zero) : (_videoController?.value.duration ?? Duration.zero)), style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                ],
+              ),
+              
+              // 2. Botones de Reproducción
+              Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  CircularProgressIndicator(color: widget.primaryColor),
-                  const SizedBox(height: 8),
-                  Text(_isAudioMode ? 'Conectando audio...' : 'Cargando video...', style: const TextStyle(color: Colors.grey, fontSize: 12)),
+                  IconButton(icon: const Icon(Icons.skip_previous), color: Colors.white, iconSize: 32, onPressed: widget.onPrevious),
+                  IconButton(icon: const Icon(Icons.replay_10), color: Colors.white70, iconSize: 28, onPressed: () => _seekRelative(-10)),
+                  const SizedBox(width: 10),
+                  Container(
+                    decoration: BoxDecoration(shape: BoxShape.circle, color: widget.primaryColor.withOpacity(0.2)),
+                    child: IconButton(
+                      iconSize: 52,
+                      icon: Icon(
+                        _isAudioMode 
+                            ? (_audioPlayer.playing ? Icons.pause : Icons.play_arrow)
+                            : ((_videoController?.value.isPlaying ?? false) ? Icons.pause : Icons.play_arrow),
+                        color: widget.primaryColor,
+                      ),
+                      onPressed: () {
+                        setState(() {
+                          if (_isAudioMode) {
+                            _audioPlayer.playing ? _audioPlayer.pause() : _audioPlayer.play();
+                          } else {
+                            (_videoController?.value.isPlaying ?? false) ? _videoController!.pause() : _videoController!.play();
+                          }
+                        });
+                      },
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  IconButton(icon: const Icon(Icons.forward_10), color: Colors.white70, iconSize: 28, onPressed: () => _seekRelative(10)),
+                  IconButton(icon: const Icon(Icons.skip_next), color: Colors.white, iconSize: 32, onPressed: widget.onNext),
                 ],
               ),
-            )
-          : GestureDetector(
-              onTap: () => setState(() => _showControls = !_showControls),
-              child: Stack(
-                fit: StackFit.expand,
+              
+              const SizedBox(height: 8),
+
+              // 3. Fila de Opciones (Calidad, Audio, Fullscreen)
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  // CAPA VISUAL
-                  if (_isAudioMode)
-                    Image.network(
-                      widget.videoData['thumbnail'],
-                      fit: BoxFit.cover,
-                      color: Colors.black54,
-                      colorBlendMode: BlendMode.darken,
-                    )
-                  else if (_videoController != null && _videoController!.value.isInitialized)
-                    Center(
-                      child: AspectRatio(
-                        aspectRatio: _videoController!.value.aspectRatio,
-                        child: VideoPlayer(_videoController!),
-                      ),
+                  // Botón directo "Solo Audio"
+                  ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: _isAudioMode ? widget.primaryColor.withOpacity(0.3) : Colors.grey[800],
+                      foregroundColor: _isAudioMode ? widget.primaryColor : Colors.white,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                     ),
-
-                  // CONTROLES OVERLAY
-                  if (_showControls)
-                    Container(
-                      color: Colors.black54, 
-                      child: Stack(
-                        children: [
-                          Positioned(
-                            top: 5,
-                            right: 5,
-                            child: PopupMenuButton<String>(
-                              icon: const Icon(Icons.settings, color: Colors.white, size: 26),
-                              color: const Color(0xFF1E1E1E),
-                              onSelected: _changeQuality,
-                              itemBuilder: (context) => [
-                                ..._videoStreams.map((stream) => PopupMenuItem(
-                                  value: stream.url.toString(),
-                                  child: Text('${stream.videoQuality.name}p', style: const TextStyle(color: Colors.white)),
-                                )),
-                                const PopupMenuDivider(),
-                                const PopupMenuItem(
-                                  value: 'audio_only',
-                                  child: Text('Solo Audio (2do Plano)', style: TextStyle(color: Colors.blueAccent, fontWeight: FontWeight.bold)),
-                                ),
-                              ],
-                            ),
+                    icon: const Icon(Icons.headphones, size: 18),
+                    label: const Text('2do Plano', style: TextStyle(fontWeight: FontWeight.bold)),
+                    onPressed: _isAudioMode ? null : () => _changeMode('audio_only', '2do Plano'),
+                  ),
+                  
+                  Row(
+                    children: [
+                      // Menú desplegable de Calidades de Video
+                      PopupMenuButton<String>(
+                        color: const Color(0xFF2C2C2C),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          decoration: BoxDecoration(
+                            border: Border.all(color: Colors.grey[700]!),
+                            borderRadius: BorderRadius.circular(20),
                           ),
-
-                          Align(
-                            alignment: Alignment.center,
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                              children: [
-                                IconButton(
-                                  icon: const Icon(Icons.skip_previous, color: Colors.white),
-                                  iconSize: 36,
-                                  onPressed: widget.onPrevious,
-                                ),
-                                IconButton(
-                                  icon: const Icon(Icons.replay_10, color: Colors.white),
-                                  iconSize: 32,
-                                  onPressed: () => _seekRelative(-10),
-                                ),
-                                IconButton(
-                                  iconSize: 64,
-                                  icon: Icon(
-                                    _isAudioMode 
-                                        ? (_audioPlayer.playing ? Icons.pause_circle_filled : Icons.play_circle_fill)
-                                        : ((_videoController?.value.isPlaying ?? false) ? Icons.pause_circle_filled : Icons.play_circle_fill),
-                                    color: Colors.white,
-                                  ),
-                                  onPressed: () {
-                                    setState(() {
-                                      if (_isAudioMode) {
-                                        _audioPlayer.playing ? _audioPlayer.pause() : _audioPlayer.play();
-                                      } else {
-                                        (_videoController?.value.isPlaying ?? false) ? _videoController!.pause() : _videoController!.play();
-                                      }
-                                    });
-                                  },
-                                ),
-                                IconButton(
-                                  icon: const Icon(Icons.forward_10, color: Colors.white),
-                                  iconSize: 32,
-                                  onPressed: () => _seekRelative(10),
-                                ),
-                                IconButton(
-                                  icon: const Icon(Icons.skip_next, color: Colors.white),
-                                  iconSize: 36,
-                                  onPressed: widget.onNext,
-                                ),
-                              ],
-                            ),
+                          child: Row(
+                            children: [
+                              const Icon(Icons.hd, size: 18, color: Colors.white70),
+                              const SizedBox(width: 4),
+                              Text(_currentQualityLabel, style: const TextStyle(color: Colors.white70, fontSize: 13)),
+                            ],
                           ),
-
-                          Positioned(
-                            bottom: 5,
-                            left: 10,
-                            right: 10,
-                            child: Row(
-                              children: [
-                                Text(
-                                  _formatDuration(_isAudioMode ? _audioPlayer.position : (_videoController?.value.position ?? Duration.zero)),
-                                  style: const TextStyle(color: Colors.white, fontSize: 12),
-                                ),
-                                Expanded(
-                                  child: SliderTheme(
-                                    data: SliderTheme.of(context).copyWith(
-                                      trackHeight: 2.0,
-                                      thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6.0),
-                                      activeTrackColor: widget.primaryColor,
-                                      thumbColor: widget.primaryColor,
-                                    ),
-                                    child: Slider(
-                                      min: 0.0,
-                                      max: _isAudioMode 
-                                          ? (_audioPlayer.duration?.inSeconds.toDouble() ?? 1.0)
-                                          : (_videoController?.value.duration.inSeconds.toDouble() ?? 1.0),
-                                      value: _isAudioMode 
-                                          ? _audioPlayer.position.inSeconds.toDouble().clamp(0.0, _audioPlayer.duration?.inSeconds.toDouble() ?? 1.0)
-                                          : (_videoController?.value.position.inSeconds.toDouble().clamp(0.0, _videoController?.value.duration.inSeconds.toDouble() ?? 1.0) ?? 0.0),
-                                      onChanged: (val) {
-                                        final newPos = Duration(seconds: val.toInt());
-                                        _isAudioMode ? _audioPlayer.seek(newPos) : _videoController?.seekTo(newPos);
-                                      },
-                                    ),
-                                  ),
-                                ),
-                                Text(
-                                  _formatDuration(_isAudioMode ? (_audioPlayer.duration ?? Duration.zero) : (_videoController?.value.duration ?? Duration.zero)),
-                                  style: const TextStyle(color: Colors.white, fontSize: 12),
-                                ),
-                                if (!_isAudioMode)
-                                  IconButton(
-                                    icon: const Icon(Icons.fullscreen, color: Colors.white),
-                                    onPressed: _toggleFullScreen,
-                                  ),
-                              ],
-                            ),
-                          ),
-                        ],
+                        ),
+                        onSelected: (val) {
+                          final stream = _videoStreams.firstWhere((s) => s.url.toString() == val);
+                          _changeMode(val, '${stream.videoQuality.name}p');
+                        },
+                        itemBuilder: (context) => _videoStreams.map((stream) => PopupMenuItem(
+                          value: stream.url.toString(),
+                          child: Text('${stream.videoQuality.name}p', style: const TextStyle(color: Colors.white)),
+                        )).toList(),
                       ),
-                    ),
+                      const SizedBox(width: 10),
+                      
+                      // Pantalla completa
+                      IconButton(
+                        icon: const Icon(Icons.fullscreen, color: Colors.white),
+                        onPressed: _isAudioMode ? null : _toggleFullScreen,
+                      ),
+                    ],
+                  ),
                 ],
               ),
-            ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }
@@ -600,12 +587,8 @@ class _FullScreenPlayerPageState extends State<FullScreenPlayerPage> {
   @override
   void initState() {
     super.initState();
-    SystemChrome.setPreferredOrientations([
-      DeviceOrientation.landscapeLeft,
-      DeviceOrientation.landscapeRight,
-    ]);
+    SystemChrome.setPreferredOrientations([DeviceOrientation.landscapeLeft, DeviceOrientation.landscapeRight]);
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
-    
     widget.controller.addListener(_updateState);
   }
 
@@ -624,11 +607,6 @@ class _FullScreenPlayerPageState extends State<FullScreenPlayerPage> {
     final minutes = twoDigits(duration.inMinutes.remainder(60));
     final seconds = twoDigits(duration.inSeconds.remainder(60));
     return '$minutes:$seconds';
-  }
-
-  void _seekRelative(int seconds) {
-    final pos = widget.controller.value.position;
-    widget.controller.seekTo(pos + Duration(seconds: seconds));
   }
 
   @override
@@ -652,73 +630,21 @@ class _FullScreenPlayerPageState extends State<FullScreenPlayerPage> {
                 child: Stack(
                   children: [
                     Positioned(
-                      top: 10,
-                      left: 10,
-                      child: IconButton(
-                        icon: const Icon(Icons.fullscreen_exit, color: Colors.white, size: 32),
-                        onPressed: () => Navigator.pop(context),
-                      ),
+                      top: 10, left: 10,
+                      child: IconButton(icon: const Icon(Icons.fullscreen_exit, color: Colors.white, size: 32), onPressed: () => Navigator.pop(context)),
                     ),
                     Align(
                       alignment: Alignment.center,
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                         children: [
-                          IconButton(
-                            icon: const Icon(Icons.replay_10, color: Colors.white),
-                            iconSize: 42,
-                            onPressed: () => _seekRelative(-10),
-                          ),
+                          IconButton(icon: const Icon(Icons.replay_10, color: Colors.white), iconSize: 42, onPressed: () => widget.controller.seekTo(widget.controller.value.position - const Duration(seconds: 10))),
                           IconButton(
                             iconSize: 80,
-                            icon: Icon(
-                              widget.controller.value.isPlaying ? Icons.pause_circle_filled : Icons.play_circle_fill,
-                              color: Colors.white,
-                            ),
-                            onPressed: () {
-                              setState(() {
-                                widget.controller.value.isPlaying ? widget.controller.pause() : widget.controller.play();
-                              });
-                            },
+                            icon: Icon(widget.controller.value.isPlaying ? Icons.pause_circle_filled : Icons.play_circle_fill, color: Colors.white),
+                            onPressed: () => setState(() => widget.controller.value.isPlaying ? widget.controller.pause() : widget.controller.play()),
                           ),
-                          IconButton(
-                            icon: const Icon(Icons.forward_10, color: Colors.white),
-                            iconSize: 42,
-                            onPressed: () => _seekRelative(10),
-                          ),
-                        ],
-                      ),
-                    ),
-                    Positioned(
-                      bottom: 20,
-                      left: 30,
-                      right: 30,
-                      child: Row(
-                        children: [
-                          Text(
-                            _formatDuration(widget.controller.value.position),
-                            style: const TextStyle(color: Colors.white, fontSize: 14),
-                          ),
-                          Expanded(
-                            child: SliderTheme(
-                              data: SliderTheme.of(context).copyWith(
-                                trackHeight: 4.0,
-                                thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 8.0),
-                                activeTrackColor: widget.primaryColor,
-                                thumbColor: widget.primaryColor,
-                              ),
-                              child: Slider(
-                                min: 0.0,
-                                max: widget.controller.value.duration.inSeconds.toDouble(),
-                                value: widget.controller.value.position.inSeconds.toDouble().clamp(0.0, widget.controller.value.duration.inSeconds.toDouble()),
-                                onChanged: (val) => widget.controller.seekTo(Duration(seconds: val.toInt())),
-                              ),
-                            ),
-                          ),
-                          Text(
-                            _formatDuration(widget.controller.value.duration),
-                            style: const TextStyle(color: Colors.white, fontSize: 14),
-                          ),
+                          IconButton(icon: const Icon(Icons.forward_10, color: Colors.white), iconSize: 42, onPressed: () => widget.controller.seekTo(widget.controller.value.position + const Duration(seconds: 10))),
                         ],
                       ),
                     ),
@@ -742,14 +668,7 @@ class SearchTab extends StatefulWidget {
   final Function(Map<String, dynamic>) onToggleFavorite;
   final bool Function(Map<String, dynamic>) isFavorite;
 
-  const SearchTab({
-    super.key, 
-    required this.primaryColor, 
-    required this.onVideoSelected, 
-    this.currentVideoId, 
-    required this.onToggleFavorite, 
-    required this.isFavorite
-  });
+  const SearchTab({super.key, required this.primaryColor, required this.onVideoSelected, this.currentVideoId, required this.onToggleFavorite, required this.isFavorite});
 
   @override
   State<SearchTab> createState() => _SearchTabState();
@@ -826,10 +745,7 @@ class _SearchTabState extends State<SearchTab> {
                           color: const Color(0xFF1E1E1E),
                           margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                           child: ListTile(
-                            leading: ClipRRect(
-                              borderRadius: BorderRadius.circular(8.0),
-                              child: Image.network(video['thumbnail'], width: 70, height: 50, fit: BoxFit.cover),
-                            ),
+                            leading: ClipRRect(borderRadius: BorderRadius.circular(8.0), child: Image.network(video['thumbnail'], width: 70, height: 50, fit: BoxFit.cover)),
                             title: Text(video['title'], style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13), maxLines: 2, overflow: TextOverflow.ellipsis),
                             subtitle: Text(video['uploader'], style: const TextStyle(fontSize: 11), maxLines: 1, overflow: TextOverflow.ellipsis),
                             trailing: Row(
@@ -870,10 +786,7 @@ class FavoritesTab extends StatelessWidget {
           color: const Color(0xFF1E1E1E),
           margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
           child: ListTile(
-            leading: ClipRRect(
-              borderRadius: BorderRadius.circular(8.0),
-              child: Image.network(video['thumbnail'], width: 70, height: 50, fit: BoxFit.cover),
-            ),
+            leading: ClipRRect(borderRadius: BorderRadius.circular(8.0), child: Image.network(video['thumbnail'], width: 70, height: 50, fit: BoxFit.cover)),
             title: Text(video['title'], style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13), maxLines: 2, overflow: TextOverflow.ellipsis),
             subtitle: Text(video['uploader'], style: const TextStyle(fontSize: 11), maxLines: 1, overflow: TextOverflow.ellipsis),
             trailing: Row(
