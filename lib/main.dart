@@ -107,14 +107,15 @@ class _MainScreenState extends State<MainScreen> {
     if (_youtubeController != null) {
       _youtubeController!.loadVideoById(videoId: videoId);
     } else {
-      _youtubeController = YoutubePlayerController(
+      _youtubeController = YoutubePlayerController.fromVideoId(
+        videoId: videoId,
+        autoPlay: true,
         params: const YoutubePlayerParams(
           showControls: true,
           showFullscreenButton: true,
           mute: false,
         ),
       );
-      _youtubeController!.loadVideoById(videoId: videoId);
     }
 
     setState(() {
