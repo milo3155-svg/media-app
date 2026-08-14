@@ -66,34 +66,37 @@ class _MediaAppState extends State<MediaApp> {
         primaryColor: _primaryColor,
         colorScheme: ColorScheme.dark(primary: _primaryColor),
       ),
-      home: MainScreen(primaryColor: _primaryColor, onChangeColor: _changeThemeColor),
+      home: HomeScreen(primaryColor: _primaryColor, onChangeColor: _changeThemeColor),
     );
   }
 }
 
-class MainScreen extends StatefulWidget {
+// ==========================================
+// 🏠 PANTALLA PRINCIPAL (EXPLORADOR)
+// ==========================================
+class HomeScreen extends StatefulWidget {
   final Color primaryColor;
   final Function(Color) onChangeColor;
-  const MainScreen({super.key, required this.primaryColor, required this.onChangeColor});
+  
+  const HomeScreen({super.key, required this.primaryColor, required this.onChangeColor});
 
   @override
-  State<MainScreen> createState() => _MainScreenState();
+  State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _MainScreenState extends State<MainScreen> {
+class _HomeScreenState extends State<HomeScreen> {
   int _currentIndex = 0;
   List<Map<String, dynamic>> _favorites = [];
-  
-  Map<String, dynamic>? _currentVideo;
-  List<Map<String, dynamic>> _currentPlaylist = [];
-  int _currentPlaylistIndex = -1;
-  
-  bool _globalAudioMode = false;
+
+  final TextEditingController _searchController = TextEditingController();
+  List<Map<String, dynamic>> _videos = [];
+  bool _isLoading = false;
 
   @override
   void initState() {
     super.initState();
     _loadSavedData();
+    _searchVideos('Lo más escuchado 2026'); // Tendencias por defecto
   }
 
   Future<void> _loadSavedData() async {
@@ -111,23 +114,29 @@ class _MainScreenState extends State<MainScreen> {
     await prefs.setString('saved_favorites', json.encode(_favorites));
   }
 
-  void _playVideo(Map<String, dynamic> videoItem, {List<Map<String, dynamic>>? playlist, int? index}) {
-    if (playlist != null) _currentPlaylist = playlist;
-    if (index != null) _currentPlaylistIndex = index;
-    setState(() => _currentVideo = videoItem);
-  }
+  Future<void> _searchVideos(String query) async {
+    if (query.trim().isEmpty) return;
+    setState(() => _isLoading = true);
 
-  void _playNext() {
-    if (_currentPlaylist.isNotEmpty && _currentPlaylistIndex < _currentPlaylist.length - 1) {
-      _currentPlaylistIndex++;
-      _playVideo(_currentPlaylist[_currentPlaylistIndex]);
-    }
-  }
+    try {
+      final ytExplode = yt.YoutubeExplode();
+      final searchResults = await ytExplode.search.search(query);
+      ytExplode.close();
 
-  void _playPrevious() {
-    if (_currentPlaylist.isNotEmpty && _currentPlaylistIndex > 0) {
-      _currentPlaylistIndex--;
-      _playVideo(_currentPlaylist[_currentPlaylistIndex]);
+      if (mounted) {
+        setState(() {
+          _videos = searchResults.map((video) => {
+            'id': video.id.value,
+            'title': video.title,
+            'uploader': video.author,
+            'thumbnail': video.thumbnails.highResUrl,
+          }).toList();
+        });
+      }
+    } catch (e) {
+      if (mounted) setState(() => _videos = []);
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -144,37 +153,31 @@ class _MainScreenState extends State<MainScreen> {
     _saveLocalData();
   }
 
-  bool _isFavorite(Map<String, dynamic> videoItem) {
-    return _favorites.any((v) => v['id'] == videoItem['id']);
+  void _openPlayer(Map<String, dynamic> video, List<Map<String, dynamic>> playlist, int index) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => PlayerScreen(
+          primaryColor: widget.primaryColor,
+          initialVideo: video,
+          playlist: playlist,
+          initialIndex: index,
+          favorites: _favorites,
+          onToggleFavorite: _toggleFavorite,
+        ),
+      ),
+    ).then((_) => setState(() {})); // Refresca favoritos al volver
   }
 
   @override
   Widget build(BuildContext context) {
-    final List<Widget> pages = [
-      SearchTab(
-        primaryColor: widget.primaryColor,
-        onVideoSelected: (video, list, index) => _playVideo(video, playlist: list, index: index),
-        currentVideoId: _currentVideo?['id'],
-        onToggleFavorite: _toggleFavorite,
-        isFavorite: _isFavorite,
-      ),
-      FavoritesTab(
-        primaryColor: widget.primaryColor,
-        favorites: _favorites,
-        onVideoSelected: (video, list, index) => _playVideo(video, playlist: list, index: index),
-        currentVideoId: _currentVideo?['id'],
-        onToggleFavorite: _toggleFavorite,
-      ),
-    ];
-
-    final bool hasNext = _currentPlaylist.isNotEmpty && _currentPlaylistIndex < _currentPlaylist.length - 1;
-    final bool hasPrev = _currentPlaylist.isNotEmpty && _currentPlaylistIndex > 0;
+    final activeList = _currentIndex == 0 ? _videos : _favorites;
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(_currentIndex == 0 ? 'Media App' : 'Tus Favoritos'),
-        centerTitle: true,
+        title: Text(_currentIndex == 0 ? 'Explorar' : 'Mis Favoritos', style: const TextStyle(fontWeight: FontWeight.bold)),
         backgroundColor: const Color(0xFF1F1F1F),
+        elevation: 0,
         actions: [
           PopupMenuButton<Color>(
             icon: Icon(Icons.palette_rounded, color: widget.primaryColor),
@@ -190,17 +193,54 @@ class _MainScreenState extends State<MainScreen> {
       ),
       body: Column(
         children: [
-          if (_currentVideo != null) 
-            HybridPlayerWidget(
-              videoData: _currentVideo!, 
-              primaryColor: widget.primaryColor,
-              initialAudioMode: _globalAudioMode,
-              onModeChanged: (isAudio) => setState(() => _globalAudioMode = isAudio),
-              onNext: hasNext ? _playNext : null,
-              onPrevious: hasPrev ? _playPrevious : null,
-              key: ValueKey(_currentVideo!['id']),
+          if (_currentIndex == 0)
+            Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: TextField(
+                controller: _searchController,
+                decoration: InputDecoration(
+                  hintText: 'Buscar canciones, artistas, videos...',
+                  prefixIcon: Icon(Icons.search, color: widget.primaryColor),
+                  suffixIcon: IconButton(
+                    icon: Icon(Icons.send, color: widget.primaryColor), 
+                    onPressed: () {
+                      FocusScope.rootNode(context).unfocus();
+                      _searchVideos(_searchController.text);
+                    }
+                  ),
+                  filled: true,
+                  fillColor: const Color(0xFF2C2C2C),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(30.0), borderSide: BorderSide.none),
+                ),
+                onSubmitted: (val) {
+                  FocusScope.rootNode(context).unfocus();
+                  _searchVideos(val);
+                },
+              ),
             ),
-          Expanded(child: pages[_currentIndex]),
+          
+          Expanded(
+            child: _isLoading
+                ? Center(child: CircularProgressIndicator(color: widget.primaryColor))
+                : activeList.isEmpty
+                    ? Center(child: Text(_currentIndex == 0 ? 'No hay resultados.' : 'Tu lista de favoritos está vacía.', style: const TextStyle(color: Colors.grey)))
+                    : ListView.builder(
+                        itemCount: activeList.length,
+                        itemBuilder: (context, index) {
+                          final video = activeList[index];
+                          return ListTile(
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                            leading: ClipRRect(
+                              borderRadius: BorderRadius.circular(8.0),
+                              child: Image.network(video['thumbnail'], width: 80, height: 60, fit: BoxFit.cover),
+                            ),
+                            title: Text(video['title'], maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                            subtitle: Text(video['uploader'], maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.grey, fontSize: 12)),
+                            onTap: () => _openPlayer(video, activeList, index),
+                          );
+                        },
+                      ),
+          ),
         ],
       ),
       bottomNavigationBar: BottomNavigationBar(
@@ -209,15 +249,9 @@ class _MainScreenState extends State<MainScreen> {
         selectedItemColor: widget.primaryColor,
         unselectedItemColor: Colors.grey,
         backgroundColor: const Color(0xFF1F1F1F),
-        items: [
-          const BottomNavigationBarItem(icon: Icon(Icons.search), label: 'Buscar'),
-          BottomNavigationBarItem(
-            icon: Icon(
-              _favorites.isNotEmpty ? Icons.favorite : Icons.favorite_border,
-              color: _favorites.isNotEmpty ? Colors.redAccent : Colors.grey,
-            ),
-            label: 'Favoritos',
-          ),
+        items: const [
+          BottomNavigationBarItem(icon: Icon(Icons.explore), label: 'Explorar'),
+          BottomNavigationBarItem(icon: Icon(Icons.favorite), label: 'Favoritos'),
         ],
       ),
     );
@@ -225,31 +259,34 @@ class _MainScreenState extends State<MainScreen> {
 }
 
 // ==========================================
-// 🎛️ EL REPRODUCTOR (DISEÑO SEPARADO)
+// 🎥 PANTALLA DEL REPRODUCTOR DEDICADO
 // ==========================================
-class HybridPlayerWidget extends StatefulWidget {
-  final Map<String, dynamic> videoData;
+class PlayerScreen extends StatefulWidget {
   final Color primaryColor;
-  final bool initialAudioMode;
-  final ValueChanged<bool> onModeChanged;
-  final VoidCallback? onNext;
-  final VoidCallback? onPrevious;
+  final Map<String, dynamic> initialVideo;
+  final List<Map<String, dynamic>> playlist;
+  final int initialIndex;
+  final List<Map<String, dynamic>> favorites;
+  final Function(Map<String, dynamic>) onToggleFavorite;
 
-  const HybridPlayerWidget({
-    super.key, 
-    required this.videoData, 
+  const PlayerScreen({
+    super.key,
     required this.primaryColor,
-    required this.initialAudioMode,
-    required this.onModeChanged,
-    this.onNext,
-    this.onPrevious,
+    required this.initialVideo,
+    required this.playlist,
+    required this.initialIndex,
+    required this.favorites,
+    required this.onToggleFavorite,
   });
 
   @override
-  State<HybridPlayerWidget> createState() => _HybridPlayerWidgetState();
+  State<PlayerScreen> createState() => _PlayerScreenState();
 }
 
-class _HybridPlayerWidgetState extends State<HybridPlayerWidget> {
+class _PlayerScreenState extends State<PlayerScreen> {
+  late Map<String, dynamic> _currentVideo;
+  late int _currentIndex;
+  
   VideoPlayerController? _videoController;
   final AudioPlayer _audioPlayer = AudioPlayer();
   
@@ -257,31 +294,32 @@ class _HybridPlayerWidgetState extends State<HybridPlayerWidget> {
   String _audioFallbackUrl = '';
   
   bool _isLoading = true;
-  late bool _isAudioMode;
-  String _currentQualityLabel = 'Auto';
+  bool _isAudioMode = false;
+  String _currentQualityLabel = 'Alta Calidad';
 
   @override
   void initState() {
     super.initState();
-    _isAudioMode = widget.initialAudioMode;
+    _currentVideo = widget.initialVideo;
+    _currentIndex = widget.initialIndex;
     _initExtract();
   }
 
   Future<void> _initExtract() async {
+    setState(() => _isLoading = true);
     try {
       final ytExplode = yt.YoutubeExplode();
-      final manifest = await ytExplode.videos.streamsClient.getManifest(widget.videoData['id']);
+      final manifest = await ytExplode.videos.streamsClient.getManifest(_currentVideo['id']);
       ytExplode.close();
 
       _videoStreams = manifest.muxed.sortByVideoQuality().toList();
       
-      // EL HACK ANTIBLOQUEOS: Usamos el video de peor calidad como fuente de audio
-      // Esto evita el Error 403 que Google lanza en los archivos de "Solo Audio"
       if (_videoStreams.isNotEmpty) {
+        // HACK PARA 2DO PLANO: Usamos el video de PEOR calidad y lo pasamos al motor de audio.
+        // Google no bloquea este archivo, y el motor de audio extrae el sonido perfecto.
         _audioFallbackUrl = _videoStreams.last.url.toString();
         
         if (_isAudioMode) {
-          _currentQualityLabel = '2do Plano';
           await _startAudio(Duration.zero);
         } else {
           _currentQualityLabel = '${_videoStreams.first.videoQuality.name}p';
@@ -320,10 +358,10 @@ class _HybridPlayerWidgetState extends State<HybridPlayerWidget> {
         AudioSource.uri(
           Uri.parse(_audioFallbackUrl),
           tag: MediaItem(
-            id: widget.videoData['id'],
-            title: widget.videoData['title'],
-            artist: widget.videoData['uploader'],
-            artUri: Uri.parse(widget.videoData['thumbnail']),
+            id: _currentVideo['id'],
+            title: _currentVideo['title'],
+            artist: _currentVideo['uploader'],
+            artUri: Uri.parse(_currentVideo['thumbnail']),
           ),
         ),
       );
@@ -345,10 +383,23 @@ class _HybridPlayerWidgetState extends State<HybridPlayerWidget> {
     }
   }
 
+  void _changeVideo(int newIndex) {
+    if (newIndex >= 0 && newIndex < widget.playlist.length) {
+      _videoController?.pause();
+      _audioPlayer.stop();
+      setState(() {
+        _currentIndex = newIndex;
+        _currentVideo = widget.playlist[newIndex];
+      });
+      _initExtract();
+    }
+  }
+
   Future<void> _changeMode(String modeUrl, String label) async {
+    Navigator.pop(context); // Cierra el bottom sheet
     setState(() => _isLoading = true);
-    Duration currentPos = Duration.zero;
     
+    Duration currentPos = Duration.zero;
     if (_isAudioMode) {
       currentPos = _audioPlayer.position;
       await _audioPlayer.stop();
@@ -360,12 +411,44 @@ class _HybridPlayerWidgetState extends State<HybridPlayerWidget> {
     setState(() => _currentQualityLabel = label);
 
     if (modeUrl == 'audio_only') {
-      widget.onModeChanged(true);
       await _startAudio(currentPos);
     } else {
-      widget.onModeChanged(false);
       await _startVideo(modeUrl, currentPos);
     }
+  }
+
+  void _showSettingsBottomSheet() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF1E1E1E),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (context) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 16),
+                child: Text('Calidad de Reproducción', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white)),
+              ),
+              // Opciones de video
+              ..._videoStreams.map((stream) => ListTile(
+                leading: const Icon(Icons.hd, color: Colors.white70),
+                title: Text('Video ${stream.videoQuality.name}p', style: const TextStyle(color: Colors.white)),
+                onTap: () => _changeMode(stream.url.toString(), '${stream.videoQuality.name}p'),
+              )),
+              const Divider(color: Colors.grey),
+              // Opción Solo Audio
+              ListTile(
+                leading: Icon(Icons.headphones, color: widget.primaryColor),
+                title: Text('Solo Audio (Permite 2do Plano)', style: TextStyle(color: widget.primaryColor, fontWeight: FontWeight.bold)),
+                onTap: () => _changeMode('audio_only', 'Solo Audio'),
+              ),
+            ],
+          ),
+        );
+      },
+    );
   }
 
   void _seekRelative(int seconds) {
@@ -405,80 +488,117 @@ class _HybridPlayerWidgetState extends State<HybridPlayerWidget> {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        // ==========================
-        // ÁREA DE PANTALLA (VIDEO LIMPIO)
-        // ==========================
-        AspectRatio(
-          aspectRatio: 16 / 9,
-          child: Container(
-            color: Colors.black,
-            child: _isLoading
-                ? Center(child: CircularProgressIndicator(color: widget.primaryColor))
-                : _isAudioMode
-                    ? Stack(
-                        fit: StackFit.expand,
-                        children: [
-                          Image.network(widget.videoData['thumbnail'], fit: BoxFit.cover, color: Colors.black54, colorBlendMode: BlendMode.darken),
-                          const Center(child: Icon(Icons.audiotrack, size: 60, color: Colors.white54)),
-                        ],
-                      )
-                    : (_videoController != null && _videoController!.value.isInitialized)
-                        ? VideoPlayer(_videoController!)
-                        : const SizedBox(),
-          ),
-        ),
+    final bool isFav = widget.favorites.any((v) => v['id'] == _currentVideo['id']);
 
-        // ==========================
-        // ÁREA DE CONTROLES (SEPARADA)
-        // ==========================
-        Container(
-          color: const Color(0xFF181818),
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-          child: Column(
+    return Scaffold(
+      backgroundColor: const Color(0xFF121212),
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        leading: IconButton(icon: const Icon(Icons.keyboard_arrow_down, size: 32), onPressed: () => Navigator.pop(context)),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.settings, color: Colors.white),
+            onPressed: _showSettingsBottomSheet,
+          ),
+        ],
+      ),
+      body: Stack(
+        children: [
+          Column(
             children: [
-              // 1. Barra de progreso
-              Row(
-                children: [
-                  Text(_formatDuration(_isAudioMode ? _audioPlayer.position : (_videoController?.value.position ?? Duration.zero)), style: const TextStyle(fontSize: 12, color: Colors.grey)),
-                  Expanded(
-                    child: SliderTheme(
-                      data: SliderTheme.of(context).copyWith(
-                        trackHeight: 3.0,
-                        thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6.0),
-                        activeTrackColor: widget.primaryColor,
-                        thumbColor: widget.primaryColor,
-                      ),
-                      child: Slider(
-                        min: 0.0,
-                        max: _isAudioMode ? (_audioPlayer.duration?.inSeconds.toDouble() ?? 1.0) : (_videoController?.value.duration.inSeconds.toDouble() ?? 1.0),
-                        value: _isAudioMode 
-                            ? _audioPlayer.position.inSeconds.toDouble().clamp(0.0, _audioPlayer.duration?.inSeconds.toDouble() ?? 1.0)
-                            : (_videoController?.value.position.inSeconds.toDouble().clamp(0.0, _videoController?.value.duration.inSeconds.toDouble() ?? 1.0) ?? 0.0),
-                        onChanged: (val) {
-                          final newPos = Duration(seconds: val.toInt());
-                          _isAudioMode ? _audioPlayer.seek(newPos) : _videoController?.seekTo(newPos);
-                        },
-                      ),
-                    ),
-                  ),
-                  Text(_formatDuration(_isAudioMode ? (_audioPlayer.duration ?? Duration.zero) : (_videoController?.value.duration ?? Duration.zero)), style: const TextStyle(fontSize: 12, color: Colors.grey)),
-                ],
+              // 1. ZONA DE REPRODUCCIÓN VISUAL
+              AspectRatio(
+                aspectRatio: 16 / 9,
+                child: Container(
+                  color: Colors.black,
+                  child: _isLoading
+                      ? Center(child: CircularProgressIndicator(color: widget.primaryColor))
+                      : _isAudioMode
+                          ? Image.network(_currentVideo['thumbnail'], fit: BoxFit.cover, color: Colors.black54, colorBlendMode: BlendMode.darken)
+                          : (_videoController != null && _videoController!.value.isInitialized)
+                              ? VideoPlayer(_videoController!)
+                              : const SizedBox(),
+                ),
               ),
               
-              // 2. Botones de Reproducción
+              const SizedBox(height: 16),
+
+              // 2. INFO DEL VIDEO Y FAVORITO
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(_currentVideo['title'], style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white), maxLines: 2, overflow: TextOverflow.ellipsis),
+                          const SizedBox(height: 4),
+                          Text(_currentVideo['uploader'], style: const TextStyle(fontSize: 14, color: Colors.grey)),
+                          const SizedBox(height: 4),
+                          Text('Calidad actual: $_currentQualityLabel', style: TextStyle(fontSize: 12, color: widget.primaryColor)),
+                        ],
+                      ),
+                    ),
+                    IconButton(
+                      icon: Icon(isFav ? Icons.favorite : Icons.favorite_border, color: isFav ? Colors.redAccent : Colors.grey, size: 28),
+                      onPressed: () {
+                        widget.onToggleFavorite(_currentVideo);
+                        setState(() {});
+                      },
+                    ),
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: 20),
+
+              // 3. BARRA DE PROGRESO
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                child: Row(
+                  children: [
+                    Text(_formatDuration(_isAudioMode ? _audioPlayer.position : (_videoController?.value.position ?? Duration.zero)), style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                    Expanded(
+                      child: SliderTheme(
+                        data: SliderTheme.of(context).copyWith(
+                          trackHeight: 3.0,
+                          thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6.0),
+                          activeTrackColor: widget.primaryColor,
+                          thumbColor: widget.primaryColor,
+                        ),
+                        child: Slider(
+                          min: 0.0,
+                          max: _isAudioMode ? (_audioPlayer.duration?.inSeconds.toDouble() ?? 1.0) : (_videoController?.value.duration.inSeconds.toDouble() ?? 1.0),
+                          value: _isAudioMode 
+                              ? _audioPlayer.position.inSeconds.toDouble().clamp(0.0, _audioPlayer.duration?.inSeconds.toDouble() ?? 1.0)
+                              : (_videoController?.value.position.inSeconds.toDouble().clamp(0.0, _videoController?.value.duration.inSeconds.toDouble() ?? 1.0) ?? 0.0),
+                          onChanged: (val) {
+                            final newPos = Duration(seconds: val.toInt());
+                            _isAudioMode ? _audioPlayer.seek(newPos) : _videoController?.seekTo(newPos);
+                          },
+                        ),
+                      ),
+                    ),
+                    Text(_formatDuration(_isAudioMode ? (_audioPlayer.duration ?? Duration.zero) : (_videoController?.value.duration ?? Duration.zero)), style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: 10),
+
+              // 4. CONTROLES DE REPRODUCCIÓN Y FULLSCREEN
               Row(
-                mainAxisAlignment: MainAxisAlignment.center,
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                 children: [
-                  IconButton(icon: const Icon(Icons.skip_previous), color: Colors.white, iconSize: 32, onPressed: widget.onPrevious),
-                  IconButton(icon: const Icon(Icons.replay_10), color: Colors.white70, iconSize: 28, onPressed: () => _seekRelative(-10)),
-                  const SizedBox(width: 10),
+                  IconButton(icon: const Icon(Icons.skip_previous), color: Colors.white, iconSize: 36, onPressed: () => _changeVideo(_currentIndex - 1)),
+                  IconButton(icon: const Icon(Icons.replay_10), color: Colors.white70, iconSize: 32, onPressed: () => _seekRelative(-10)),
                   Container(
                     decoration: BoxDecoration(shape: BoxShape.circle, color: widget.primaryColor.withOpacity(0.2)),
                     child: IconButton(
-                      iconSize: 52,
+                      iconSize: 64,
                       icon: Icon(
                         _isAudioMode 
                             ? (_audioPlayer.playing ? Icons.pause : Icons.play_arrow)
@@ -496,74 +616,71 @@ class _HybridPlayerWidgetState extends State<HybridPlayerWidget> {
                       },
                     ),
                   ),
-                  const SizedBox(width: 10),
-                  IconButton(icon: const Icon(Icons.forward_10), color: Colors.white70, iconSize: 28, onPressed: () => _seekRelative(10)),
-                  IconButton(icon: const Icon(Icons.skip_next), color: Colors.white, iconSize: 32, onPressed: widget.onNext),
+                  IconButton(icon: const Icon(Icons.forward_10), color: Colors.white70, iconSize: 32, onPressed: () => _seekRelative(10)),
+                  IconButton(icon: const Icon(Icons.skip_next), color: Colors.white, iconSize: 36, onPressed: () => _changeVideo(_currentIndex + 1)),
                 ],
               ),
-              
-              const SizedBox(height: 8),
-
-              // 3. Fila de Opciones (Calidad, Audio, Fullscreen)
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  // Botón directo "Solo Audio"
-                  ElevatedButton.icon(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: _isAudioMode ? widget.primaryColor.withOpacity(0.3) : Colors.grey[800],
-                      foregroundColor: _isAudioMode ? widget.primaryColor : Colors.white,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                    ),
-                    icon: const Icon(Icons.headphones, size: 18),
-                    label: const Text('2do Plano', style: TextStyle(fontWeight: FontWeight.bold)),
-                    onPressed: _isAudioMode ? null : () => _changeMode('audio_only', '2do Plano'),
+              const SizedBox(height: 10),
+              if (!_isAudioMode)
+                Center(
+                  child: IconButton(
+                    icon: const Icon(Icons.fullscreen, color: Colors.white, size: 32),
+                    onPressed: _toggleFullScreen,
                   ),
-                  
-                  Row(
-                    children: [
-                      // Menú desplegable de Calidades de Video
-                      PopupMenuButton<String>(
-                        color: const Color(0xFF2C2C2C),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                          decoration: BoxDecoration(
-                            border: Border.all(color: Colors.grey[700]!),
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                          child: Row(
-                            children: [
-                              const Icon(Icons.hd, size: 18, color: Colors.white70),
-                              const SizedBox(width: 4),
-                              Text(_currentQualityLabel, style: const TextStyle(color: Colors.white70, fontSize: 13)),
-                            ],
-                          ),
-                        ),
-                        onSelected: (val) {
-                          final stream = _videoStreams.firstWhere((s) => s.url.toString() == val);
-                          _changeMode(val, '${stream.videoQuality.name}p');
-                        },
-                        itemBuilder: (context) => _videoStreams.map((stream) => PopupMenuItem(
-                          value: stream.url.toString(),
-                          child: Text('${stream.videoQuality.name}p', style: const TextStyle(color: Colors.white)),
-                        )).toList(),
-                      ),
-                      const SizedBox(width: 10),
-                      
-                      // Pantalla completa
-                      IconButton(
-                        icon: const Icon(Icons.fullscreen, color: Colors.white),
-                        onPressed: _isAudioMode ? null : _toggleFullScreen,
-                      ),
-                    ],
-                  ),
-                ],
-              ),
+                ),
             ],
           ),
-        ),
-      ],
+
+          // ==========================
+          // 5. LISTA DE REPRODUCCIÓN DESPLEGABLE (BOTTOM SHEET DRAGGABLE)
+          // ==========================
+          DraggableScrollableSheet(
+            initialChildSize: 0.12,
+            minChildSize: 0.12,
+            maxChildSize: 0.6,
+            builder: (context, scrollController) {
+              return Container(
+                decoration: BoxDecoration(
+                  color: const Color(0xFF1E1E1E),
+                  borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+                  boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.5), blurRadius: 10, offset: const Offset(0, -2))],
+                ),
+                child: Column(
+                  children: [
+                    // Handle del drag
+                    Container(
+                      margin: const EdgeInsets.symmetric(vertical: 12),
+                      width: 40,
+                      height: 5,
+                      decoration: BoxDecoration(color: Colors.grey[600], borderRadius: BorderRadius.circular(10)),
+                    ),
+                    const Text('Siguiente en la lista', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
+                    const SizedBox(height: 10),
+                    Expanded(
+                      child: ListView.builder(
+                        controller: scrollController,
+                        itemCount: widget.playlist.length,
+                        itemBuilder: (context, index) {
+                          final video = widget.playlist[index];
+                          final isPlaying = index == _currentIndex;
+                          return ListTile(
+                            tileColor: isPlaying ? widget.primaryColor.withOpacity(0.1) : Colors.transparent,
+                            leading: ClipRRect(borderRadius: BorderRadius.circular(8.0), child: Image.network(video['thumbnail'], width: 60, height: 45, fit: BoxFit.cover)),
+                            title: Text(video['title'], maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: isPlaying ? widget.primaryColor : Colors.white, fontWeight: isPlaying ? FontWeight.bold : FontWeight.normal, fontSize: 13)),
+                            subtitle: Text(video['uploader'], style: const TextStyle(color: Colors.grey, fontSize: 11)),
+                            trailing: isPlaying ? Icon(Icons.equalizer, color: widget.primaryColor) : null,
+                            onTap: () => _changeVideo(index),
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
+        ],
+      ),
     );
   }
 }
@@ -654,151 +771,6 @@ class _FullScreenPlayerPageState extends State<FullScreenPlayerPage> {
           ],
         ),
       ),
-    );
-  }
-}
-
-// ==========================================
-// TABS DE BÚSQUEDA Y FAVORITOS
-// ==========================================
-class SearchTab extends StatefulWidget {
-  final Color primaryColor;
-  final Function(Map<String, dynamic>, List<Map<String, dynamic>>, int) onVideoSelected;
-  final String? currentVideoId;
-  final Function(Map<String, dynamic>) onToggleFavorite;
-  final bool Function(Map<String, dynamic>) isFavorite;
-
-  const SearchTab({super.key, required this.primaryColor, required this.onVideoSelected, this.currentVideoId, required this.onToggleFavorite, required this.isFavorite});
-
-  @override
-  State<SearchTab> createState() => _SearchTabState();
-}
-
-class _SearchTabState extends State<SearchTab> {
-  final TextEditingController _searchController = TextEditingController();
-  List<Map<String, dynamic>> _videos = [];
-  bool _isLoading = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _searchVideos('Lo más escuchado 2026');
-  }
-
-  Future<void> _searchVideos(String query) async {
-    if (query.trim().isEmpty) return;
-    setState(() => _isLoading = true);
-
-    try {
-      final ytExplode = yt.YoutubeExplode();
-      final searchResults = await ytExplode.search.search(query);
-      ytExplode.close();
-
-      if (mounted) {
-        setState(() {
-          _videos = searchResults.map((video) => {
-            'id': video.id.value,
-            'title': video.title,
-            'uploader': video.author,
-            'thumbnail': video.thumbnails.highResUrl,
-          }).toList();
-        });
-      }
-    } catch (e) {
-      if (mounted) setState(() => _videos = []);
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Padding(
-          padding: const EdgeInsets.all(12.0),
-          child: TextField(
-            controller: _searchController,
-            decoration: InputDecoration(
-              hintText: 'Buscar música, videos, resúmenes...',
-              prefixIcon: Icon(Icons.search, color: widget.primaryColor),
-              suffixIcon: IconButton(icon: Icon(Icons.send, color: widget.primaryColor), onPressed: () => _searchVideos(_searchController.text)),
-              filled: true,
-              fillColor: const Color(0xFF2C2C2C),
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(30.0), borderSide: BorderSide.none),
-            ),
-            onSubmitted: _searchVideos,
-          ),
-        ),
-        Expanded(
-          child: _isLoading
-              ? Center(child: CircularProgressIndicator(color: widget.primaryColor))
-              : _videos.isEmpty
-                  ? const Center(child: Text('No se encontraron resultados'))
-                  : ListView.builder(
-                      itemCount: _videos.length,
-                      itemBuilder: (context, index) {
-                        final video = _videos[index];
-                        final isSelected = widget.currentVideoId == video['id'];
-                        final isFav = widget.isFavorite(video);
-                        return Card(
-                          color: const Color(0xFF1E1E1E),
-                          margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                          child: ListTile(
-                            leading: ClipRRect(borderRadius: BorderRadius.circular(8.0), child: Image.network(video['thumbnail'], width: 70, height: 50, fit: BoxFit.cover)),
-                            title: Text(video['title'], style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13), maxLines: 2, overflow: TextOverflow.ellipsis),
-                            subtitle: Text(video['uploader'], style: const TextStyle(fontSize: 11), maxLines: 1, overflow: TextOverflow.ellipsis),
-                            trailing: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                IconButton(icon: Icon(isFav ? Icons.favorite : Icons.favorite_border, color: isFav ? Colors.redAccent : Colors.grey, size: 20), onPressed: () => widget.onToggleFavorite(video)),
-                                IconButton(icon: Icon(isSelected ? Icons.equalizer : Icons.play_arrow_rounded, color: widget.primaryColor, size: 34), onPressed: () => widget.onVideoSelected(video, _videos, index)),
-                              ],
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-        ),
-      ],
-    );
-  }
-}
-
-class FavoritesTab extends StatelessWidget {
-  final Color primaryColor;
-  final List<Map<String, dynamic>> favorites;
-  final Function(Map<String, dynamic>, List<Map<String, dynamic>>, int) onVideoSelected;
-  final String? currentVideoId;
-  final Function(Map<String, dynamic>) onToggleFavorite;
-
-  const FavoritesTab({super.key, required this.primaryColor, required this.favorites, required this.onVideoSelected, this.currentVideoId, required this.onToggleFavorite});
-
-  @override
-  Widget build(BuildContext context) {
-    if (favorites.isEmpty) return const Center(child: Text('Aún no has agregado favoritos.', style: TextStyle(color: Colors.grey)));
-    return ListView.builder(
-      itemCount: favorites.length,
-      itemBuilder: (context, index) {
-        final video = favorites[index];
-        final isSelected = currentVideoId == video['id'];
-        return Card(
-          color: const Color(0xFF1E1E1E),
-          margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-          child: ListTile(
-            leading: ClipRRect(borderRadius: BorderRadius.circular(8.0), child: Image.network(video['thumbnail'], width: 70, height: 50, fit: BoxFit.cover)),
-            title: Text(video['title'], style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13), maxLines: 2, overflow: TextOverflow.ellipsis),
-            subtitle: Text(video['uploader'], style: const TextStyle(fontSize: 11), maxLines: 1, overflow: TextOverflow.ellipsis),
-            trailing: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                IconButton(icon: const Icon(Icons.favorite, color: Colors.redAccent, size: 20), onPressed: () => onToggleFavorite(video)),
-                IconButton(icon: Icon(isSelected ? Icons.equalizer : Icons.play_arrow_rounded, color: primaryColor, size: 34), onPressed: () => onVideoSelected(video, favorites, index)),
-              ],
-            ),
-          ),
-        );
-      },
     );
   }
 }
