@@ -84,10 +84,12 @@ class _MainScreenState extends State<MainScreen> {
   int _currentIndex = 0;
   List<Map<String, dynamic>> _favorites = [];
   
-  // Variables para la lista de reproducción
   Map<String, dynamic>? _currentVideo;
   List<Map<String, dynamic>> _currentPlaylist = [];
   int _currentPlaylistIndex = -1;
+  
+  // Memoria del modo de reproducción (Persiste entre videos)
+  bool _globalAudioMode = false;
 
   @override
   void initState() {
@@ -197,6 +199,12 @@ class _MainScreenState extends State<MainScreen> {
             HybridPlayerWidget(
               videoData: _currentVideo!, 
               primaryColor: widget.primaryColor,
+              initialAudioMode: _globalAudioMode,
+              onModeChanged: (isAudio) {
+                setState(() {
+                  _globalAudioMode = isAudio;
+                });
+              },
               onNext: hasNext ? _playNext : null,
               onPrevious: hasPrev ? _playPrevious : null,
               key: ValueKey(_currentVideo!['id']),
@@ -226,11 +234,13 @@ class _MainScreenState extends State<MainScreen> {
 }
 
 // ==========================================
-// 🎛️ EL REPRODUCTOR HÍBRIDO DEFINITIVO
+// 🎛️ EL REPRODUCTOR HÍBRIDO
 // ==========================================
 class HybridPlayerWidget extends StatefulWidget {
   final Map<String, dynamic> videoData;
   final Color primaryColor;
+  final bool initialAudioMode;
+  final ValueChanged<bool> onModeChanged;
   final VoidCallback? onNext;
   final VoidCallback? onPrevious;
 
@@ -238,6 +248,8 @@ class HybridPlayerWidget extends StatefulWidget {
     super.key, 
     required this.videoData, 
     required this.primaryColor,
+    required this.initialAudioMode,
+    required this.onModeChanged,
     this.onNext,
     this.onPrevious,
   });
@@ -254,12 +266,13 @@ class _HybridPlayerWidgetState extends State<HybridPlayerWidget> {
   String _audioUrl = '';
   
   bool _isLoading = true;
-  bool _isAudioMode = false;
+  late bool _isAudioMode;
   bool _showControls = true;
 
   @override
   void initState() {
     super.initState();
+    _isAudioMode = widget.initialAudioMode;
     _initExtract();
   }
 
@@ -273,7 +286,11 @@ class _HybridPlayerWidgetState extends State<HybridPlayerWidget> {
       _videoStreams = manifest.muxed.sortByVideoQuality().toList();
       
       if (_videoStreams.isNotEmpty) {
-        _startVideo(_videoStreams.first.url.toString(), Duration.zero);
+        if (_isAudioMode) {
+          await _startAudio(Duration.zero);
+        } else {
+          await _startVideo(_videoStreams.first.url.toString(), Duration.zero);
+        }
       }
     } catch (e) {
       if (mounted) setState(() => _isLoading = false);
@@ -316,7 +333,6 @@ class _HybridPlayerWidgetState extends State<HybridPlayerWidget> {
     await _audioPlayer.seek(startAt);
     _audioPlayer.play();
     
-    // Actualizar UI para el slider
     _audioPlayer.positionStream.listen((_) {
       if (mounted) setState(() {});
     });
@@ -332,6 +348,7 @@ class _HybridPlayerWidgetState extends State<HybridPlayerWidget> {
   Future<void> _changeQuality(String option) async {
     setState(() => _isLoading = true);
     Duration currentPos = Duration.zero;
+    
     if (_isAudioMode) {
       currentPos = _audioPlayer.position;
       await _audioPlayer.stop();
@@ -341,8 +358,10 @@ class _HybridPlayerWidgetState extends State<HybridPlayerWidget> {
     }
 
     if (option == 'audio_only') {
+      widget.onModeChanged(true);
       await _startAudio(currentPos);
     } else {
+      widget.onModeChanged(false);
       await _startVideo(option, currentPos);
     }
   }
@@ -366,7 +385,6 @@ class _HybridPlayerWidgetState extends State<HybridPlayerWidget> {
         primaryColor: widget.primaryColor,
       );
     })).then((_) {
-      // Al salir de pantalla completa, forzamos regresar a vertical
       SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
       SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     });
@@ -393,13 +411,22 @@ class _HybridPlayerWidgetState extends State<HybridPlayerWidget> {
       height: 240,
       color: Colors.black,
       child: _isLoading
-          ? Center(child: CircularProgressIndicator(color: widget.primaryColor))
+          ? Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  CircularProgressIndicator(color: widget.primaryColor),
+                  const SizedBox(height: 8),
+                  Text(_isAudioMode ? 'Conectando audio...' : 'Cargando video...', style: const TextStyle(color: Colors.grey, fontSize: 12)),
+                ],
+              ),
+            )
           : GestureDetector(
               onTap: () => setState(() => _showControls = !_showControls),
               child: Stack(
                 fit: StackFit.expand,
                 children: [
-                  // CAPA 1: EL REPRODUCTOR VISUAL
+                  // CAPA VISUAL
                   if (_isAudioMode)
                     Image.network(
                       widget.videoData['thumbnail'],
@@ -415,13 +442,12 @@ class _HybridPlayerWidgetState extends State<HybridPlayerWidget> {
                       ),
                     ),
 
-                  // CAPA 2: CONTROLES OVERLAY
+                  // CONTROLES OVERLAY
                   if (_showControls)
                     Container(
                       color: Colors.black54, 
                       child: Stack(
                         children: [
-                          // Menú de Calidad (Arriba a la derecha)
                           Positioned(
                             top: 5,
                             right: 5,
@@ -437,13 +463,12 @@ class _HybridPlayerWidgetState extends State<HybridPlayerWidget> {
                                 const PopupMenuDivider(),
                                 const PopupMenuItem(
                                   value: 'audio_only',
-                                  child: Text('Audio only (2do plano)', style: TextStyle(color: Colors.blueAccent, fontWeight: FontWeight.bold)),
+                                  child: Text('Solo Audio (2do Plano)', style: TextStyle(color: Colors.blueAccent, fontWeight: FontWeight.bold)),
                                 ),
                               ],
                             ),
                           ),
 
-                          // Fila Central de Controles (Anterior, -10s, Play, +10s, Siguiente)
                           Align(
                             alignment: Alignment.center,
                             child: Row(
@@ -491,7 +516,6 @@ class _HybridPlayerWidgetState extends State<HybridPlayerWidget> {
                             ),
                           ),
 
-                          // Barra de progreso y tiempos (Abajo)
                           Positioned(
                             bottom: 5,
                             left: 10,
@@ -566,7 +590,6 @@ class _FullScreenPlayerPageState extends State<FullScreenPlayerPage> {
   @override
   void initState() {
     super.initState();
-    // Forzamos rotación a horizontal y escondemos barra de estado
     SystemChrome.setPreferredOrientations([
       DeviceOrientation.landscapeLeft,
       DeviceOrientation.landscapeRight,
@@ -730,7 +753,7 @@ class _SearchTabState extends State<SearchTab> {
   @override
   void initState() {
     super.initState();
-    _searchVideos('goles de messi resumen');
+    _searchVideos('Lo más escuchado 2026');
   }
 
   Future<void> _searchVideos(String query) async {
