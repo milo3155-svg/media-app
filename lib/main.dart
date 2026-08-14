@@ -3,7 +3,7 @@ import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'dart:io';
 import 'package:just_audio/just_audio.dart';
-import 'package:audio_service/audio_service.dart';
+import 'package0:audio_service/audio_service.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -89,6 +89,11 @@ class MyAudioHandler extends BaseAudioHandler with SeekHandler {
 
   @override
   Future<void> seek(Duration position) => _player.seek(position);
+
+  @override
+  Future<void> skipToNext() async {
+    if (onTrackEnded != null) onTrackEnded!();
+  }
 
   AudioPlayer get player => _player;
 }
@@ -209,6 +214,9 @@ class _MainScreenState extends State<MainScreen> {
     if (currentList != null) _playlist = currentList;
     if (index != null) _currentTrackIndex = index;
 
+    final mediaUrl = track['streamUrl'] ?? '';
+    if (mediaUrl.isEmpty) return;
+
     try {
       if (_currentTrack?['id'] == track['id']) {
         if (_isPlaying) {
@@ -231,8 +239,7 @@ class _MainScreenState extends State<MainScreen> {
         duration: track['duration'] != null ? Duration(seconds: track['duration']) : null,
       );
 
-      final streamUrl = 'https://discoveryprovider.audius.co/v1/tracks/${track['id']}/stream?app_name=MediaApp';
-      await _audioHandler.playStream(streamUrl, mediaItem);
+      await _audioHandler.playStream(mediaUrl, mediaItem);
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Error al reproducir pista')),
@@ -304,7 +311,7 @@ class _MainScreenState extends State<MainScreen> {
                         icon: const Icon(Icons.keyboard_arrow_down, size: 30),
                         onPressed: () => Navigator.pop(context),
                       ),
-                      const Text('Reproduciendo en vivo', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                      const Text('Reproduciendo canción completa', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
                       IconButton(
                         icon: Icon(
                           isFav ? Icons.favorite : Icons.favorite_border,
@@ -621,58 +628,58 @@ class _SearchTabState extends State<SearchTab> {
   @override
   void initState() {
     super.initState();
-    _fetchTrendingTracks();
-  }
-
-  Future<void> _fetchTrendingTracks() async {
-    setState(() => _isLoading = true);
-    try {
-      final res = await http.get(
-        Uri.parse('https://discoveryprovider.audius.co/v1/tracks/trending?app_name=MediaApp&limit=25'),
-      );
-      _parseResponse(res);
-    } catch (_) {
-    } finally {
-      setState(() => _isLoading = false);
-    }
+    _searchTracks('rock clasico');
   }
 
   Future<void> _searchTracks(String query) async {
-    if (query.trim().isEmpty) {
-      _fetchTrendingTracks();
-      return;
-    }
+    if (query.trim().isEmpty) return;
     setState(() => _isLoading = true);
 
     try {
       final res = await http.get(
-        Uri.parse('https://discoveryprovider.audius.co/v1/tracks/search?query=${Uri.encodeComponent(query)}&app_name=MediaApp&limit=25'),
+        Uri.parse('https://saavn.dev/api/search/songs?query=${Uri.encodeComponent(query)}&limit=30'),
       );
-      _parseResponse(res);
+
+      if (res.statusCode == 200) {
+        final data = json.decode(res.body);
+        final results = data['data']?['results'] as List?;
+        if (results != null) {
+          setState(() {
+            _tracks = results.map((item) {
+              final images = item['image'] as List?;
+              final downloadUrls = item['downloadUrl'] as List?;
+
+              String image = '';
+              if (images != null && images.isNotEmpty) {
+                image = images.last['url'] ?? '';
+              }
+
+              String audioUrl = '';
+              if (downloadUrls != null && downloadUrls.isNotEmpty) {
+                audioUrl = downloadUrls.last['url'] ?? '';
+              }
+
+              final primaryArtists = item['artists']?['primary'] as List?;
+              String artistName = 'Artista';
+              if (primaryArtists != null && primaryArtists.isNotEmpty) {
+                artistName = primaryArtists.map((a) => a['name']).join(', ');
+              }
+
+              return {
+                'id': item['id'] ?? '',
+                'title': item['name'] ?? 'Sin título',
+                'artist': artistName,
+                'thumbnail': image,
+                'streamUrl': audioUrl,
+                'duration': item['duration'],
+              };
+            }).where((t) => (t['streamUrl'] as String).isNotEmpty).toList();
+          });
+        }
+      }
     } catch (_) {
     } finally {
       setState(() => _isLoading = false);
-    }
-  }
-
-  void _parseResponse(http.Response res) {
-    if (res.statusCode == 200) {
-      final data = json.decode(res.body);
-      final items = data['data'] as List?;
-      if (items != null) {
-        setState(() {
-          _tracks = items.map((item) {
-            final artwork = item['artwork']?['150x150'] ?? item['artwork']?['480x480'] ?? '';
-            return {
-              'id': item['id'] ?? '',
-              'title': item['title'] ?? 'Sin título',
-              'artist': item['user']?['name'] ?? 'Artista Audius',
-              'thumbnail': artwork,
-              'duration': item['duration'],
-            };
-          }).toList();
-        });
-      }
     }
   }
 
@@ -685,7 +692,7 @@ class _SearchTabState extends State<SearchTab> {
           child: TextField(
             controller: _searchController,
             decoration: InputDecoration(
-              hintText: 'Buscar canciones, artistas o géneros...',
+              hintText: 'Buscar cualquier canción, artista o álbum...',
               prefixIcon: Icon(Icons.search, color: widget.primaryColor),
               suffixIcon: IconButton(
                 icon: Icon(Icons.send, color: widget.primaryColor),
