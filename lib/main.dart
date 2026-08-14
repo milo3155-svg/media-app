@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'dart:io';
 import 'package:youtube_player_iframe/youtube_player_iframe.dart';
+import 'package:youtube_explode_dart/youtube_explode_dart.dart' as yt;
 import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -258,12 +258,6 @@ class _SearchTabState extends State<SearchTab> {
   List<Map<String, dynamic>> _videos = [];
   bool _isLoading = false;
 
-  final List<String> _instances = [
-    'https://inv.tux.pizza/api/v1/search',
-    'https://invidious.nerdvpn.de/api/v1/search',
-    'https://vid.puffyan.us/api/v1/search',
-  ];
-
   @override
   void initState() {
     super.initState();
@@ -274,45 +268,32 @@ class _SearchTabState extends State<SearchTab> {
     if (query.trim().isEmpty) return;
     setState(() => _isLoading = true);
 
-    bool success = false;
-    for (final baseUrl in _instances) {
-      try {
-        final uri = Uri.parse('$baseUrl?q=${Uri.encodeComponent(query)}&type=video');
-        final res = await http.get(uri).timeout(const Duration(seconds: 4));
+    try {
+      final ytExplode = yt.YoutubeExplode();
+      final searchResults = await ytExplode.search.search(query);
+      ytExplode.close();
 
-        if (res.statusCode == 200) {
-          final List data = json.decode(res.body);
-          if (data.isNotEmpty) {
-            setState(() {
-              _videos = data.map((item) {
-                final thumbnails = item['videoThumbnails'] as List?;
-                String thumb = '';
-                if (thumbnails != null && thumbnails.isNotEmpty) {
-                  thumb = thumbnails.first['url'] ?? '';
-                }
-
-                return {
-                  'id': item['videoId'] ?? '',
-                  'title': item['title'] ?? 'Sin título',
-                  'uploader': item['author'] ?? 'Canal',
-                  'thumbnail': thumb,
-                };
-              }).where((v) => (v['id'] as String).isNotEmpty).toList();
-            });
-            success = true;
-            break;
-          }
-        }
-      } catch (_) {}
+      if (mounted) {
+        setState(() {
+          _videos = searchResults.map((video) {
+            return {
+              'id': video.id.value,
+              'title': video.title,
+              'uploader': video.author,
+              'thumbnail': video.thumbnails.highResUrl,
+            };
+          }).toList();
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _videos = [];
+        });
+      }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
     }
-
-    if (!success && mounted) {
-      setState(() {
-        _videos = [];
-      });
-    }
-
-    if (mounted) setState(() => _isLoading = false);
   }
 
   @override
