@@ -88,7 +88,6 @@ class _MainScreenState extends State<MainScreen> {
   List<Map<String, dynamic>> _currentPlaylist = [];
   int _currentPlaylistIndex = -1;
   
-  // Memoria del modo de reproducción (Persiste entre videos)
   bool _globalAudioMode = false;
 
   @override
@@ -234,7 +233,7 @@ class _MainScreenState extends State<MainScreen> {
 }
 
 // ==========================================
-// 🎛️ EL REPRODUCTOR HÍBRIDO
+// 🎛️ EL REPRODUCTOR HÍBRIDO (CORREGIDO PARA MP4 AUDIO)
 // ==========================================
 class HybridPlayerWidget extends StatefulWidget {
   final Map<String, dynamic> videoData;
@@ -282,7 +281,14 @@ class _HybridPlayerWidgetState extends State<HybridPlayerWidget> {
       final manifest = await ytExplode.videos.streamsClient.getManifest(widget.videoData['id']);
       ytExplode.close();
 
-      _audioUrl = manifest.audioOnly.withHighestBitrate().url.toString();
+      // FIX CRÍTICO: Forzar audio en MP4(AAC) para evitar que JustAudio se trabe con WebM(Opus)
+      final audioStreams = manifest.audioOnly.where((s) => s.container.name == 'mp4' || s.audioCodec.contains('mp4a'));
+      if (audioStreams.isNotEmpty) {
+        _audioUrl = audioStreams.withHighestBitrate().url.toString();
+      } else {
+        _audioUrl = manifest.audioOnly.withHighestBitrate().url.toString(); // Fallback
+      }
+
       _videoStreams = manifest.muxed.sortByVideoQuality().toList();
       
       if (_videoStreams.isNotEmpty) {
@@ -319,29 +325,33 @@ class _HybridPlayerWidgetState extends State<HybridPlayerWidget> {
   }
 
   Future<void> _startAudio(Duration startAt) async {
-    await _audioPlayer.setAudioSource(
-      AudioSource.uri(
-        Uri.parse(_audioUrl),
-        tag: MediaItem(
-          id: widget.videoData['id'],
-          title: widget.videoData['title'],
-          artist: widget.videoData['uploader'],
-          artUri: Uri.parse(widget.videoData['thumbnail']),
+    try {
+      await _audioPlayer.setAudioSource(
+        AudioSource.uri(
+          Uri.parse(_audioUrl),
+          tag: MediaItem(
+            id: widget.videoData['id'],
+            title: widget.videoData['title'],
+            artist: widget.videoData['uploader'],
+            artUri: Uri.parse(widget.videoData['thumbnail']),
+          ),
         ),
-      ),
-    );
-    await _audioPlayer.seek(startAt);
-    _audioPlayer.play();
-    
-    _audioPlayer.positionStream.listen((_) {
-      if (mounted) setState(() {});
-    });
-
-    if (mounted) {
-      setState(() {
-        _isAudioMode = true;
-        _isLoading = false;
+      );
+      await _audioPlayer.seek(startAt);
+      _audioPlayer.play();
+      
+      _audioPlayer.positionStream.listen((_) {
+        if (mounted) setState(() {});
       });
+
+      if (mounted) {
+        setState(() {
+          _isAudioMode = true;
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      print("Error reproduciendo audio: $e");
     }
   }
 
