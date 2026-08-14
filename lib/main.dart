@@ -1,13 +1,15 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'dart:convert';
 import 'dart:io';
-import 'package:youtube_player_iframe/youtube_player_iframe.dart';
+import 'package:youtube_player_flutter/youtube_player_flutter.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart' as yt;
 import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
+  SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
   runApp(const MediaApp());
 }
 
@@ -77,6 +79,7 @@ class _MainScreenState extends State<MainScreen> {
 
   Map<String, dynamic>? _currentVideo;
   YoutubePlayerController? _youtubeController;
+  bool _isPlayerReady = false;
 
   @override
   void initState() {
@@ -105,22 +108,32 @@ class _MainScreenState extends State<MainScreen> {
     if (videoId.isEmpty) return;
 
     if (_youtubeController != null) {
-      _youtubeController!.loadVideoById(videoId: videoId);
+      _youtubeController!.load(videoId);
     } else {
-      _youtubeController = YoutubePlayerController.fromVideoId(
-        videoId: videoId,
-        autoPlay: true,
-        params: const YoutubePlayerParams(
-          showControls: true,
-          showFullscreenButton: true,
+      _youtubeController = YoutubePlayerController(
+        initialVideoId: videoId,
+        flags: const YoutubePlayerFlags(
+          autoPlay: true,
           mute: false,
+          disableDragSeek: false,
+          loop: false,
+          isLive: false,
+          forceHD: false,
+          enableCaption: false,
         ),
-      );
+      )..addListener(_listener);
     }
 
     setState(() {
       _currentVideo = videoItem;
+      _isPlayerReady = false;
     });
+  }
+
+  void _listener() {
+    if (_isPlayerReady && mounted && !_youtubeController!.value.isFullScreen) {
+      setState(() {});
+    }
   }
 
   void _toggleFavorite(Map<String, dynamic> videoItem) {
@@ -143,7 +156,7 @@ class _MainScreenState extends State<MainScreen> {
 
   @override
   void dispose() {
-    _youtubeController?.close();
+    _youtubeController?.dispose();
     super.dispose();
   }
 
@@ -206,7 +219,15 @@ class _MainScreenState extends State<MainScreen> {
               height: 220,
               child: YoutubePlayer(
                 controller: _youtubeController!,
-                aspectRatio: 16 / 9,
+                showVideoProgressIndicator: true,
+                progressIndicatorColor: widget.primaryColor,
+                progressColors: ProgressBarColors(
+                  playedColor: widget.primaryColor,
+                  handleColor: widget.primaryColor,
+                ),
+                onReady: () {
+                  _isPlayerReady = true;
+                },
               ),
             ),
           Expanded(child: pages[_currentIndex]),
@@ -261,7 +282,7 @@ class _SearchTabState extends State<SearchTab> {
   @override
   void initState() {
     super.initState();
-    _searchVideos('resumen futbol goles');
+    _searchVideos('goles de messi resumen');
   }
 
   Future<void> _searchVideos(String query) async {
@@ -305,7 +326,7 @@ class _SearchTabState extends State<SearchTab> {
           child: TextField(
             controller: _searchController,
             decoration: InputDecoration(
-              hintText: 'Buscar videos, jugadas, resúmenes...',
+              hintText: 'Buscar videos, jugadas, música...',
               prefixIcon: Icon(Icons.search, color: widget.primaryColor),
               suffixIcon: IconButton(
                 icon: Icon(Icons.send, color: widget.primaryColor),
