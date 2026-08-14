@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:just_audio/just_audio.dart';
 import 'package:audio_service/audio_service.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package0:shared_preferences/shared_preferences.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 late MyAudioHandler _audioHandler;
@@ -17,7 +18,7 @@ Future<void> main() async {
       androidNotificationChannelId: 'com.example.media_app.channel.audio',
       androidNotificationChannelName: 'Media Playback',
       androidNotificationOngoing: true,
-      androidStopForegroundOnPause: true,
+      androidStopForegroundOnPause: false,
     ),
   );
   runApp(const MediaApp());
@@ -25,23 +26,27 @@ Future<void> main() async {
 
 class MyAudioHandler extends BaseAudioHandler with SeekHandler {
   final AudioPlayer _player = AudioPlayer();
+  VoidCallback? onTrackEnded;
 
   MyAudioHandler() {
     _player.playbackEventStream.listen(_broadcastState);
 
     _player.playerStateStream.listen((state) {
       if (state.processingState == ProcessingState.completed) {
-        stop();
+        if (onTrackEnded != null) {
+          onTrackEnded!();
+        }
       }
     });
   }
 
   void _broadcastState(PlaybackEvent event) {
+    final playing = _player.playing;
     playbackState.add(PlaybackState(
       controls: [
-        MediaControl.rewind,
-        if (_player.playing) MediaControl.pause else MediaControl.play,
-        MediaControl.fastForward,
+        MediaControl.skipToPrevious,
+        if (playing) MediaControl.pause else MediaControl.play,
+        MediaControl.skipToNext,
         MediaControl.stop,
       ],
       systemActions: const {
@@ -57,7 +62,7 @@ class MyAudioHandler extends BaseAudioHandler with SeekHandler {
         ProcessingState.ready: AudioProcessingState.ready,
         ProcessingState.completed: AudioProcessingState.completed,
       }[_player.processingState]!,
-      playing: _player.playing,
+      playing: playing,
       updatePosition: _player.position,
       bufferedPosition: _player.bufferedPosition,
       speed: _player.speed,
@@ -153,6 +158,8 @@ class MainScreen extends StatefulWidget {
 class _MainScreenState extends State<MainScreen> {
   int _currentIndex = 0;
   List<Map<String, dynamic>> _favorites = [];
+  List<Map<String, dynamic>> _playlist = [];
+  int _currentTrackIndex = -1;
 
   Map<String, dynamic>? _currentTrack;
   bool _isPlaying = false;
@@ -163,6 +170,8 @@ class _MainScreenState extends State<MainScreen> {
   void initState() {
     super.initState();
     _loadSavedData();
+
+    _audioHandler.onTrackEnded = _playNextTrack;
 
     _audioHandler.playbackState.listen((state) {
       if (mounted) {
@@ -197,7 +206,10 @@ class _MainScreenState extends State<MainScreen> {
     await prefs.setString('saved_favorites', json.encode(_favorites));
   }
 
-  Future<void> _playTrack(Map<String, dynamic> track) async {
+  Future<void> _playTrack(Map<String, dynamic> track, {List<Map<String, dynamic>>? currentList, int? index}) async {
+    if (currentList != null) _playlist = currentList;
+    if (index != null) _currentTrackIndex = index;
+
     try {
       if (_currentTrack?['id'] == track['id']) {
         if (_isPlaying) {
@@ -217,6 +229,7 @@ class _MainScreenState extends State<MainScreen> {
         title: track['title'] ?? 'Sin título',
         artist: track['artist'] ?? 'Artista desconocido',
         artUri: Uri.tryParse(track['thumbnail'] ?? ''),
+        duration: track['duration'] != null ? Duration(seconds: track['duration']) : null,
       );
 
       final streamUrl = 'https://discoveryprovider.audius.co/v1/tracks/${track['id']}/stream?app_name=MediaApp';
@@ -225,6 +238,20 @@ class _MainScreenState extends State<MainScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Error al reproducir pista')),
       );
+    }
+  }
+
+  void _playNextTrack() {
+    if (_playlist.isNotEmpty && _currentTrackIndex < _playlist.length - 1) {
+      _currentTrackIndex++;
+      _playTrack(_playlist[_currentTrackIndex], index: _currentTrackIndex);
+    }
+  }
+
+  void _playPreviousTrack() {
+    if (_playlist.isNotEmpty && _currentTrackIndex > 0) {
+      _currentTrackIndex--;
+      _playTrack(_playlist[_currentTrackIndex], index: _currentTrackIndex);
     }
   }
 
@@ -278,7 +305,7 @@ class _MainScreenState extends State<MainScreen> {
                         icon: const Icon(Icons.keyboard_arrow_down, size: 30),
                         onPressed: () => Navigator.pop(context),
                       ),
-                      const Text('Audius API (Canción Completa)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                      const Text('Reproduciendo en vivo', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
                       IconButton(
                         icon: Icon(
                           isFav ? Icons.favorite : Icons.favorite_border,
@@ -363,10 +390,9 @@ class _MainScreenState extends State<MainScreen> {
                     mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                     children: [
                       IconButton(
-                        icon: const Icon(Icons.replay_10, size: 32, color: Colors.grey),
+                        icon: const Icon(Icons.skip_previous, size: 36, color: Colors.white),
                         onPressed: () {
-                          final target = _position - const Duration(seconds: 10);
-                          _audioHandler.seek(target < Duration.zero ? Duration.zero : target);
+                          _playPreviousTrack();
                           setModalState(() {});
                         },
                       ),
@@ -384,10 +410,9 @@ class _MainScreenState extends State<MainScreen> {
                         },
                       ),
                       IconButton(
-                        icon: const Icon(Icons.forward_10, size: 32, color: Colors.grey),
+                        icon: const Icon(Icons.skip_next, size: 36, color: Colors.white),
                         onPressed: () {
-                          final target = _position + const Duration(seconds: 10);
-                          _audioHandler.seek(target > _duration ? _duration : target);
+                          _playNextTrack();
                           setModalState(() {});
                         },
                       ),
@@ -415,7 +440,7 @@ class _MainScreenState extends State<MainScreen> {
     final List<Widget> pages = [
       SearchTab(
         primaryColor: widget.primaryColor,
-        onTrackSelected: (track) => _playTrack(track),
+        onTrackSelected: (track, list, idx) => _playTrack(track, currentList: list, index: idx),
         currentTrackId: _currentTrack?['id'],
         isPlaying: _isPlaying,
         onToggleFavorite: _toggleFavorite,
@@ -424,7 +449,7 @@ class _MainScreenState extends State<MainScreen> {
       FavoritesTab(
         primaryColor: widget.primaryColor,
         favorites: _favorites,
-        onTrackSelected: (track) => _playTrack(track),
+        onTrackSelected: (track, list, idx) => _playTrack(track, currentList: list, index: idx),
         currentTrackId: _currentTrack?['id'],
         isPlaying: _isPlaying,
         onToggleFavorite: _toggleFavorite,
@@ -434,7 +459,7 @@ class _MainScreenState extends State<MainScreen> {
     return Scaffold(
       appBar: AppBar(
         title: Text(
-          _currentIndex == 0 ? 'Media App (Audius Engine)' : 'Tus Favoritos',
+          _currentIndex == 0 ? 'Media App' : 'Tus Favoritos',
         ),
         centerTitle: true,
         backgroundColor: const Color(0xFF1F1F1F),
@@ -569,7 +594,7 @@ class _MainScreenState extends State<MainScreen> {
 
 class SearchTab extends StatefulWidget {
   final Color primaryColor;
-  final Function(Map<String, dynamic>) onTrackSelected;
+  final Function(Map<String, dynamic>, List<Map<String, dynamic>>, int) onTrackSelected;
   final String? currentTrackId;
   final bool isPlaying;
   final Function(Map<String, dynamic>) onToggleFavorite;
@@ -597,38 +622,58 @@ class _SearchTabState extends State<SearchTab> {
   @override
   void initState() {
     super.initState();
-    _searchTracks('electronic');
+    _fetchTrendingTracks();
+  }
+
+  Future<void> _fetchTrendingTracks() async {
+    setState(() => _isLoading = true);
+    try {
+      final res = await http.get(
+        Uri.parse('https://discoveryprovider.audius.co/v1/tracks/trending?app_name=MediaApp&limit=25'),
+      );
+      _parseResponse(res);
+    } catch (_) {
+    } finally {
+      setState(() => _isLoading = false);
+    }
   }
 
   Future<void> _searchTracks(String query) async {
-    if (query.trim().isEmpty) return;
+    if (query.trim().isEmpty) {
+      _fetchTrendingTracks();
+      return;
+    }
     setState(() => _isLoading = true);
 
     try {
       final res = await http.get(
-        Uri.parse('https://discoveryprovider.audius.co/v1/tracks/search?query=${Uri.encodeComponent(query)}&app_name=MediaApp'),
+        Uri.parse('https://discoveryprovider.audius.co/v1/tracks/search?query=${Uri.encodeComponent(query)}&app_name=MediaApp&limit=25'),
       );
-
-      if (res.statusCode == 200) {
-        final data = json.decode(res.body);
-        final items = data['data'] as List?;
-        if (items != null) {
-          setState(() {
-            _tracks = items.map((item) {
-              final artwork = item['artwork']?['150x150'] ?? item['artwork']?['480x480'] ?? '';
-              return {
-                'id': item['id'] ?? '',
-                'title': item['title'] ?? 'Sin título',
-                'artist': item['user']?['name'] ?? 'Artista Audius',
-                'thumbnail': artwork,
-              };
-            }).toList();
-          });
-        }
-      }
+      _parseResponse(res);
     } catch (_) {
     } finally {
       setState(() => _isLoading = false);
+    }
+  }
+
+  void _parseResponse(http.Response res) {
+    if (res.statusCode == 200) {
+      final data = json.decode(res.body);
+      final items = data['data'] as List?;
+      if (items != null) {
+        setState(() {
+          _tracks = items.map((item) {
+            final artwork = item['artwork']?['150x150'] ?? item['artwork']?['480x480'] ?? '';
+            return {
+              'id': item['id'] ?? '',
+              'title': item['title'] ?? 'Sin título',
+              'artist': item['user']?['name'] ?? 'Artista Audius',
+              'thumbnail': artwork,
+              'duration': item['duration'],
+            };
+          }).toList();
+        });
+      }
     }
   }
 
@@ -641,7 +686,7 @@ class _SearchTabState extends State<SearchTab> {
           child: TextField(
             controller: _searchController,
             decoration: InputDecoration(
-              hintText: 'Buscar en la red oficial de Audius...',
+              hintText: 'Buscar canciones, artistas o géneros...',
               prefixIcon: Icon(Icons.search, color: widget.primaryColor),
               suffixIcon: IconButton(
                 icon: Icon(Icons.send, color: widget.primaryColor),
@@ -661,7 +706,7 @@ class _SearchTabState extends State<SearchTab> {
           child: _isLoading
               ? Center(child: CircularProgressIndicator(color: widget.primaryColor))
               : _tracks.isEmpty
-                  ? const Center(child: Text('No se encontraron canciones en Audius'))
+                  ? const Center(child: Text('No se encontraron canciones'))
                   : ListView.builder(
                       itemCount: _tracks.length,
                       itemBuilder: (context, index) {
@@ -712,7 +757,7 @@ class _SearchTabState extends State<SearchTab> {
                                     color: widget.primaryColor,
                                     size: 34,
                                   ),
-                                  onPressed: () => widget.onTrackSelected(track),
+                                  onPressed: () => widget.onTrackSelected(track, _tracks, index),
                                 ),
                               ],
                             ),
@@ -729,7 +774,7 @@ class _SearchTabState extends State<SearchTab> {
 class FavoritesTab extends StatelessWidget {
   final Color primaryColor;
   final List<Map<String, dynamic>> favorites;
-  final Function(Map<String, dynamic>) onTrackSelected;
+  final Function(Map<String, dynamic>, List<Map<String, dynamic>>, int) onTrackSelected;
   final String? currentTrackId;
   final bool isPlaying;
   final Function(Map<String, dynamic>) onToggleFavorite;
@@ -800,7 +845,7 @@ class FavoritesTab extends StatelessWidget {
                     color: primaryColor,
                     size: 34,
                   ),
-                  onPressed: () => onTrackSelected(track),
+                  onPressed: () => onTrackSelected(track, favorites, index),
                 ),
               ],
             ),
