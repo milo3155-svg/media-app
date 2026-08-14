@@ -17,6 +17,7 @@ Future<void> main() async {
     androidNotificationChannelId: 'com.mediaapp.channel.audio',
     androidNotificationChannelName: 'Reproducción 2do Plano',
     androidNotificationOngoing: true,
+    androidNotificationIcon: 'drawable/ic_notification', // ¡EL FIX QUE EVITA EL CRASHEO!
   );
   
   runApp(const MediaApp());
@@ -96,7 +97,7 @@ class _HomeScreenState extends State<HomeScreen> {
   void initState() {
     super.initState();
     _loadSavedData();
-    _searchVideos('Lo más escuchado 2026'); // Tendencias por defecto
+    _searchVideos('Lo más escuchado 2026');
   }
 
   Future<void> _loadSavedData() async {
@@ -166,7 +167,7 @@ class _HomeScreenState extends State<HomeScreen> {
           onToggleFavorite: _toggleFavorite,
         ),
       ),
-    ).then((_) => setState(() {})); // Refresca favoritos al volver
+    ).then((_) => setState(() {}));
   }
 
   @override
@@ -315,9 +316,13 @@ class _PlayerScreenState extends State<PlayerScreen> {
       _videoStreams = manifest.muxed.sortByVideoQuality().toList();
       
       if (_videoStreams.isNotEmpty) {
-        // HACK PARA 2DO PLANO: Usamos el video de PEOR calidad y lo pasamos al motor de audio.
-        // Google no bloquea este archivo, y el motor de audio extrae el sonido perfecto.
-        _audioFallbackUrl = _videoStreams.last.url.toString();
+        // Aseguramos formato MP4 para audio nativo fluido en 2do plano
+        final audioStreams = manifest.audioOnly.where((s) => s.container.name == 'mp4' || s.audioCodec.contains('mp4a'));
+        if (audioStreams.isNotEmpty) {
+          _audioFallbackUrl = audioStreams.withHighestBitrate().url.toString();
+        } else {
+          _audioFallbackUrl = manifest.audioOnly.withHighestBitrate().url.toString(); 
+        }
         
         if (_isAudioMode) {
           await _startAudio(Duration.zero);
@@ -431,14 +436,12 @@ class _PlayerScreenState extends State<PlayerScreen> {
                 padding: EdgeInsets.symmetric(vertical: 16),
                 child: Text('Calidad de Reproducción', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white)),
               ),
-              // Opciones de video
               ..._videoStreams.map((stream) => ListTile(
                 leading: const Icon(Icons.hd, color: Colors.white70),
                 title: Text('Video ${stream.videoQuality.name}p', style: const TextStyle(color: Colors.white)),
                 onTap: () => _changeMode(stream.url.toString(), '${stream.videoQuality.name}p'),
               )),
               const Divider(color: Colors.grey),
-              // Opción Solo Audio
               ListTile(
                 leading: Icon(Icons.headphones, color: widget.primaryColor),
                 title: Text('Solo Audio (Permite 2do Plano)', style: TextStyle(color: widget.primaryColor, fontWeight: FontWeight.bold)),
@@ -507,7 +510,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
         children: [
           Column(
             children: [
-              // 1. ZONA DE REPRODUCCIÓN VISUAL
               AspectRatio(
                 aspectRatio: 16 / 9,
                 child: Container(
@@ -524,7 +526,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
               
               const SizedBox(height: 16),
 
-              // 2. INFO DEL VIDEO Y FAVORITO
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16.0),
                 child: Row(
@@ -555,7 +556,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
               const SizedBox(height: 20),
 
-              // 3. BARRA DE PROGRESO
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16.0),
                 child: Row(
@@ -589,7 +589,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
               const SizedBox(height: 10),
 
-              // 4. CONTROLES DE REPRODUCCIÓN Y FULLSCREEN
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                 children: [
@@ -631,9 +630,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
             ],
           ),
 
-          // ==========================
-          // 5. LISTA DE REPRODUCCIÓN DESPLEGABLE (BOTTOM SHEET DRAGGABLE)
-          // ==========================
           DraggableScrollableSheet(
             initialChildSize: 0.12,
             minChildSize: 0.12,
@@ -647,7 +643,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
                 ),
                 child: Column(
                   children: [
-                    // Handle del drag
                     Container(
                       margin: const EdgeInsets.symmetric(vertical: 12),
                       width: 40,
@@ -685,9 +680,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
   }
 }
 
-// ==========================================
-// PÁGINA DE PANTALLA COMPLETA
-// ==========================================
 class FullScreenPlayerPage extends StatefulWidget {
   final VideoPlayerController controller;
   final Color primaryColor;
