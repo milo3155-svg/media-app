@@ -5,7 +5,6 @@ import 'dart:io';
 import 'package:just_audio/just_audio.dart';
 import 'package:audio_service/audio_service.dart';
 import 'package:permission_handler/permission_handler.dart';
-import 'package0:shared_preferences/shared_preferences.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 late MyAudioHandler _audioHandler;
@@ -18,7 +17,7 @@ Future<void> main() async {
       androidNotificationChannelId: 'com.example.media_app.channel.audio',
       androidNotificationChannelName: 'Media Playback',
       androidNotificationOngoing: true,
-      androidStopForegroundOnPause: false,
+      androidStopForegroundOnPause: true,
     ),
   );
   runApp(const MediaApp());
