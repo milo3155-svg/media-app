@@ -2,100 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'dart:io';
-import 'package:just_audio/just_audio.dart';
-import 'package:audio_service/audio_service.dart';
+import 'package:video_player/video_player.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-late MyAudioHandler _audioHandler;
-
-Future<void> main() async {
+void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  _audioHandler = await AudioService.init(
-    builder: () => MyAudioHandler(),
-    config: const AudioServiceConfig(
-      androidNotificationChannelId: 'com.example.media_app.channel.audio',
-      androidNotificationChannelName: 'Media Playback',
-      androidNotificationOngoing: true,
-      androidStopForegroundOnPause: true,
-    ),
-  );
   runApp(const MediaApp());
-}
-
-class MyAudioHandler extends BaseAudioHandler with SeekHandler {
-  final AudioPlayer _player = AudioPlayer();
-  VoidCallback? onTrackEnded;
-
-  MyAudioHandler() {
-    _player.playbackEventStream.listen(_broadcastState);
-
-    _player.playerStateStream.listen((state) {
-      if (state.processingState == ProcessingState.completed) {
-        if (onTrackEnded != null) {
-          onTrackEnded!();
-        }
-      }
-    });
-  }
-
-  void _broadcastState(PlaybackEvent event) {
-    final playing = _player.playing;
-    playbackState.add(PlaybackState(
-      controls: [
-        MediaControl.skipToPrevious,
-        if (playing) MediaControl.pause else MediaControl.play,
-        MediaControl.skipToNext,
-        MediaControl.stop,
-      ],
-      systemActions: const {
-        MediaAction.seek,
-        MediaAction.seekForward,
-        MediaAction.seekBackward,
-      },
-      androidCompactActionIndices: const [0, 1, 2],
-      processingState: const {
-        ProcessingState.idle: AudioProcessingState.idle,
-        ProcessingState.loading: AudioProcessingState.loading,
-        ProcessingState.buffering: AudioProcessingState.buffering,
-        ProcessingState.ready: AudioProcessingState.ready,
-        ProcessingState.completed: AudioProcessingState.completed,
-      }[_player.processingState]!,
-      playing: playing,
-      updatePosition: _player.position,
-      bufferedPosition: _player.bufferedPosition,
-      speed: _player.speed,
-      queueIndex: event.currentIndex,
-    ));
-  }
-
-  Future<void> playStream(String url, MediaItem item) async {
-    mediaItem.add(item);
-    await _player.setUrl(url);
-    await _player.play();
-  }
-
-  @override
-  Future<void> play() => _player.play();
-
-  @override
-  Future<void> pause() => _player.pause();
-
-  @override
-  Future<void> stop() async {
-    await _player.stop();
-    await super.stop();
-  }
-
-  @override
-  Future<void> seek(Duration position) => _player.seek(position);
-
-  @override
-  Future<void> skipToNext() async {
-    if (onTrackEnded != null) onTrackEnded!();
-  }
-
-  AudioPlayer get player => _player;
 }
 
 class MediaApp extends StatefulWidget {
@@ -118,7 +31,6 @@ class _MediaAppState extends State<MediaApp> {
   Future<void> _requestInitialPermissions() async {
     if (Platform.isAndroid) {
       await [
-        Permission.audio,
         Permission.notification,
       ].request();
     }
@@ -162,36 +74,15 @@ class MainScreen extends StatefulWidget {
 class _MainScreenState extends State<MainScreen> {
   int _currentIndex = 0;
   List<Map<String, dynamic>> _favorites = [];
-  List<Map<String, dynamic>> _playlist = [];
-  int _currentTrackIndex = -1;
 
-  Map<String, dynamic>? _currentTrack;
-  bool _isPlaying = false;
-  Duration _position = Duration.zero;
-  Duration _duration = Duration.zero;
+  Map<String, dynamic>? _currentVideo;
+  VideoPlayerController? _videoController;
+  bool _isInitializingVideo = false;
 
   @override
   void initState() {
     super.initState();
     _loadSavedData();
-
-    _audioHandler.onTrackEnded = _playNextTrack;
-
-    _audioHandler.playbackState.listen((state) {
-      if (mounted) {
-        setState(() {
-          _isPlaying = state.playing;
-        });
-      }
-    });
-
-    _audioHandler.player.positionStream.listen((pos) {
-      if (mounted) setState(() => _position = pos);
-    });
-
-    _audioHandler.player.durationStream.listen((dur) {
-      if (mounted) setState(() => _duration = dur ?? Duration.zero);
-    });
   }
 
   Future<void> _loadSavedData() async {
@@ -210,235 +101,108 @@ class _MainScreenState extends State<MainScreen> {
     await prefs.setString('saved_favorites', json.encode(_favorites));
   }
 
-  Future<void> _playTrack(Map<String, dynamic> track, {List<Map<String, dynamic>>? currentList, int? index}) async {
-    if (currentList != null) _playlist = currentList;
-    if (index != null) _currentTrackIndex = index;
+  // Obtención de stream con respaldo en múltiples instancias
+  Future<String?> _fetchVideoStream(String videoId) async {
+    final streamEndpoints = [
+      'https://inv.tux.pizza/api/v1/videos/$videoId',
+      'https://invidious.nerdvpn.de/api/v1/videos/$videoId',
+      'https://vid.puffyan.us/api/v1/videos/$videoId',
+      'https://pipedapi.leptons.xyz/streams/$videoId',
+    ];
 
-    final mediaUrl = track['streamUrl'] ?? '';
-    if (mediaUrl.isEmpty) return;
+    for (final endpoint in streamEndpoints) {
+      try {
+        final res = await http.get(Uri.parse(endpoint)).timeout(const Duration(seconds: 4));
+        if (res.statusCode == 200) {
+          final data = json.decode(res.body);
 
-    try {
-      if (_currentTrack?['id'] == track['id']) {
-        if (_isPlaying) {
-          await _audioHandler.pause();
-        } else {
-          await _audioHandler.play();
+          // Formato Invidious
+          if (data['formatStreams'] != null) {
+            final formats = data['formatStreams'] as List;
+            if (formats.isNotEmpty) {
+              return formats.first['url'];
+            }
+          }
+
+          // Formato Piped
+          if (data['videoStreams'] != null) {
+            final streams = data['videoStreams'] as List;
+            if (streams.isNotEmpty) {
+              final selected = streams.firstWhere(
+                (s) => s['format'] == 'MPEG_4' || s['quality'] == '360p' || s['quality'] == '720p',
+                orElse: () => streams.first,
+              );
+              return selected['url'];
+            }
+          }
         }
-        return;
-      }
+      } catch (_) {}
+    }
+    return null;
+  }
 
+  Future<void> _playVideo(Map<String, dynamic> videoItem) async {
+    try {
       setState(() {
-        _currentTrack = track;
+        _currentVideo = videoItem;
+        _isInitializingVideo = true;
       });
 
-      final mediaItem = MediaItem(
-        id: track['id'] ?? '0',
-        title: track['title'] ?? 'Sin título',
-        artist: track['artist'] ?? 'Artista desconocido',
-        artUri: Uri.tryParse(track['thumbnail'] ?? ''),
-        duration: track['duration'] != null ? Duration(seconds: track['duration']) : null,
-      );
+      if (_videoController != null) {
+        await _videoController!.dispose();
+        _videoController = null;
+      }
 
-      await _audioHandler.playStream(mediaUrl, mediaItem);
-    } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Error al reproducir pista')),
+        const SnackBar(content: Text('Cargando video en vivo...'), duration: Duration(seconds: 2)),
+      );
+
+      final streamUrl = await _fetchVideoStream(videoItem['id']);
+      if (streamUrl == null || streamUrl.isEmpty) {
+        throw Exception('Stream no disponible');
+      }
+
+      final controller = VideoPlayerController.networkUrl(Uri.parse(streamUrl));
+      await controller.initialize();
+
+      setState(() {
+        _videoController = controller;
+        _isInitializingVideo = false;
+      });
+
+      await controller.play();
+    } catch (e) {
+      setState(() {
+        _isInitializingVideo = false;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No fue posible cargar este video, prueba con otro.')),
       );
     }
   }
 
-  void _playNextTrack() {
-    if (_playlist.isNotEmpty && _currentTrackIndex < _playlist.length - 1) {
-      _currentTrackIndex++;
-      _playTrack(_playlist[_currentTrackIndex], index: _currentTrackIndex);
-    }
-  }
-
-  void _playPreviousTrack() {
-    if (_playlist.isNotEmpty && _currentTrackIndex > 0) {
-      _currentTrackIndex--;
-      _playTrack(_playlist[_currentTrackIndex], index: _currentTrackIndex);
-    }
-  }
-
-  void _toggleFavorite(Map<String, dynamic> track) {
-    final trackId = track['id'];
+  void _toggleFavorite(Map<String, dynamic> videoItem) {
+    final videoId = videoItem['id'];
     setState(() {
-      final exists = _favorites.any((t) => t['id'] == trackId);
+      final exists = _favorites.any((v) => v['id'] == videoId);
       if (exists) {
-        _favorites.removeWhere((t) => t['id'] == trackId);
+        _favorites.removeWhere((v) => v['id'] == videoId);
       } else {
-        _favorites.add(track);
+        _favorites.add(videoItem);
       }
     });
     _saveLocalData();
   }
 
-  bool _isFavorite(Map<String, dynamic> track) {
-    final trackId = track['id'];
-    return _favorites.any((t) => t['id'] == trackId);
+  bool _isFavorite(Map<String, dynamic> videoItem) {
+    final videoId = videoItem['id'];
+    return _favorites.any((v) => v['id'] == videoId);
   }
 
-  void _openExpandedPlayer() {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: const Color(0xFF181818),
-      builder: (context) {
-        return StatefulBuilder(
-          builder: (context, setModalState) {
-            final double maxSeconds = _duration.inSeconds > 0 ? _duration.inSeconds.toDouble() : 1.0;
-            final double currentSeconds = _position.inSeconds.toDouble().clamp(0.0, maxSeconds);
-            final isFav = _currentTrack != null && _isFavorite(_currentTrack!);
-
-            return SizedBox(
-              height: MediaQuery.of(context).size.height * 0.9,
-              child: Column(
-                children: [
-                  const SizedBox(height: 12),
-                  Container(
-                    width: 40,
-                    height: 5,
-                    decoration: BoxDecoration(
-                      color: Colors.grey[600],
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                  ),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      IconButton(
-                        icon: const Icon(Icons.keyboard_arrow_down, size: 30),
-                        onPressed: () => Navigator.pop(context),
-                      ),
-                      const Text('Reproduciendo canción completa', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-                      IconButton(
-                        icon: Icon(
-                          isFav ? Icons.favorite : Icons.favorite_border,
-                          color: isFav ? Colors.redAccent : Colors.white,
-                        ),
-                        onPressed: () {
-                          if (_currentTrack != null) {
-                            _toggleFavorite(_currentTrack!);
-                            setModalState(() {});
-                          }
-                        },
-                      ),
-                    ],
-                  ),
-                  const Spacer(),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 24.0),
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(16.0),
-                      child: Image.network(
-                        _currentTrack?['thumbnail'] ?? '',
-                        width: 280,
-                        height: 280,
-                        fit: BoxFit.cover,
-                        errorBuilder: (c, o, s) => const Icon(Icons.music_note, size: 120),
-                      ),
-                    ),
-                  ),
-                  const Spacer(),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 24.0),
-                    child: Column(
-                      children: [
-                        Text(
-                          _currentTrack?['title'] ?? 'Sin título',
-                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          _currentTrack?['artist'] ?? 'Artista desconocido',
-                          style: const TextStyle(color: Colors.grey, fontSize: 14),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 20),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 20.0),
-                    child: Column(
-                      children: [
-                        SliderTheme(
-                          data: SliderTheme.of(context).copyWith(
-                            trackHeight: 4.0,
-                            thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 8.0),
-                            activeTrackColor: widget.primaryColor,
-                            inactiveTrackColor: Colors.grey[800],
-                            thumbColor: widget.primaryColor,
-                          ),
-                          child: Slider(
-                            value: currentSeconds,
-                            min: 0.0,
-                            max: maxSeconds,
-                            onChanged: (value) => _audioHandler.seek(Duration(seconds: value.toInt())),
-                          ),
-                        ),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Text(_formatDuration(_position), style: const TextStyle(color: Colors.grey, fontSize: 12)),
-                            Text(_formatDuration(_duration), style: const TextStyle(color: Colors.grey, fontSize: 12)),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                    children: [
-                      IconButton(
-                        icon: const Icon(Icons.skip_previous, size: 36, color: Colors.white),
-                        onPressed: () {
-                          _playPreviousTrack();
-                          setModalState(() {});
-                        },
-                      ),
-                      IconButton(
-                        icon: Icon(
-                          _isPlaying ? Icons.pause_circle_filled : Icons.play_circle_fill,
-                          size: 68,
-                          color: widget.primaryColor,
-                        ),
-                        onPressed: () {
-                          if (_currentTrack != null) {
-                            _playTrack(_currentTrack!);
-                            setModalState(() {});
-                          }
-                        },
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.skip_next, size: 36, color: Colors.white),
-                        onPressed: () {
-                          _playNextTrack();
-                          setModalState(() {});
-                        },
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 30),
-                ],
-              ),
-            );
-          },
-        );
-      },
-    );
-  }
-
-  String _formatDuration(Duration duration) {
-    String twoDigits(int n) => n.toString().padLeft(2, '0');
-    final minutes = twoDigits(duration.inMinutes.remainder(60));
-    final seconds = twoDigits(duration.inSeconds.remainder(60));
-    return '$minutes:$seconds';
+  @override
+  void dispose() {
+    _videoController?.dispose();
+    super.dispose();
   }
 
   @override
@@ -446,18 +210,16 @@ class _MainScreenState extends State<MainScreen> {
     final List<Widget> pages = [
       SearchTab(
         primaryColor: widget.primaryColor,
-        onTrackSelected: (track, list, idx) => _playTrack(track, currentList: list, index: idx),
-        currentTrackId: _currentTrack?['id'],
-        isPlaying: _isPlaying,
+        onVideoSelected: (video) => _playVideo(video),
+        currentVideoId: _currentVideo?['id'],
         onToggleFavorite: _toggleFavorite,
         isFavorite: _isFavorite,
       ),
       FavoritesTab(
         primaryColor: widget.primaryColor,
         favorites: _favorites,
-        onTrackSelected: (track, list, idx) => _playTrack(track, currentList: list, index: idx),
-        currentTrackId: _currentTrack?['id'],
-        isPlaying: _isPlaying,
+        onVideoSelected: (video) => _playVideo(video),
+        currentVideoId: _currentVideo?['id'],
         onToggleFavorite: _toggleFavorite,
       ),
     ];
@@ -465,7 +227,7 @@ class _MainScreenState extends State<MainScreen> {
     return Scaffold(
       appBar: AppBar(
         title: Text(
-          _currentIndex == 0 ? 'Media App' : 'Tus Favoritos',
+          _currentIndex == 0 ? 'Media App (Videos)' : 'Tus Favoritos',
         ),
         centerTitle: true,
         backgroundColor: const Color(0xFF1F1F1F),
@@ -496,8 +258,8 @@ class _MainScreenState extends State<MainScreen> {
       ),
       body: Column(
         children: [
+          if (_currentVideo != null) _buildVideoPlayerArea(),
           Expanded(child: pages[_currentIndex]),
-          if (_currentTrack != null) _buildMiniPlayer(),
         ],
       ),
       bottomNavigationBar: BottomNavigationBar(
@@ -507,7 +269,7 @@ class _MainScreenState extends State<MainScreen> {
         unselectedItemColor: Colors.grey,
         backgroundColor: const Color(0xFF1F1F1F),
         items: [
-          const BottomNavigationBarItem(icon: Icon(Icons.search), label: 'Buscar'),
+          const BottomNavigationBarItem(icon: Icon(Icons.video_library), label: 'Videos'),
           BottomNavigationBarItem(
             icon: Icon(
               _favorites.isNotEmpty ? Icons.favorite : Icons.favorite_border,
@@ -520,98 +282,70 @@ class _MainScreenState extends State<MainScreen> {
     );
   }
 
-  Widget _buildMiniPlayer() {
-    final double maxSeconds = _duration.inSeconds > 0 ? _duration.inSeconds.toDouble() : 1.0;
-    final double currentSeconds = _position.inSeconds.toDouble().clamp(0.0, maxSeconds);
-
-    return GestureDetector(
-      onTap: _openExpandedPlayer,
-      child: Container(
-        color: const Color(0xFF222222),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            SliderTheme(
-              data: SliderTheme.of(context).copyWith(
-                trackHeight: 3.0,
-                thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6.0),
-                activeTrackColor: widget.primaryColor,
-                inactiveTrackColor: Colors.grey[800],
-                thumbColor: widget.primaryColor,
-              ),
-              child: Slider(
-                value: currentSeconds,
-                min: 0.0,
-                max: maxSeconds,
-                onChanged: (value) => _audioHandler.seek(Duration(seconds: value.toInt())),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
-              child: Row(
-                children: [
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(6.0),
-                    child: Image.network(
-                      _currentTrack?['thumbnail'] ?? '',
-                      width: 40,
-                      height: 40,
-                      fit: BoxFit.cover,
-                      errorBuilder: (c, o, s) => const Icon(Icons.music_note, size: 28),
+  Widget _buildVideoPlayerArea() {
+    return Container(
+      width: double.infinity,
+      height: 220,
+      color: Colors.black,
+      child: _isInitializingVideo
+          ? Center(child: CircularProgressIndicator(color: widget.primaryColor))
+          : _videoController != null && _videoController!.value.isInitialized
+              ? Stack(
+                  alignment: Alignment.bottomCenter,
+                  children: [
+                    Center(
+                      child: AspectRatio(
+                        aspectRatio: _videoController!.value.aspectRatio,
+                        child: VideoPlayer(_videoController!),
+                      ),
                     ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          _currentTrack?['title'] ?? 'Sin título',
-                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
+                    VideoProgressIndicator(
+                      _videoController!,
+                      allowScrubbing: true,
+                      colors: VideoProgressColors(
+                        playedColor: widget.primaryColor,
+                        bufferedColor: Colors.grey,
+                        backgroundColor: Colors.black26,
+                      ),
+                    ),
+                    Align(
+                      alignment: Alignment.center,
+                      child: IconButton(
+                        iconSize: 50,
+                        icon: Icon(
+                          _videoController!.value.isPlaying ? Icons.pause_circle_filled : Icons.play_circle_fill,
+                          color: Colors.white70,
                         ),
-                        Text(
-                          _currentTrack?['artist'] ?? 'Artista desconocido',
-                          style: const TextStyle(color: Colors.grey, fontSize: 10),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ],
+                        onPressed: () {
+                          setState(() {
+                            if (_videoController!.value.isPlaying) {
+                              _videoController!.pause();
+                            } else {
+                              _videoController!.play();
+                            }
+                          });
+                        },
+                      ),
                     ),
-                  ),
-                  IconButton(
-                    icon: Icon(
-                      _isPlaying ? Icons.pause_circle_filled : Icons.play_circle_fill,
-                      color: widget.primaryColor,
-                      size: 36,
-                    ),
-                    onPressed: () => _playTrack(_currentTrack!),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
+                  ],
+                )
+              : const Center(child: Text('Error al inicializar pantalla de video', style: TextStyle(color: Colors.grey))),
     );
   }
 }
 
 class SearchTab extends StatefulWidget {
   final Color primaryColor;
-  final Function(Map<String, dynamic>, List<Map<String, dynamic>>, int) onTrackSelected;
-  final String? currentTrackId;
-  final bool isPlaying;
+  final Function(Map<String, dynamic>) onVideoSelected;
+  final String? currentVideoId;
   final Function(Map<String, dynamic>) onToggleFavorite;
   final bool Function(Map<String, dynamic>) isFavorite;
 
   const SearchTab({
     super.key,
     required this.primaryColor,
-    required this.onTrackSelected,
-    this.currentTrackId,
-    required this.isPlaying,
+    required this.onVideoSelected,
+    this.currentVideoId,
     required this.onToggleFavorite,
     required this.isFavorite,
   });
@@ -622,65 +356,64 @@ class SearchTab extends StatefulWidget {
 
 class _SearchTabState extends State<SearchTab> {
   final TextEditingController _searchController = TextEditingController();
-  List<Map<String, dynamic>> _tracks = [];
+  List<Map<String, dynamic>> _videos = [];
   bool _isLoading = false;
+
+  final List<String> _searchInstances = [
+    'https://inv.tux.pizza/api/v1/search',
+    'https://invidious.nerdvpn.de/api/v1/search',
+    'https://vid.puffyan.us/api/v1/search',
+  ];
 
   @override
   void initState() {
     super.initState();
-    _searchTracks('rock clasico');
+    _searchVideos('futbol goles');
   }
 
-  Future<void> _searchTracks(String query) async {
+  Future<void> _searchVideos(String query) async {
     if (query.trim().isEmpty) return;
     setState(() => _isLoading = true);
 
-    try {
-      final res = await http.get(
-        Uri.parse('https://saavn.dev/api/search/songs?query=${Uri.encodeComponent(query)}&limit=30'),
-      );
+    bool success = false;
+    for (final baseUrl in _searchInstances) {
+      try {
+        final uri = Uri.parse('$baseUrl?q=${Uri.encodeComponent(query)}&type=video');
+        final res = await http.get(uri).timeout(const Duration(seconds: 4));
 
-      if (res.statusCode == 200) {
-        final data = json.decode(res.body);
-        final results = data['data']?['results'] as List?;
-        if (results != null) {
-          setState(() {
-            _tracks = results.map((item) {
-              final images = item['image'] as List?;
-              final downloadUrls = item['downloadUrl'] as List?;
+        if (res.statusCode == 200) {
+          final List data = json.decode(res.body);
+          if (data.isNotEmpty) {
+            setState(() {
+              _videos = data.map((item) {
+                final thumbnails = item['videoThumbnails'] as List?;
+                String thumb = '';
+                if (thumbnails != null && thumbnails.isNotEmpty) {
+                  thumb = thumbnails.first['url'] ?? '';
+                }
 
-              String image = '';
-              if (images != null && images.isNotEmpty) {
-                image = images.last['url'] ?? '';
-              }
-
-              String audioUrl = '';
-              if (downloadUrls != null && downloadUrls.isNotEmpty) {
-                audioUrl = downloadUrls.last['url'] ?? '';
-              }
-
-              final primaryArtists = item['artists']?['primary'] as List?;
-              String artistName = 'Artista';
-              if (primaryArtists != null && primaryArtists.isNotEmpty) {
-                artistName = primaryArtists.map((a) => a['name']).join(', ');
-              }
-
-              return {
-                'id': item['id'] ?? '',
-                'title': item['name'] ?? 'Sin título',
-                'artist': artistName,
-                'thumbnail': image,
-                'streamUrl': audioUrl,
-                'duration': item['duration'],
-              };
-            }).where((t) => (t['streamUrl'] as String).isNotEmpty).toList();
-          });
+                return {
+                  'id': item['videoId'] ?? '',
+                  'title': item['title'] ?? 'Sin título',
+                  'uploader': item['author'] ?? 'Canal',
+                  'thumbnail': thumb,
+                };
+              }).where((v) => (v['id'] as String).isNotEmpty).toList();
+            });
+            success = true;
+            break;
+          }
         }
-      }
-    } catch (_) {
-    } finally {
-      setState(() => _isLoading = false);
+      } catch (_) {}
     }
+
+    if (!success && mounted) {
+      setState(() {
+        _videos = [];
+      });
+    }
+
+    if (mounted) setState(() => _isLoading = false);
   }
 
   @override
@@ -692,11 +425,11 @@ class _SearchTabState extends State<SearchTab> {
           child: TextField(
             controller: _searchController,
             decoration: InputDecoration(
-              hintText: 'Buscar cualquier canción, artista o álbum...',
+              hintText: 'Buscar videos, jugadas, resúmenes...',
               prefixIcon: Icon(Icons.search, color: widget.primaryColor),
               suffixIcon: IconButton(
                 icon: Icon(Icons.send, color: widget.primaryColor),
-                onPressed: () => _searchTracks(_searchController.text),
+                onPressed: () => _searchVideos(_searchController.text),
               ),
               filled: true,
               fillColor: const Color(0xFF2C2C2C),
@@ -705,20 +438,20 @@ class _SearchTabState extends State<SearchTab> {
                 borderSide: BorderSide.none,
               ),
             ),
-            onSubmitted: (value) => _searchTracks(value),
+            onSubmitted: (value) => _searchVideos(value),
           ),
         ),
         Expanded(
           child: _isLoading
               ? Center(child: CircularProgressIndicator(color: widget.primaryColor))
-              : _tracks.isEmpty
-                  ? const Center(child: Text('No se encontraron canciones'))
+              : _videos.isEmpty
+                  ? const Center(child: Text('No se encontraron videos'))
                   : ListView.builder(
-                      itemCount: _tracks.length,
+                      itemCount: _videos.length,
                       itemBuilder: (context, index) {
-                        final track = _tracks[index];
-                        final isSelected = widget.currentTrackId == track['id'] && widget.isPlaying;
-                        final isFav = widget.isFavorite(track);
+                        final video = _videos[index];
+                        final isSelected = widget.currentVideoId == video['id'];
+                        final isFav = widget.isFavorite(video);
 
                         return Card(
                           color: const Color(0xFF1E1E1E),
@@ -726,22 +459,24 @@ class _SearchTabState extends State<SearchTab> {
                           child: ListTile(
                             leading: ClipRRect(
                               borderRadius: BorderRadius.circular(8.0),
-                              child: Image.network(
-                                track['thumbnail'] ?? '',
-                                width: 50,
-                                height: 50,
-                                fit: BoxFit.cover,
-                                errorBuilder: (c, o, s) => const Icon(Icons.music_note, size: 30),
-                              ),
+                              child: video['thumbnail'].isNotEmpty
+                                  ? Image.network(
+                                      video['thumbnail'],
+                                      width: 70,
+                                      height: 50,
+                                      fit: BoxFit.cover,
+                                      errorBuilder: (c, o, s) => const Icon(Icons.videocam, size: 30),
+                                    )
+                                  : const Icon(Icons.videocam, size: 30),
                             ),
                             title: Text(
-                              track['title'] ?? 'Sin título',
+                              video['title'] ?? 'Sin título',
                               style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
-                              maxLines: 1,
+                              maxLines: 2,
                               overflow: TextOverflow.ellipsis,
                             ),
                             subtitle: Text(
-                              track['artist'] ?? 'Artista desconocido',
+                              video['uploader'] ?? 'Canal',
                               style: const TextStyle(fontSize: 11),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
@@ -755,15 +490,15 @@ class _SearchTabState extends State<SearchTab> {
                                     color: isFav ? Colors.redAccent : Colors.grey,
                                     size: 20,
                                   ),
-                                  onPressed: () => widget.onToggleFavorite(track),
+                                  onPressed: () => widget.onToggleFavorite(video),
                                 ),
                                 IconButton(
                                   icon: Icon(
-                                    isSelected ? Icons.pause_circle_filled : Icons.play_circle_fill,
+                                    isSelected ? Icons.play_circle_filled : Icons.play_arrow_rounded,
                                     color: widget.primaryColor,
                                     size: 34,
                                   ),
-                                  onPressed: () => widget.onTrackSelected(track, _tracks, index),
+                                  onPressed: () => widget.onVideoSelected(video),
                                 ),
                               ],
                             ),
@@ -780,18 +515,16 @@ class _SearchTabState extends State<SearchTab> {
 class FavoritesTab extends StatelessWidget {
   final Color primaryColor;
   final List<Map<String, dynamic>> favorites;
-  final Function(Map<String, dynamic>, List<Map<String, dynamic>>, int) onTrackSelected;
-  final String? currentTrackId;
-  final bool isPlaying;
+  final Function(Map<String, dynamic>) onVideoSelected;
+  final String? currentVideoId;
   final Function(Map<String, dynamic>) onToggleFavorite;
 
   const FavoritesTab({
     super.key,
     required this.primaryColor,
     required this.favorites,
-    required this.onTrackSelected,
-    this.currentTrackId,
-    required this.isPlaying,
+    required this.onVideoSelected,
+    this.currentVideoId,
     required this.onToggleFavorite,
   });
 
@@ -800,7 +533,7 @@ class FavoritesTab extends StatelessWidget {
     if (favorites.isEmpty) {
       return const Center(
         child: Text(
-          'Aún no has agregado canciones a favoritos.',
+          'Aún no has agregado videos a favoritos.',
           style: TextStyle(color: Colors.grey),
         ),
       );
@@ -809,8 +542,8 @@ class FavoritesTab extends StatelessWidget {
     return ListView.builder(
       itemCount: favorites.length,
       itemBuilder: (context, index) {
-        final track = favorites[index];
-        final isSelected = currentTrackId == track['id'] && isPlaying;
+        final video = favorites[index];
+        final isSelected = currentVideoId == video['id'];
 
         return Card(
           color: const Color(0xFF1E1E1E),
@@ -818,22 +551,24 @@ class FavoritesTab extends StatelessWidget {
           child: ListTile(
             leading: ClipRRect(
               borderRadius: BorderRadius.circular(8.0),
-              child: Image.network(
-                track['thumbnail'] ?? '',
-                width: 50,
-                height: 50,
-                fit: BoxFit.cover,
-                errorBuilder: (c, o, s) => const Icon(Icons.music_note, size: 30),
-              ),
+              child: video['thumbnail'].isNotEmpty
+                  ? Image.network(
+                      video['thumbnail'],
+                      width: 70,
+                      height: 50,
+                      fit: BoxFit.cover,
+                      errorBuilder: (c, o, s) => const Icon(Icons.videocam, size: 30),
+                    )
+                  : const Icon(Icons.videocam, size: 30),
             ),
             title: Text(
-              track['title'] ?? 'Sin título',
+              video['title'] ?? 'Sin título',
               style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
-              maxLines: 1,
+              maxLines: 2,
               overflow: TextOverflow.ellipsis,
             ),
             subtitle: Text(
-              track['artist'] ?? 'Artista desconocido',
+              video['uploader'] ?? 'Canal',
               style: const TextStyle(fontSize: 11),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
@@ -843,15 +578,15 @@ class FavoritesTab extends StatelessWidget {
               children: [
                 IconButton(
                   icon: const Icon(Icons.favorite, color: Colors.redAccent, size: 20),
-                  onPressed: () => onToggleFavorite(track),
+                  onPressed: () => onToggleFavorite(video),
                 ),
                 IconButton(
                   icon: Icon(
-                    isSelected ? Icons.pause_circle_filled : Icons.play_circle_fill,
+                    isSelected ? Icons.play_circle_filled : Icons.play_arrow_rounded,
                     color: primaryColor,
                     size: 34,
                   ),
-                  onPressed: () => onTrackSelected(track, favorites, index),
+                  onPressed: () => onVideoSelected(video),
                 ),
               ],
             ),
