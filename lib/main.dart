@@ -1,13 +1,15 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'dart:convert';
 import 'dart:io';
-import 'package:youtube_player_iframe/youtube_player_iframe.dart';
+import 'package:video_player/video_player.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart' as yt;
 import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
+  SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
   runApp(const MediaApp());
 }
 
@@ -76,7 +78,8 @@ class _MainScreenState extends State<MainScreen> {
   List<Map<String, dynamic>> _favorites = [];
 
   Map<String, dynamic>? _currentVideo;
-  YoutubePlayerController? _youtubeController;
+  VideoPlayerController? _videoController;
+  bool _isPlayerLoading = false;
 
   @override
   void initState() {
@@ -100,28 +103,54 @@ class _MainScreenState extends State<MainScreen> {
     await prefs.setString('saved_favorites', json.encode(_favorites));
   }
 
-  void _playVideo(Map<String, dynamic> videoItem) {
+  Future<void> _playVideo(Map<String, dynamic> videoItem) async {
     final videoId = videoItem['id'] ?? '';
     if (videoId.isEmpty) return;
 
-    if (_youtubeController != null) {
-      _youtubeController!.loadVideoById(videoId: videoId);
-    } else {
-      _youtubeController = YoutubePlayerController.fromVideoId(
-        videoId: videoId,
-        autoPlay: true,
-        params: const YoutubePlayerParams(
-          showControls: true,
-          showFullscreenButton: true,
-          mute: false,
-          origin: 'https://www.youtube.com', // TRUCO PARA EVITAR ERROR 152
-        ),
-      );
-    }
-
     setState(() {
       _currentVideo = videoItem;
+      _isPlayerLoading = true;
     });
+
+    if (_videoController != null) {
+      await _videoController!.dispose();
+      _videoController = null;
+    }
+
+    try {
+      // 1. EXTRAER URL RAW (Bypass de restricción VEVO)
+      final ytExplode = yt.YoutubeExplode();
+      final manifest = await ytExplode.videos.streamsClient.getManifest(videoId);
+      
+      // Obtenemos el flujo muxed (Video + Audio en un solo MP4) de mejor calidad (usualmente 720p)
+      final streamInfo = manifest.muxed.withHighestBitrate();
+      final streamUrl = streamInfo.url.toString();
+      ytExplode.close();
+
+      // 2. REPRODUCIR ARCHIVO NATIVAMENTE
+      final controller = VideoPlayerController.networkUrl(Uri.parse(streamUrl));
+      await controller.initialize();
+      
+      setState(() {
+        _videoController = controller;
+        _isPlayerLoading = false;
+      });
+      
+      await _videoController!.play();
+      
+      // Actualizar UI cuando termine o cambie estado
+      _videoController!.addListener(() {
+        if (mounted) setState(() {});
+      });
+
+    } catch (e) {
+      setState(() {
+        _isPlayerLoading = false;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No se pudo extraer el archivo de este video.')),
+      );
+    }
   }
 
   void _toggleFavorite(Map<String, dynamic> videoItem) {
@@ -144,7 +173,7 @@ class _MainScreenState extends State<MainScreen> {
 
   @override
   void dispose() {
-    _youtubeController?.close();
+    _videoController?.dispose();
     super.dispose();
   }
 
@@ -170,7 +199,7 @@ class _MainScreenState extends State<MainScreen> {
     return Scaffold(
       appBar: AppBar(
         title: Text(
-          _currentIndex == 0 ? 'Media App (Videos)' : 'Tus Favoritos',
+          _currentIndex == 0 ? 'Media App (Raw Video)' : 'Tus Favoritos',
         ),
         centerTitle: true,
         backgroundColor: const Color(0xFF1F1F1F),
@@ -201,15 +230,7 @@ class _MainScreenState extends State<MainScreen> {
       ),
       body: Column(
         children: [
-          if (_currentVideo != null && _youtubeController != null)
-            SizedBox(
-              width: double.infinity,
-              height: 220,
-              child: YoutubePlayer(
-                controller: _youtubeController!,
-                aspectRatio: 16 / 9,
-              ),
-            ),
+          if (_currentVideo != null) _buildVideoPlayerArea(),
           Expanded(child: pages[_currentIndex]),
         ],
       ),
@@ -230,6 +251,67 @@ class _MainScreenState extends State<MainScreen> {
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildVideoPlayerArea() {
+    return Container(
+      width: double.infinity,
+      height: 220,
+      color: Colors.black,
+      child: _isPlayerLoading
+          ? Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  CircularProgressIndicator(color: widget.primaryColor),
+                  const SizedBox(height: 12),
+                  const Text('Extrayendo archivo original...', style: TextStyle(color: Colors.white70, fontSize: 12)),
+                ],
+              ),
+            )
+          : _videoController != null && _videoController!.value.isInitialized
+              ? Stack(
+                  alignment: Alignment.bottomCenter,
+                  children: [
+                    Center(
+                      child: AspectRatio(
+                        aspectRatio: _videoController!.value.aspectRatio,
+                        child: VideoPlayer(_videoController!),
+                      ),
+                    ),
+                    VideoProgressIndicator(
+                      _videoController!,
+                      allowScrubbing: true,
+                      padding: const EdgeInsets.symmetric(vertical: 4),
+                      colors: VideoProgressColors(
+                        playedColor: widget.primaryColor,
+                        bufferedColor: Colors.white24,
+                        backgroundColor: Colors.black45,
+                      ),
+                    ),
+                    Align(
+                      alignment: Alignment.center,
+                      child: IconButton(
+                        iconSize: 60,
+                        icon: Icon(
+                          _videoController!.value.isPlaying ? Icons.pause_circle_filled : Icons.play_circle_fill,
+                          color: Colors.white.withOpacity(0.8),
+                        ),
+                        onPressed: () {
+                          setState(() {
+                            if (_videoController!.value.isPlaying) {
+                              _videoController!.pause();
+                            } else {
+                              _videoController!.play();
+                            }
+                          });
+                        },
+                      ),
+                    ),
+                  ],
+                )
+              : const Center(child: Text('Error al cargar video', style: TextStyle(color: Colors.grey))),
     );
   }
 }
@@ -306,7 +388,7 @@ class _SearchTabState extends State<SearchTab> {
           child: TextField(
             controller: _searchController,
             decoration: InputDecoration(
-              hintText: 'Buscar videos, jugadas, música...',
+              hintText: 'Buscar música, VEVO, resúmenes...',
               prefixIcon: Icon(Icons.search, color: widget.primaryColor),
               suffixIcon: IconButton(
                 icon: Icon(Icons.send, color: widget.primaryColor),
