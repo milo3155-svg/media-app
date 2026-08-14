@@ -162,7 +162,7 @@ class _HomeScreenState extends State<HomeScreen> {
           onToggleFavorite: _toggleFavorite,
         ),
       ),
-    ).then((_) => setState(() {})); // Refresca al volver
+    ).then((_) => setState(() {})); 
   }
 
   @override
@@ -170,7 +170,6 @@ class _HomeScreenState extends State<HomeScreen> {
     final activeList = _currentIndex == 0 ? _trendingVideos : _favorites;
 
     return Scaffold(
-      // MENÚ DE 3 LÍNEAS (DRAWER)
       drawer: Drawer(
         backgroundColor: const Color(0xFF1E1E1E),
         child: ListView(
@@ -221,7 +220,6 @@ class _HomeScreenState extends State<HomeScreen> {
         backgroundColor: const Color(0xFF1F1F1F),
         elevation: 0,
         actions: [
-          // BOTÓN DE LUPA QUE ABRE LA NUEVA PANTALLA
           IconButton(
             icon: const Icon(Icons.search, size: 28),
             onPressed: () {
@@ -312,9 +310,9 @@ class _SearchScreenState extends State<SearchScreen> {
   Future<void> _saveToHistory(String query) async {
     if (query.trim().isEmpty) return;
     final prefs = await SharedPreferences.getInstance();
-    _searchHistory.remove(query); // Evitar duplicados
-    _searchHistory.insert(0, query); // Poner al principio
-    if (_searchHistory.length > 10) _searchHistory = _searchHistory.sublist(0, 10); // Límite de 10
+    _searchHistory.remove(query); 
+    _searchHistory.insert(0, query); 
+    if (_searchHistory.length > 10) _searchHistory = _searchHistory.sublist(0, 10); 
     await prefs.setStringList('search_history', _searchHistory);
   }
 
@@ -325,7 +323,8 @@ class _SearchScreenState extends State<SearchScreen> {
     }
     try {
       final ytExplode = yt.YoutubeExplode();
-      final results = await ytExplode.search.getSearchSuggestions(query);
+      // FIX APLICADO: getQuerySuggestions en lugar de getSearchSuggestions
+      final results = await ytExplode.search.getQuerySuggestions(query);
       ytExplode.close();
       if (mounted) setState(() => _suggestions = results);
     } catch (e) {
@@ -402,7 +401,6 @@ class _SearchScreenState extends State<SearchScreen> {
 
   Widget _buildAutocompleteAndHistory() {
     if (_searchController.text.isEmpty) {
-      // MOSTRAR HISTORIAL
       if (_searchHistory.isEmpty) return const Center(child: Text('Busca tu música favorita', style: TextStyle(color: Colors.grey)));
       return ListView.builder(
         itemCount: _searchHistory.length,
@@ -423,9 +421,8 @@ class _SearchScreenState extends State<SearchScreen> {
         },
       );
     } else {
-      // MOSTRAR SUGERENCIAS (DISEÑO MODO CLARO)
       return Container(
-        color: const Color(0xFFE0E0E0), // Fondo claro para resaltar
+        color: const Color(0xFFE0E0E0), 
         child: ListView.builder(
           itemCount: _suggestions.length,
           itemBuilder: (context, index) {
@@ -535,7 +532,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
       final manifest = await ytExplode.videos.streamsClient.getManifest(_currentVideo['id']);
       ytExplode.close();
 
-      // EXTRAER URL DE VIDEO
       final mp4Muxed = manifest.muxed.where((s) => s.container.name == 'mp4');
       if (mp4Muxed.isNotEmpty) {
          _videoUrl = mp4Muxed.withHighestBitrate().url.toString();
@@ -543,7 +539,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
          _videoUrl = manifest.muxed.withHighestBitrate().url.toString();
       }
 
-      // EXTRAER URL DE AUDIO
       final mp4Audio = manifest.audioOnly.where((s) => s.container.name == 'mp4' || s.audioCodec.contains('mp4a'));
       if (mp4Audio.isNotEmpty) {
          _audioUrl = mp4Audio.withHighestBitrate().url.toString();
@@ -725,7 +720,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
               
               const SizedBox(height: 16),
 
-              // BOTONES DE MODO DE REPRODUCCIÓN (PASTILLAS)
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16.0),
                 child: Row(
