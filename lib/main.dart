@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'dart:io';
-import 'package:youtube_player_flutter/youtube_player_flutter.dart';
+import 'package:youtube_player_iframe/youtube_player_iframe.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -105,17 +105,16 @@ class _MainScreenState extends State<MainScreen> {
     if (videoId.isEmpty) return;
 
     if (_youtubeController != null) {
-      _youtubeController!.load(videoId);
+      _youtubeController!.loadVideoById(videoId: videoId);
     } else {
       _youtubeController = YoutubePlayerController(
-        initialVideoId: videoId,
-        flags: const YoutubePlayerFlags(
-          autoPlay: true,
+        params: const YoutubePlayerParams(
+          showControls: true,
+          showFullscreenButton: true,
           mute: false,
-          enableCaption: false,
-          isLive: false,
         ),
       );
+      _youtubeController!.loadVideoById(videoId: videoId);
     }
 
     setState(() {
@@ -143,7 +142,7 @@ class _MainScreenState extends State<MainScreen> {
 
   @override
   void dispose() {
-    _youtubeController?.dispose();
+    _youtubeController?.close();
     super.dispose();
   }
 
@@ -206,12 +205,7 @@ class _MainScreenState extends State<MainScreen> {
               height: 220,
               child: YoutubePlayer(
                 controller: _youtubeController!,
-                showVideoProgressIndicator: true,
-                progressIndicatorColor: widget.primaryColor,
-                progressColors: ProgressBarColors(
-                  playedColor: widget.primaryColor,
-                  handleColor: widget.primaryColor,
-                ),
+                aspectRatio: 16 / 9,
               ),
             ),
           Expanded(child: pages[_currentIndex]),
