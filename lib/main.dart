@@ -3,13 +3,22 @@ import 'package:flutter/services.dart';
 import 'dart:convert';
 import 'dart:io';
 import 'package:video_player/video_player.dart';
+import 'package:just_audio/just_audio.dart';
+import 'package:just_audio_background/just_audio_background.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart' as yt;
 import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-void main() {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
+  
+  await JustAudioBackground.init(
+    androidNotificationChannelId: 'com.mediaapp.channel.audio',
+    androidNotificationChannelName: 'Reproducción en segundo plano',
+    androidNotificationOngoing: true,
+  );
+  
   runApp(const MediaApp());
 }
 
@@ -78,8 +87,13 @@ class _MainScreenState extends State<MainScreen> {
   List<Map<String, dynamic>> _favorites = [];
 
   Map<String, dynamic>? _currentVideo;
+  
+  // Reproductores Híbridos
   VideoPlayerController? _videoController;
+  final AudioPlayer _audioPlayer = AudioPlayer();
+  
   bool _isPlayerLoading = false;
+  String _activeMode = 'video_hd'; // Opciones: 'video_hd', 'video_sd', 'audio'
 
   @override
   void initState() {
@@ -103,53 +117,80 @@ class _MainScreenState extends State<MainScreen> {
     await prefs.setString('saved_favorites', json.encode(_favorites));
   }
 
-  Future<void> _playVideo(Map<String, dynamic> videoItem) async {
+  Future<void> _playMedia(Map<String, dynamic> videoItem, String mode) async {
     final videoId = videoItem['id'] ?? '';
     if (videoId.isEmpty) return;
 
     setState(() {
       _currentVideo = videoItem;
       _isPlayerLoading = true;
+      _activeMode = mode;
     });
 
+    // Detener reproducciones anteriores
     if (_videoController != null) {
       await _videoController!.dispose();
       _videoController = null;
     }
+    await _audioPlayer.stop();
 
     try {
-      // 1. EXTRAER URL RAW (Bypass de restricción VEVO)
       final ytExplode = yt.YoutubeExplode();
       final manifest = await ytExplode.videos.streamsClient.getManifest(videoId);
-      
-      // Obtenemos el flujo muxed (Video + Audio en un solo MP4) de mejor calidad (usualmente 720p)
-      final streamInfo = manifest.muxed.withHighestBitrate();
-      final streamUrl = streamInfo.url.toString();
       ytExplode.close();
 
-      // 2. REPRODUCIR ARCHIVO NATIVAMENTE
-      final controller = VideoPlayerController.networkUrl(Uri.parse(streamUrl));
-      await controller.initialize();
-      
-      setState(() {
-        _videoController = controller;
-        _isPlayerLoading = false;
-      });
-      
-      await _videoController!.play();
-      
-      // Actualizar UI cuando termine o cambie estado
-      _videoController!.addListener(() {
-        if (mounted) setState(() {});
-      });
+      if (mode == 'audio') {
+        // MODO AUDIO EN SEGUNDO PLANO
+        final streamInfo = manifest.audioOnly.withHighestBitrate();
+        final audioSource = AudioSource.uri(
+          Uri.parse(streamInfo.url.toString()),
+          tag: MediaItem(
+            id: videoId,
+            title: videoItem['title'],
+            artist: videoItem['uploader'],
+            artUri: Uri.parse(videoItem['thumbnail']),
+          ),
+        );
+        await _audioPlayer.setAudioSource(audioSource);
+        _audioPlayer.play();
+      } else {
+        // MODO VIDEO (Pantalla activa)
+        final muxed = manifest.muxed;
+        yt.MuxedStreamInfo streamInfo;
+        
+        if (mode == 'video_sd') {
+          // Buscar calidad menor para ahorrar datos
+          streamInfo = muxed.firstWhere(
+            (s) => s.videoQuality.name.contains('360') || s.videoQuality.name.contains('480'),
+            orElse: () => muxed.withHighestBitrate(),
+          );
+        } else {
+          // Calidad máxima disponible
+          streamInfo = muxed.withHighestBitrate();
+        }
 
+        final controller = VideoPlayerController.networkUrl(Uri.parse(streamInfo.url.toString()));
+        await controller.initialize();
+        
+        setState(() {
+          _videoController = controller;
+        });
+        
+        await _videoController!.play();
+        _videoController!.addListener(() {
+          if (mounted) setState(() {});
+        });
+      }
     } catch (e) {
-      setState(() {
-        _isPlayerLoading = false;
-      });
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No se pudo extraer el archivo de este video.')),
+        const SnackBar(content: Text('Error al extraer el formato seleccionado.')),
       );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isPlayerLoading = false;
+        });
+      }
     }
   }
 
@@ -174,6 +215,7 @@ class _MainScreenState extends State<MainScreen> {
   @override
   void dispose() {
     _videoController?.dispose();
+    _audioPlayer.dispose();
     super.dispose();
   }
 
@@ -182,7 +224,7 @@ class _MainScreenState extends State<MainScreen> {
     final List<Widget> pages = [
       SearchTab(
         primaryColor: widget.primaryColor,
-        onVideoSelected: (video) => _playVideo(video),
+        onVideoSelected: (video) => _playMedia(video, 'video_hd'), // Por defecto arranca en HD
         currentVideoId: _currentVideo?['id'],
         onToggleFavorite: _toggleFavorite,
         isFavorite: _isFavorite,
@@ -190,7 +232,7 @@ class _MainScreenState extends State<MainScreen> {
       FavoritesTab(
         primaryColor: widget.primaryColor,
         favorites: _favorites,
-        onVideoSelected: (video) => _playVideo(video),
+        onVideoSelected: (video) => _playMedia(video, 'video_hd'),
         currentVideoId: _currentVideo?['id'],
         onToggleFavorite: _toggleFavorite,
       ),
@@ -199,7 +241,7 @@ class _MainScreenState extends State<MainScreen> {
     return Scaffold(
       appBar: AppBar(
         title: Text(
-          _currentIndex == 0 ? 'Media App (Raw Video)' : 'Tus Favoritos',
+          _currentIndex == 0 ? 'Media App' : 'Tus Favoritos',
         ),
         centerTitle: true,
         backgroundColor: const Color(0xFF1F1F1F),
@@ -230,7 +272,7 @@ class _MainScreenState extends State<MainScreen> {
       ),
       body: Column(
         children: [
-          if (_currentVideo != null) _buildVideoPlayerArea(),
+          if (_currentVideo != null) _buildHybridPlayerArea(),
           Expanded(child: pages[_currentIndex]),
         ],
       ),
@@ -241,7 +283,7 @@ class _MainScreenState extends State<MainScreen> {
         unselectedItemColor: Colors.grey,
         backgroundColor: const Color(0xFF1F1F1F),
         items: [
-          const BottomNavigationBarItem(icon: Icon(Icons.video_library), label: 'Videos'),
+          const BottomNavigationBarItem(icon: Icon(Icons.explore), label: 'Explorar'),
           BottomNavigationBarItem(
             icon: Icon(
               _favorites.isNotEmpty ? Icons.favorite : Icons.favorite_border,
@@ -254,64 +296,190 @@ class _MainScreenState extends State<MainScreen> {
     );
   }
 
-  Widget _buildVideoPlayerArea() {
+  Widget _buildHybridPlayerArea() {
     return Container(
       width: double.infinity,
-      height: 220,
       color: Colors.black,
-      child: _isPlayerLoading
-          ? Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  CircularProgressIndicator(color: widget.primaryColor),
-                  const SizedBox(height: 12),
-                  const Text('Extrayendo archivo original...', style: TextStyle(color: Colors.white70, fontSize: 12)),
-                ],
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // ZONA DE PANTALLA
+          SizedBox(
+            height: 220,
+            child: _isPlayerLoading
+                ? Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        CircularProgressIndicator(color: widget.primaryColor),
+                        const SizedBox(height: 12),
+                        const Text('Cargando flujo multimedia...', style: TextStyle(color: Colors.white70, fontSize: 12)),
+                      ],
+                    ),
+                  )
+                : _activeMode == 'audio'
+                    ? _buildAudioInterface()
+                    : _buildVideoInterface(),
+          ),
+          
+          // ZONA DE CONTROLES DE CALIDAD / FORMATO
+          Container(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            color: const Color(0xFF181818),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                _buildModeButton(
+                  icon: Icons.headphones, 
+                  label: '2do Plano', 
+                  mode: 'audio',
+                ),
+                _buildModeButton(
+                  icon: Icons.hd, 
+                  label: 'Video HD', 
+                  mode: 'video_hd',
+                ),
+                _buildModeButton(
+                  icon: Icons.sd, 
+                  label: 'Video SD', 
+                  mode: 'video_sd',
+                ),
+              ],
+            ),
+          )
+        ],
+      ),
+    );
+  }
+
+  Widget _buildModeButton({required IconData icon, required String label, required String mode}) {
+    final isActive = _activeMode == mode;
+    return InkWell(
+      onTap: () {
+        if (_currentVideo != null && _activeMode != mode) {
+          _playMedia(_currentVideo!, mode);
+        }
+      },
+      borderRadius: BorderRadius.circular(20),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        decoration: BoxDecoration(
+          color: isActive ? widget.primaryColor.withOpacity(0.2) : Colors.transparent,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: isActive ? widget.primaryColor : Colors.grey[800]!),
+        ),
+        child: Row(
+          children: [
+            Icon(icon, size: 16, color: isActive ? widget.primaryColor : Colors.grey),
+            const SizedBox(width: 6),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.bold,
+                color: isActive ? widget.primaryColor : Colors.grey,
               ),
-            )
-          : _videoController != null && _videoController!.value.isInitialized
-              ? Stack(
-                  alignment: Alignment.bottomCenter,
-                  children: [
-                    Center(
-                      child: AspectRatio(
-                        aspectRatio: _videoController!.value.aspectRatio,
-                        child: VideoPlayer(_videoController!),
-                      ),
-                    ),
-                    VideoProgressIndicator(
-                      _videoController!,
-                      allowScrubbing: true,
-                      padding: const EdgeInsets.symmetric(vertical: 4),
-                      colors: VideoProgressColors(
-                        playedColor: widget.primaryColor,
-                        bufferedColor: Colors.white24,
-                        backgroundColor: Colors.black45,
-                      ),
-                    ),
-                    Align(
-                      alignment: Alignment.center,
-                      child: IconButton(
-                        iconSize: 60,
-                        icon: Icon(
-                          _videoController!.value.isPlaying ? Icons.pause_circle_filled : Icons.play_circle_fill,
-                          color: Colors.white.withOpacity(0.8),
-                        ),
-                        onPressed: () {
-                          setState(() {
-                            if (_videoController!.value.isPlaying) {
-                              _videoController!.pause();
-                            } else {
-                              _videoController!.play();
-                            }
-                          });
-                        },
-                      ),
-                    ),
-                  ],
-                )
-              : const Center(child: Text('Error al cargar video', style: TextStyle(color: Colors.grey))),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // INTERFAZ CUANDO ESTÁ EN MODO VIDEO
+  Widget _buildVideoInterface() {
+    if (_videoController == null || !_videoController!.value.isInitialized) {
+      return const Center(child: Text('Preparando video...', style: TextStyle(color: Colors.grey)));
+    }
+    return Stack(
+      alignment: Alignment.bottomCenter,
+      children: [
+        Center(
+          child: AspectRatio(
+            aspectRatio: _videoController!.value.aspectRatio,
+            child: VideoPlayer(_videoController!),
+          ),
+        ),
+        VideoProgressIndicator(
+          _videoController!,
+          allowScrubbing: true,
+          padding: const EdgeInsets.symmetric(vertical: 4),
+          colors: VideoProgressColors(
+            playedColor: widget.primaryColor,
+            bufferedColor: Colors.white24,
+            backgroundColor: Colors.black45,
+          ),
+        ),
+        Align(
+          alignment: Alignment.center,
+          child: IconButton(
+            iconSize: 60,
+            icon: Icon(
+              _videoController!.value.isPlaying ? Icons.pause_circle_filled : Icons.play_circle_fill,
+              color: Colors.white.withOpacity(0.8),
+            ),
+            onPressed: () {
+              setState(() {
+                if (_videoController!.value.isPlaying) {
+                  _videoController!.pause();
+                } else {
+                  _videoController!.play();
+                }
+              });
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  // INTERFAZ CUANDO ESTÁ EN MODO AUDIO
+  Widget _buildAudioInterface() {
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        // Fondo desenfocado con la miniatura
+        Image.network(
+          _currentVideo!['thumbnail'],
+          fit: BoxFit.cover,
+          color: Colors.black54,
+          colorBlendMode: BlendMode.darken,
+        ),
+        Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(10),
+              child: Image.network(_currentVideo!['thumbnail'], height: 100, fit: BoxFit.cover),
+            ),
+            const SizedBox(height: 16),
+            StreamBuilder<PlayerState>(
+              stream: _audioPlayer.playerStateStream,
+              builder: (context, snapshot) {
+                final playerState = snapshot.data;
+                final playing = playerState?.playing ?? false;
+                final processingState = playerState?.processingState;
+
+                if (processingState == ProcessingState.loading || processingState == ProcessingState.buffering) {
+                  return Container(margin: const EdgeInsets.all(8.0), child: CircularProgressIndicator(color: widget.primaryColor));
+                } else {
+                  return IconButton(
+                    iconSize: 60,
+                    icon: Icon(playing ? Icons.pause_circle_filled : Icons.play_circle_fill, color: widget.primaryColor),
+                    onPressed: () {
+                      if (playing) {
+                        _audioPlayer.pause();
+                      } else {
+                        _audioPlayer.play();
+                      }
+                    },
+                  );
+                }
+              },
+            ),
+          ],
+        ),
+      ],
     );
   }
 }
@@ -344,7 +512,7 @@ class _SearchTabState extends State<SearchTab> {
   @override
   void initState() {
     super.initState();
-    _searchVideos('goles de messi resumen');
+    _searchVideos('Lo más escuchado 2026');
   }
 
   Future<void> _searchVideos(String query) async {
@@ -408,7 +576,7 @@ class _SearchTabState extends State<SearchTab> {
           child: _isLoading
               ? Center(child: CircularProgressIndicator(color: widget.primaryColor))
               : _videos.isEmpty
-                  ? const Center(child: Text('No se encontraron videos'))
+                  ? const Center(child: Text('No se encontraron resultados'))
                   : ListView.builder(
                       itemCount: _videos.length,
                       itemBuilder: (context, index) {
@@ -428,9 +596,9 @@ class _SearchTabState extends State<SearchTab> {
                                       width: 70,
                                       height: 50,
                                       fit: BoxFit.cover,
-                                      errorBuilder: (c, o, s) => const Icon(Icons.videocam, size: 30),
+                                      errorBuilder: (c, o, s) => const Icon(Icons.audiotrack, size: 30),
                                     )
-                                  : const Icon(Icons.videocam, size: 30),
+                                  : const Icon(Icons.audiotrack, size: 30),
                             ),
                             title: Text(
                               video['title'] ?? 'Sin título',
@@ -457,7 +625,7 @@ class _SearchTabState extends State<SearchTab> {
                                 ),
                                 IconButton(
                                   icon: Icon(
-                                    isSelected ? Icons.play_circle_filled : Icons.play_arrow_rounded,
+                                    isSelected ? Icons.equalizer : Icons.play_arrow_rounded,
                                     color: widget.primaryColor,
                                     size: 34,
                                   ),
@@ -496,7 +664,7 @@ class FavoritesTab extends StatelessWidget {
     if (favorites.isEmpty) {
       return const Center(
         child: Text(
-          'Aún no has agregado videos a favoritos.',
+          'Aún no has agregado contenido a favoritos.',
           style: TextStyle(color: Colors.grey),
         ),
       );
@@ -520,9 +688,9 @@ class FavoritesTab extends StatelessWidget {
                       width: 70,
                       height: 50,
                       fit: BoxFit.cover,
-                      errorBuilder: (c, o, s) => const Icon(Icons.videocam, size: 30),
+                      errorBuilder: (c, o, s) => const Icon(Icons.audiotrack, size: 30),
                     )
-                  : const Icon(Icons.videocam, size: 30),
+                  : const Icon(Icons.audiotrack, size: 30),
             ),
             title: Text(
               video['title'] ?? 'Sin título',
@@ -545,7 +713,7 @@ class FavoritesTab extends StatelessWidget {
                 ),
                 IconButton(
                   icon: Icon(
-                    isSelected ? Icons.play_circle_filled : Icons.play_arrow_rounded,
+                    isSelected ? Icons.equalizer : Icons.play_arrow_rounded,
                     color: primaryColor,
                     size: 34,
                   ),
