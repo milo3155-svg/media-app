@@ -1,16 +1,99 @@
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'dart:io';
 import 'package:just_audio/just_audio.dart';
-import 'package:audio_session/audio_session.dart';
+import 'package:audio_service/audio_service.dart';
+import 'package:youtube_explode_dart/youtube_explode_dart.dart' as yt;
 import 'package:dio/dio.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-void main() {
+late MyAudioHandler _audioHandler;
+
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  _audioHandler = await AudioService.init(
+    builder: () => MyAudioHandler(),
+    config: const AudioServiceConfig(
+      androidNotificationChannelId: 'com.example.media_app.channel.audio',
+      androidNotificationChannelName: 'Media Playback',
+      androidNotificationOngoing: true,
+      androidStopForegroundOnPause: true,
+    ),
+  );
   runApp(const MediaApp());
+}
+
+class MyAudioHandler extends BaseAudioHandler with SeekHandler {
+  final AudioPlayer _player = AudioPlayer();
+
+  MyAudioHandler() {
+    _player.playbackEventStream.listen(_broadcastState);
+
+    _player.playerStateStream.listen((state) {
+      if (state.processingState == ProcessingState.completed) {
+        stop();
+      }
+    });
+  }
+
+  void _broadcastState(PlaybackEvent event) {
+    playbackState.add(PlaybackState(
+      controls: [
+        MediaControl.rewind,
+        if (_player.playing) MediaControl.pause else MediaControl.play,
+        MediaControl.fastForward,
+        MediaControl.stop,
+      ],
+      systemActions: const {
+        MediaAction.seek,
+        MediaAction.seekForward,
+        MediaAction.seekBackward,
+      },
+      androidCompactActionIndices: const [0, 1, 2],
+      processingState: const {
+        ProcessingState.idle: AudioProcessingState.idle,
+        ProcessingState.loading: AudioProcessingState.loading,
+        ProcessingState.buffering: AudioProcessingState.buffering,
+        ProcessingState.ready: AudioProcessingState.ready,
+        ProcessingState.completed: AudioProcessingState.completed,
+      }[_player.processingState]!,
+      playing: _player.playing,
+      updatePosition: _player.position,
+      bufferedPosition: _player.bufferedPosition,
+      speed: _player.speed,
+      queueIndex: event.currentIndex,
+    ));
+  }
+
+  Future<void> playStream(String url, MediaItem item) async {
+    mediaItem.add(item);
+    await _player.setUrl(url);
+    await _player.play();
+  }
+
+  Future<void> playFile(String path, MediaItem item) async {
+    mediaItem.add(item);
+    await _player.setFilePath(path);
+    await _player.play();
+  }
+
+  @override
+  Future<void> play() => _player.play();
+
+  @override
+  Future<void> pause() => _player.pause();
+
+  @override
+  Future<void> stop() async {
+    await _player.stop();
+    await super.stop();
+  }
+
+  @override
+  Future<void> seek(Duration position) => _player.seek(position);
+
+  AudioPlayer get player => _player;
 }
 
 class MediaApp extends StatefulWidget {
@@ -27,14 +110,16 @@ class _MediaAppState extends State<MediaApp> {
   void initState() {
     super.initState();
     _loadSavedColor();
-    _configureAudioSession();
+    _requestInitialPermissions();
   }
 
-  Future<void> _configureAudioSession() async {
-    try {
-      final session = await AudioSession.instance;
-      await session.configure(const AudioSessionConfiguration.music());
-    } catch (_) {}
+  Future<void> _requestInitialPermissions() async {
+    if (Platform.isAndroid) {
+      await [
+        Permission.audio,
+        Permission.notification,
+      ].request();
+    }
   }
 
   Future<void> _loadSavedColor() async {
@@ -74,12 +159,9 @@ class MainScreen extends StatefulWidget {
 
 class _MainScreenState extends State<MainScreen> {
   int _currentIndex = 0;
-  final AudioPlayer _audioPlayer = AudioPlayer();
 
   List<Map<String, dynamic>> _favorites = [];
   List<Map<String, dynamic>> _downloadedTracks = [];
-  List<dynamic> _currentPlaylist = [];
-  int _currentTrackIndex = -1;
 
   Map<String, dynamic>? _currentTrack;
   bool _isPlaying = false;
@@ -91,24 +173,19 @@ class _MainScreenState extends State<MainScreen> {
     super.initState();
     _loadSavedData();
 
-    _audioPlayer.playerStateStream.listen((state) {
+    _audioHandler.playbackState.listen((state) {
       if (mounted) {
         setState(() {
           _isPlaying = state.playing;
-          if (state.processingState == ProcessingState.completed) {
-            _isPlaying = false;
-            _position = Duration.zero;
-            _playNextTrack();
-          }
         });
       }
     });
 
-    _audioPlayer.positionStream.listen((pos) {
+    _audioHandler.player.positionStream.listen((pos) {
       if (mounted) setState(() => _position = pos);
     });
 
-    _audioPlayer.durationStream.listen((dur) {
+    _audioHandler.player.durationStream.listen((dur) {
       if (mounted) setState(() => _duration = dur ?? Duration.zero);
     });
   }
@@ -137,71 +214,56 @@ class _MainScreenState extends State<MainScreen> {
     await prefs.setString('saved_downloads', json.encode(_downloadedTracks));
   }
 
-  Future<void> _playTrack(Map<String, dynamic> track, {List<dynamic>? playlist, int? index}) async {
-    if (playlist != null) _currentPlaylist = playlist;
-    if (index != null) _currentTrackIndex = index;
-
-    final mediaUrl = track['localPath'] ?? track['previewUrl'] ?? '';
-    if (mediaUrl.isEmpty) return;
-
+  Future<void> _playTrack(Map<String, dynamic> track) async {
     try {
-      if (_currentTrack?['previewUrl'] == track['previewUrl'] && _currentTrack?['localPath'] == track['localPath']) {
+      if (_currentTrack?['id'] == track['id']) {
         if (_isPlaying) {
-          await _audioPlayer.pause();
+          await _audioHandler.pause();
         } else {
-          await _audioPlayer.play();
+          await _audioHandler.play();
         }
+        return;
+      }
+
+      setState(() {
+        _currentTrack = track;
+      });
+
+      final mediaItem = MediaItem(
+        id: track['id'] ?? '0',
+        title: track['title'] ?? 'Sin título',
+        artist: track['artist'] ?? 'Artista desconocido',
+        artUri: Uri.tryParse(track['thumbnail'] ?? ''),
+        duration: track['duration'],
+      );
+
+      if (track['localPath'] != null) {
+        await _audioHandler.playFile(track['localPath'], mediaItem);
       } else {
-        setState(() {
-          _currentTrack = track;
-        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Obteniendo audio completo...')),
+        );
+        final ytExplode = yt.YoutubeExplode();
+        final manifest = await ytExplode.videos.streamsClient.getManifest(track['id']);
+        final audioStream = manifest.audioOnly.withHighestBitrate();
+        final audioUrl = audioStream.url.toString();
+        ytExplode.close();
 
-        if (track['localPath'] != null) {
-          await _audioPlayer.setFilePath(track['localPath']);
-        } else {
-          await _audioPlayer.setUrl(mediaUrl);
-        }
-
-        await _audioPlayer.play();
+        await _audioHandler.playStream(audioUrl, mediaItem);
       }
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Error al reproducir')),
+        const SnackBar(content: Text('Error al reproducir pista')),
       );
     }
   }
 
-  void _playNextTrack() {
-    if (_currentPlaylist.isNotEmpty && _currentTrackIndex < _currentPlaylist.length - 1) {
-      _currentTrackIndex++;
-      _playTrack(_currentPlaylist[_currentTrackIndex], index: _currentTrackIndex);
-    }
-  }
-
-  void _playPreviousTrack() {
-    if (_currentPlaylist.isNotEmpty && _currentTrackIndex > 0) {
-      _currentTrackIndex--;
-      _playTrack(_currentPlaylist[_currentTrackIndex], index: _currentTrackIndex);
-    }
-  }
-
-  void _seekRelative(int seconds) {
-    final newPosition = _position + Duration(seconds: seconds);
-    if (newPosition < Duration.zero) {
-      _audioPlayer.seek(Duration.zero);
-    } else if (newPosition > _duration) {
-      _audioPlayer.seek(_duration);
-    } else {
-      _audioPlayer.seek(newPosition);
-    }
-  }
-
   void _toggleFavorite(Map<String, dynamic> track) {
-    final trackId = track['trackId'] ?? track['previewUrl'];
+    final trackId = track['id'];
     setState(() {
-      final exists = _favorites.any((t) => (t['trackId'] ?? t['previewUrl']) == trackId);
+      final exists = _favorites.any((t) => t['id'] == trackId);
       if (exists) {
-        _favorites.removeWhere((t) => (t['trackId'] ?? t['previewUrl']) == trackId);
+        _favorites.removeWhere((t) => t['id'] == trackId);
       } else {
         _favorites.add(track);
       }
@@ -210,29 +272,32 @@ class _MainScreenState extends State<MainScreen> {
   }
 
   bool _isFavorite(Map<String, dynamic> track) {
-    final trackId = track['trackId'] ?? track['previewUrl'];
-    return _favorites.any((t) => (t['trackId'] ?? t['previewUrl']) == trackId);
+    final trackId = track['id'];
+    return _favorites.any((t) => t['id'] == trackId);
   }
 
   Future<void> _downloadTrack(Map<String, dynamic> track) async {
-    final url = track['previewUrl'];
-    if (url == null || url.isEmpty) return;
-
     await Permission.audio.request();
 
     try {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Descargando pista...')),
+        const SnackBar(content: Text('Preparando descarga completa...')),
       );
+
+      final ytExplode = yt.YoutubeExplode();
+      final manifest = await ytExplode.videos.streamsClient.getManifest(track['id']);
+      final audioStream = manifest.audioOnly.withHighestBitrate();
+      final url = audioStream.url.toString();
+      ytExplode.close();
 
       final dir = Directory('/storage/emulated/0/Download');
       if (!await dir.exists()) {
         await dir.create(recursive: true);
       }
 
-      final rawName = track['trackName'] ?? 'Track';
+      final rawName = track['title'] ?? 'Track';
       final cleanName = rawName.toString().replaceAll(RegExp(r'[^\w\s\.-]'), '');
-      final fileName = '${cleanName}_${track['trackId'] ?? DateTime.now().millisecondsSinceEpoch}.m4a';
+      final fileName = '${cleanName}_${track['id']}.m4a';
       final filePath = '${dir.path}/$fileName';
 
       await Dio().download(url, filePath);
@@ -247,11 +312,11 @@ class _MainScreenState extends State<MainScreen> {
       await _saveLocalData();
 
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('¡Guardado en Descargas! 📥: $fileName')),
+        SnackBar(content: Text('¡Canción completa descargada! 📥: $fileName')),
       );
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Error al descargar')),
+        const SnackBar(content: Text('Error al descargar canción')),
       );
     }
   }
@@ -269,7 +334,7 @@ class _MainScreenState extends State<MainScreen> {
       setState(() {
         _downloadedTracks.removeWhere((t) => t['localPath'] == track['localPath']);
         if (_currentTrack?['localPath'] == track['localPath']) {
-          _audioPlayer.stop();
+          _audioHandler.stop();
           _currentTrack = null;
         }
       });
@@ -296,7 +361,7 @@ class _MainScreenState extends State<MainScreen> {
           builder: (context, setModalState) {
             final double maxSeconds = _duration.inSeconds > 0 ? _duration.inSeconds.toDouble() : 1.0;
             final double currentSeconds = _position.inSeconds.toDouble().clamp(0.0, maxSeconds);
-            final isFav = _isFavorite(_currentTrack!);
+            final isFav = _currentTrack != null && _isFavorite(_currentTrack!);
 
             return SizedBox(
               height: MediaQuery.of(context).size.height * 0.9,
@@ -318,15 +383,17 @@ class _MainScreenState extends State<MainScreen> {
                         icon: const Icon(Icons.keyboard_arrow_down, size: 30),
                         onPressed: () => Navigator.pop(context),
                       ),
-                      const Text('Reproduciendo ahora', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                      const Text('Reproduciendo canción completa', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
                       IconButton(
                         icon: Icon(
                           isFav ? Icons.favorite : Icons.favorite_border,
                           color: isFav ? Colors.redAccent : Colors.white,
                         ),
                         onPressed: () {
-                          _toggleFavorite(_currentTrack!);
-                          setModalState(() {});
+                          if (_currentTrack != null) {
+                            _toggleFavorite(_currentTrack!);
+                            setModalState(() {});
+                          }
                         },
                       ),
                     ],
@@ -337,7 +404,7 @@ class _MainScreenState extends State<MainScreen> {
                     child: ClipRRect(
                       borderRadius: BorderRadius.circular(16.0),
                       child: Image.network(
-                        _currentTrack?['artworkUrl100']?.replaceAll('100x100bb', '600x600bb') ?? '',
+                        _currentTrack?['thumbnail'] ?? '',
                         width: 280,
                         height: 280,
                         fit: BoxFit.cover,
@@ -351,15 +418,15 @@ class _MainScreenState extends State<MainScreen> {
                     child: Column(
                       children: [
                         Text(
-                          _currentTrack?['trackName'] ?? 'Sin título',
-                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 20),
+                          _currentTrack?['title'] ?? 'Sin título',
+                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          _currentTrack?['artistName'] ?? 'Artista desconocido',
-                          style: const TextStyle(color: Colors.grey, fontSize: 15),
+                          _currentTrack?['artist'] ?? 'Artista desconocido',
+                          style: const TextStyle(color: Colors.grey, fontSize: 14),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
@@ -383,7 +450,7 @@ class _MainScreenState extends State<MainScreen> {
                             value: currentSeconds,
                             min: 0.0,
                             max: maxSeconds,
-                            onChanged: (value) => _audioPlayer.seek(Duration(seconds: value.toInt())),
+                            onChanged: (value) => _audioHandler.seek(Duration(seconds: value.toInt())),
                           ),
                         ),
                         Row(
@@ -401,41 +468,31 @@ class _MainScreenState extends State<MainScreen> {
                     mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                     children: [
                       IconButton(
-                        icon: const Icon(Icons.skip_previous, size: 38, color: Colors.white),
+                        icon: const Icon(Icons.replay_10, size: 32, color: Colors.grey),
                         onPressed: () {
-                          _playPreviousTrack();
-                          setModalState(() {});
-                        },
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.replay_10, size: 30, color: Colors.grey),
-                        onPressed: () {
-                          _seekRelative(-10);
+                          final target = _position - const Duration(seconds: 10);
+                          _audioHandler.seek(target < Duration.zero ? Duration.zero : target);
                           setModalState(() {});
                         },
                       ),
                       IconButton(
                         icon: Icon(
                           _isPlaying ? Icons.pause_circle_filled : Icons.play_circle_fill,
-                          size: 64,
+                          size: 68,
                           color: widget.primaryColor,
                         ),
                         onPressed: () {
-                          _playTrack(_currentTrack!);
-                          setModalState(() {});
+                          if (_currentTrack != null) {
+                            _playTrack(_currentTrack!);
+                            setModalState(() {});
+                          }
                         },
                       ),
                       IconButton(
-                        icon: const Icon(Icons.forward_10, size: 30, color: Colors.grey),
+                        icon: const Icon(Icons.forward_10, size: 32, color: Colors.grey),
                         onPressed: () {
-                          _seekRelative(10);
-                          setModalState(() {});
-                        },
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.skip_next, size: 38, color: Colors.white),
-                        onPressed: () {
-                          _playNextTrack();
+                          final target = _position + const Duration(seconds: 10);
+                          _audioHandler.seek(target > _duration ? _duration : target);
                           setModalState(() {});
                         },
                       ),
@@ -459,18 +516,12 @@ class _MainScreenState extends State<MainScreen> {
   }
 
   @override
-  void dispose() {
-    _audioPlayer.dispose();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
     final List<Widget> pages = [
       SearchTab(
         primaryColor: widget.primaryColor,
-        onTrackSelected: (track, playlist, index) => _playTrack(track, playlist: playlist, index: index),
-        currentTrackUrl: _currentTrack?['previewUrl'],
+        onTrackSelected: (track) => _playTrack(track),
+        currentTrackId: _currentTrack?['id'],
         isPlaying: _isPlaying,
         onToggleFavorite: _toggleFavorite,
         isFavorite: _isFavorite,
@@ -479,15 +530,15 @@ class _MainScreenState extends State<MainScreen> {
       FavoritesTab(
         primaryColor: widget.primaryColor,
         favorites: _favorites,
-        onTrackSelected: (track, playlist, index) => _playTrack(track, playlist: playlist, index: index),
-        currentTrackUrl: _currentTrack?['previewUrl'],
+        onTrackSelected: (track) => _playTrack(track),
+        currentTrackId: _currentTrack?['id'],
         isPlaying: _isPlaying,
         onToggleFavorite: _toggleFavorite,
       ),
       DownloadsTab(
         primaryColor: widget.primaryColor,
         downloadedTracks: _downloadedTracks,
-        onTrackSelected: (track, playlist, index) => _playTrack(track, playlist: playlist, index: index),
+        onTrackSelected: (track) => _playTrack(track),
         currentTrackPath: _currentTrack?['localPath'],
         isPlaying: _isPlaying,
         onDelete: _deleteDownloadedTrack,
@@ -498,7 +549,7 @@ class _MainScreenState extends State<MainScreen> {
       appBar: AppBar(
         title: Text(
           _currentIndex == 0
-              ? 'Media App'
+              ? 'Media App (Música Completa)'
               : _currentIndex == 1
                   ? 'Tus Favoritos'
                   : 'Descargas Offline',
@@ -583,37 +634,37 @@ class _MainScreenState extends State<MainScreen> {
                 value: currentSeconds,
                 min: 0.0,
                 max: maxSeconds,
-                onChanged: (value) => _audioPlayer.seek(Duration(seconds: value.toInt())),
+                onChanged: (value) => _audioHandler.seek(Duration(seconds: value.toInt())),
               ),
             ),
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 4.0, vertical: 2.0),
+              padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
               child: Row(
                 children: [
                   ClipRRect(
                     borderRadius: BorderRadius.circular(6.0),
                     child: Image.network(
-                      _currentTrack?['artworkUrl100'] ?? '',
-                      width: 38,
-                      height: 38,
+                      _currentTrack?['thumbnail'] ?? '',
+                      width: 40,
+                      height: 40,
                       fit: BoxFit.cover,
                       errorBuilder: (c, o, s) => const Icon(Icons.music_note, size: 28),
                     ),
                   ),
-                  const SizedBox(width: 6),
+                  const SizedBox(width: 8),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          _currentTrack?['trackName'] ?? 'Sin título',
-                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 11),
+                          _currentTrack?['title'] ?? 'Sin título',
+                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
                         Text(
-                          _currentTrack?['artistName'] ?? 'Artista desconocido',
-                          style: const TextStyle(color: Colors.grey, fontSize: 9),
+                          _currentTrack?['artist'] ?? 'Artista desconocido',
+                          style: const TextStyle(color: Colors.grey, fontSize: 10),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
@@ -621,20 +672,12 @@ class _MainScreenState extends State<MainScreen> {
                     ),
                   ),
                   IconButton(
-                    icon: const Icon(Icons.skip_previous, color: Colors.white, size: 22),
-                    onPressed: _playPreviousTrack,
-                  ),
-                  IconButton(
                     icon: Icon(
                       _isPlaying ? Icons.pause_circle_filled : Icons.play_circle_fill,
                       color: widget.primaryColor,
-                      size: 32,
+                      size: 36,
                     ),
                     onPressed: () => _playTrack(_currentTrack!),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.skip_next, color: Colors.white, size: 22),
-                    onPressed: _playNextTrack,
                   ),
                 ],
               ),
@@ -648,8 +691,8 @@ class _MainScreenState extends State<MainScreen> {
 
 class SearchTab extends StatefulWidget {
   final Color primaryColor;
-  final Function(Map<String, dynamic>, List<dynamic>, int) onTrackSelected;
-  final String? currentTrackUrl;
+  final Function(Map<String, dynamic>) onTrackSelected;
+  final String? currentTrackId;
   final bool isPlaying;
   final Function(Map<String, dynamic>) onToggleFavorite;
   final bool Function(Map<String, dynamic>) isFavorite;
@@ -659,7 +702,7 @@ class SearchTab extends StatefulWidget {
     super.key,
     required this.primaryColor,
     required this.onTrackSelected,
-    this.currentTrackUrl,
+    this.currentTrackId,
     required this.isPlaying,
     required this.onToggleFavorite,
     required this.isFavorite,
@@ -672,31 +715,35 @@ class SearchTab extends StatefulWidget {
 
 class _SearchTabState extends State<SearchTab> {
   final TextEditingController _searchController = TextEditingController();
-  List<dynamic> _tracks = [];
+  List<Map<String, dynamic>> _tracks = [];
   bool _isLoading = false;
 
   @override
   void initState() {
     super.initState();
-    _searchTracks('rock');
+    _searchTracks('rock clasico');
   }
 
   Future<void> _searchTracks(String query) async {
     if (query.trim().isEmpty) return;
     setState(() => _isLoading = true);
 
-    final url = Uri.parse(
-      'https://itunes.apple.com/search?term=${Uri.encodeComponent(query)}&media=music&limit=25',
-    );
-
     try {
-      final response = await http.get(url);
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        setState(() {
-          _tracks = data['results'] ?? [];
-        });
-      }
+      final ytExplode = yt.YoutubeExplode();
+      final searchResults = await ytExplode.search.search(query);
+      ytExplode.close();
+
+      setState(() {
+        _tracks = searchResults.map((video) {
+          return {
+            'id': video.id.value,
+            'title': video.title,
+            'artist': video.author,
+            'thumbnail': video.thumbnails.lowResUrl,
+            'duration': video.duration,
+          };
+        }).toList();
+      });
     } catch (e) {
       // Manejo silencioso
     } finally {
@@ -713,7 +760,7 @@ class _SearchTabState extends State<SearchTab> {
           child: TextField(
             controller: _searchController,
             decoration: InputDecoration(
-              hintText: 'Buscar artista o canción...',
+              hintText: 'Buscar canción completa, artista o álbum...',
               prefixIcon: Icon(Icons.search, color: widget.primaryColor),
               suffixIcon: IconButton(
                 icon: Icon(Icons.send, color: widget.primaryColor),
@@ -733,13 +780,12 @@ class _SearchTabState extends State<SearchTab> {
           child: _isLoading
               ? Center(child: CircularProgressIndicator(color: widget.primaryColor))
               : _tracks.isEmpty
-                  ? const Center(child: Text('No se encontraron resultados'))
+                  ? const Center(child: Text('No se encontraron canciones'))
                   : ListView.builder(
                       itemCount: _tracks.length,
                       itemBuilder: (context, index) {
                         final track = _tracks[index];
-                        final previewUrl = track['previewUrl'] ?? '';
-                        final isSelected = widget.currentTrackUrl == previewUrl && widget.isPlaying;
+                        final isSelected = widget.currentTrackId == track['id'] && widget.isPlaying;
                         final isFav = widget.isFavorite(track);
 
                         return Card(
@@ -749,21 +795,22 @@ class _SearchTabState extends State<SearchTab> {
                             leading: ClipRRect(
                               borderRadius: BorderRadius.circular(8.0),
                               child: Image.network(
-                                track['artworkUrl100'] ?? '',
-                                width: 45,
-                                height: 45,
+                                track['thumbnail'] ?? '',
+                                width: 50,
+                                height: 50,
                                 fit: BoxFit.cover,
                                 errorBuilder: (c, o, s) => const Icon(Icons.music_note, size: 30),
                               ),
                             ),
                             title: Text(
-                              track['trackName'] ?? 'Sin título',
-                              style: const TextStyle(fontWeight: FontWeight.bold),
+                              track['title'] ?? 'Sin título',
+                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                             ),
                             subtitle: Text(
-                              track['artistName'] ?? 'Artista desconocido',
+                              track['artist'] ?? 'Artista desconocido',
+                              style: const TextStyle(fontSize: 11),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                             ),
@@ -786,9 +833,9 @@ class _SearchTabState extends State<SearchTab> {
                                   icon: Icon(
                                     isSelected ? Icons.pause_circle_filled : Icons.play_circle_fill,
                                     color: widget.primaryColor,
-                                    size: 32,
+                                    size: 34,
                                   ),
-                                  onPressed: () => widget.onTrackSelected(track, _tracks, index),
+                                  onPressed: () => widget.onTrackSelected(track),
                                 ),
                               ],
                             ),
@@ -805,8 +852,8 @@ class _SearchTabState extends State<SearchTab> {
 class FavoritesTab extends StatelessWidget {
   final Color primaryColor;
   final List<Map<String, dynamic>> favorites;
-  final Function(Map<String, dynamic>, List<dynamic>, int) onTrackSelected;
-  final String? currentTrackUrl;
+  final Function(Map<String, dynamic>) onTrackSelected;
+  final String? currentTrackId;
   final bool isPlaying;
   final Function(Map<String, dynamic>) onToggleFavorite;
 
@@ -815,7 +862,7 @@ class FavoritesTab extends StatelessWidget {
     required this.primaryColor,
     required this.favorites,
     required this.onTrackSelected,
-    this.currentTrackUrl,
+    this.currentTrackId,
     required this.isPlaying,
     required this.onToggleFavorite,
   });
@@ -835,8 +882,7 @@ class FavoritesTab extends StatelessWidget {
       itemCount: favorites.length,
       itemBuilder: (context, index) {
         final track = favorites[index];
-        final previewUrl = track['previewUrl'] ?? '';
-        final isSelected = currentTrackUrl == previewUrl && isPlaying;
+        final isSelected = currentTrackId == track['id'] && isPlaying;
 
         return Card(
           color: const Color(0xFF1E1E1E),
@@ -845,21 +891,22 @@ class FavoritesTab extends StatelessWidget {
             leading: ClipRRect(
               borderRadius: BorderRadius.circular(8.0),
               child: Image.network(
-                track['artworkUrl100'] ?? '',
-                width: 45,
-                height: 45,
+                track['thumbnail'] ?? '',
+                width: 50,
+                height: 50,
                 fit: BoxFit.cover,
                 errorBuilder: (c, o, s) => const Icon(Icons.music_note, size: 30),
               ),
             ),
             title: Text(
-              track['trackName'] ?? 'Sin título',
-              style: const TextStyle(fontWeight: FontWeight.bold),
+              track['title'] ?? 'Sin título',
+              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
             subtitle: Text(
-              track['artistName'] ?? 'Artista desconocido',
+              track['artist'] ?? 'Artista desconocido',
+              style: const TextStyle(fontSize: 11),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
@@ -874,9 +921,9 @@ class FavoritesTab extends StatelessWidget {
                   icon: Icon(
                     isSelected ? Icons.pause_circle_filled : Icons.play_circle_fill,
                     color: primaryColor,
-                    size: 32,
+                    size: 34,
                   ),
-                  onPressed: () => onTrackSelected(track, favorites, index),
+                  onPressed: () => onTrackSelected(track),
                 ),
               ],
             ),
@@ -890,7 +937,7 @@ class FavoritesTab extends StatelessWidget {
 class DownloadsTab extends StatelessWidget {
   final Color primaryColor;
   final List<Map<String, dynamic>> downloadedTracks;
-  final Function(Map<String, dynamic>, List<dynamic>, int) onTrackSelected;
+  final Function(Map<String, dynamic>) onTrackSelected;
   final String? currentTrackPath;
   final bool isPlaying;
   final Function(Map<String, dynamic>) onDelete;
@@ -910,7 +957,7 @@ class DownloadsTab extends StatelessWidget {
     if (downloadedTracks.isEmpty) {
       return const Center(
         child: Text(
-          'No tienes canciones descargadas.\nToca el icono 📥 en la lista para bajar alguna.',
+          'No tienes canciones descargadas.\nToca el icono 📥 en la lista para descargar la versión completa.',
           textAlign: TextAlign.center,
           style: TextStyle(color: Colors.grey),
         ),
@@ -931,20 +978,20 @@ class DownloadsTab extends StatelessWidget {
             leading: ClipRRect(
               borderRadius: BorderRadius.circular(8.0),
               child: Image.network(
-                track['artworkUrl100'] ?? '',
-                width: 45,
-                height: 45,
+                track['thumbnail'] ?? '',
+                width: 50,
+                height: 50,
                 fit: BoxFit.cover,
                 errorBuilder: (c, o, s) => const Icon(Icons.music_note, size: 30),
               ),
             ),
             title: Text(
-              track['trackName'] ?? 'Sin título',
-              style: const TextStyle(fontWeight: FontWeight.bold),
+              track['title'] ?? 'Sin título',
+              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
-            subtitle: const Text('Descargado (Offline)', style: TextStyle(color: Colors.greenAccent, fontSize: 11)),
+            subtitle: const Text('Canción Completa (Offline)', style: TextStyle(color: Colors.greenAccent, fontSize: 11)),
             trailing: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -956,9 +1003,9 @@ class DownloadsTab extends StatelessWidget {
                   icon: Icon(
                     isSelected ? Icons.pause_circle_filled : Icons.play_circle_fill,
                     color: primaryColor,
-                    size: 32,
+                    size: 34,
                   ),
-                  onPressed: () => onTrackSelected(track, downloadedTracks, index),
+                  onPressed: () => onTrackSelected(track),
                 ),
               ],
             ),
