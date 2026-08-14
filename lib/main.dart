@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'dart:io';
-import 'package:video_player/video_player.dart';
+import 'package:youtube_player_flutter/youtube_player_flutter.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -76,8 +76,7 @@ class _MainScreenState extends State<MainScreen> {
   List<Map<String, dynamic>> _favorites = [];
 
   Map<String, dynamic>? _currentVideo;
-  VideoPlayerController? _videoController;
-  bool _isInitializingVideo = false;
+  YoutubePlayerController? _youtubeController;
 
   @override
   void initState() {
@@ -101,84 +100,27 @@ class _MainScreenState extends State<MainScreen> {
     await prefs.setString('saved_favorites', json.encode(_favorites));
   }
 
-  // Obtención de stream con respaldo en múltiples instancias
-  Future<String?> _fetchVideoStream(String videoId) async {
-    final streamEndpoints = [
-      'https://inv.tux.pizza/api/v1/videos/$videoId',
-      'https://invidious.nerdvpn.de/api/v1/videos/$videoId',
-      'https://vid.puffyan.us/api/v1/videos/$videoId',
-      'https://pipedapi.leptons.xyz/streams/$videoId',
-    ];
+  void _playVideo(Map<String, dynamic> videoItem) {
+    final videoId = videoItem['id'] ?? '';
+    if (videoId.isEmpty) return;
 
-    for (final endpoint in streamEndpoints) {
-      try {
-        final res = await http.get(Uri.parse(endpoint)).timeout(const Duration(seconds: 4));
-        if (res.statusCode == 200) {
-          final data = json.decode(res.body);
-
-          // Formato Invidious
-          if (data['formatStreams'] != null) {
-            final formats = data['formatStreams'] as List;
-            if (formats.isNotEmpty) {
-              return formats.first['url'];
-            }
-          }
-
-          // Formato Piped
-          if (data['videoStreams'] != null) {
-            final streams = data['videoStreams'] as List;
-            if (streams.isNotEmpty) {
-              final selected = streams.firstWhere(
-                (s) => s['format'] == 'MPEG_4' || s['quality'] == '360p' || s['quality'] == '720p',
-                orElse: () => streams.first,
-              );
-              return selected['url'];
-            }
-          }
-        }
-      } catch (_) {}
-    }
-    return null;
-  }
-
-  Future<void> _playVideo(Map<String, dynamic> videoItem) async {
-    try {
-      setState(() {
-        _currentVideo = videoItem;
-        _isInitializingVideo = true;
-      });
-
-      if (_videoController != null) {
-        await _videoController!.dispose();
-        _videoController = null;
-      }
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Cargando video en vivo...'), duration: Duration(seconds: 2)),
-      );
-
-      final streamUrl = await _fetchVideoStream(videoItem['id']);
-      if (streamUrl == null || streamUrl.isEmpty) {
-        throw Exception('Stream no disponible');
-      }
-
-      final controller = VideoPlayerController.networkUrl(Uri.parse(streamUrl));
-      await controller.initialize();
-
-      setState(() {
-        _videoController = controller;
-        _isInitializingVideo = false;
-      });
-
-      await controller.play();
-    } catch (e) {
-      setState(() {
-        _isInitializingVideo = false;
-      });
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No fue posible cargar este video, prueba con otro.')),
+    if (_youtubeController != null) {
+      _youtubeController!.load(videoId);
+    } else {
+      _youtubeController = YoutubePlayerController(
+        initialVideoId: videoId,
+        flags: const YoutubePlayerFlags(
+          autoPlay: true,
+          mute: false,
+          enableCaption: false,
+          isLive: false,
+        ),
       );
     }
+
+    setState(() {
+      _currentVideo = videoItem;
+    });
   }
 
   void _toggleFavorite(Map<String, dynamic> videoItem) {
@@ -201,7 +143,7 @@ class _MainScreenState extends State<MainScreen> {
 
   @override
   void dispose() {
-    _videoController?.dispose();
+    _youtubeController?.dispose();
     super.dispose();
   }
 
@@ -258,7 +200,20 @@ class _MainScreenState extends State<MainScreen> {
       ),
       body: Column(
         children: [
-          if (_currentVideo != null) _buildVideoPlayerArea(),
+          if (_currentVideo != null && _youtubeController != null)
+            SizedBox(
+              width: double.infinity,
+              height: 220,
+              child: YoutubePlayer(
+                controller: _youtubeController!,
+                showVideoProgressIndicator: true,
+                progressIndicatorColor: widget.primaryColor,
+                progressColors: ProgressBarColors(
+                  playedColor: widget.primaryColor,
+                  handleColor: widget.primaryColor,
+                ),
+              ),
+            ),
           Expanded(child: pages[_currentIndex]),
         ],
       ),
@@ -279,57 +234,6 @@ class _MainScreenState extends State<MainScreen> {
           ),
         ],
       ),
-    );
-  }
-
-  Widget _buildVideoPlayerArea() {
-    return Container(
-      width: double.infinity,
-      height: 220,
-      color: Colors.black,
-      child: _isInitializingVideo
-          ? Center(child: CircularProgressIndicator(color: widget.primaryColor))
-          : _videoController != null && _videoController!.value.isInitialized
-              ? Stack(
-                  alignment: Alignment.bottomCenter,
-                  children: [
-                    Center(
-                      child: AspectRatio(
-                        aspectRatio: _videoController!.value.aspectRatio,
-                        child: VideoPlayer(_videoController!),
-                      ),
-                    ),
-                    VideoProgressIndicator(
-                      _videoController!,
-                      allowScrubbing: true,
-                      colors: VideoProgressColors(
-                        playedColor: widget.primaryColor,
-                        bufferedColor: Colors.grey,
-                        backgroundColor: Colors.black26,
-                      ),
-                    ),
-                    Align(
-                      alignment: Alignment.center,
-                      child: IconButton(
-                        iconSize: 50,
-                        icon: Icon(
-                          _videoController!.value.isPlaying ? Icons.pause_circle_filled : Icons.play_circle_fill,
-                          color: Colors.white70,
-                        ),
-                        onPressed: () {
-                          setState(() {
-                            if (_videoController!.value.isPlaying) {
-                              _videoController!.pause();
-                            } else {
-                              _videoController!.play();
-                            }
-                          });
-                        },
-                      ),
-                    ),
-                  ],
-                )
-              : const Center(child: Text('Error al inicializar pantalla de video', style: TextStyle(color: Colors.grey))),
     );
   }
 }
@@ -359,7 +263,7 @@ class _SearchTabState extends State<SearchTab> {
   List<Map<String, dynamic>> _videos = [];
   bool _isLoading = false;
 
-  final List<String> _searchInstances = [
+  final List<String> _instances = [
     'https://inv.tux.pizza/api/v1/search',
     'https://invidious.nerdvpn.de/api/v1/search',
     'https://vid.puffyan.us/api/v1/search',
@@ -368,7 +272,7 @@ class _SearchTabState extends State<SearchTab> {
   @override
   void initState() {
     super.initState();
-    _searchVideos('futbol goles');
+    _searchVideos('resumen futbol goles');
   }
 
   Future<void> _searchVideos(String query) async {
@@ -376,7 +280,7 @@ class _SearchTabState extends State<SearchTab> {
     setState(() => _isLoading = true);
 
     bool success = false;
-    for (final baseUrl in _searchInstances) {
+    for (final baseUrl in _instances) {
       try {
         final uri = Uri.parse('$baseUrl?q=${Uri.encodeComponent(query)}&type=video');
         final res = await http.get(uri).timeout(const Duration(seconds: 4));
