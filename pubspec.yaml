@@ -1,5 +1,5 @@
 name: media_app
-description: "A stable Flutter media application."
+description: "A professional complete streaming media application."
 publish_to: 'none'
 version: 1.0.0+1
 
@@ -11,6 +11,8 @@ dependencies:
     sdk: flutter
   http: ^1.2.0
   just_audio: ^0.9.36
+  audio_service: ^0.18.12
+  youtube_explode_dart: ^2.2.1
   dio: ^5.4.1
   path_provider: ^2.1.2
   shared_preferences: ^2.2.2
