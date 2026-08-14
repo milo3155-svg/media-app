@@ -17,7 +17,7 @@ Future<void> main() async {
     androidNotificationChannelId: 'com.mediaapp.channel.audio',
     androidNotificationChannelName: 'Reproducción 2do Plano',
     androidNotificationOngoing: true,
-    androidNotificationIcon: 'drawable/ic_notification', // ¡EL FIX QUE EVITA EL CRASHEO!
+    androidNotificationIcon: 'drawable/ic_notification',
   );
   
   runApp(const MediaApp());
@@ -205,7 +205,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   suffixIcon: IconButton(
                     icon: Icon(Icons.send, color: widget.primaryColor), 
                     onPressed: () {
-                      FocusScope.rootNode(context).unfocus();
+                      FocusManager.instance.primaryFocus?.unfocus(); // FIX DE TECLADO
                       _searchVideos(_searchController.text);
                     }
                   ),
@@ -214,7 +214,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   border: OutlineInputBorder(borderRadius: BorderRadius.circular(30.0), borderSide: BorderSide.none),
                 ),
                 onSubmitted: (val) {
-                  FocusScope.rootNode(context).unfocus();
+                  FocusManager.instance.primaryFocus?.unfocus(); // FIX DE TECLADO
                   _searchVideos(val);
                 },
               ),
@@ -316,7 +316,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
       _videoStreams = manifest.muxed.sortByVideoQuality().toList();
       
       if (_videoStreams.isNotEmpty) {
-        // Aseguramos formato MP4 para audio nativo fluido en 2do plano
         final audioStreams = manifest.audioOnly.where((s) => s.container.name == 'mp4' || s.audioCodec.contains('mp4a'));
         if (audioStreams.isNotEmpty) {
           _audioFallbackUrl = audioStreams.withHighestBitrate().url.toString();
@@ -401,7 +400,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
   }
 
   Future<void> _changeMode(String modeUrl, String label) async {
-    Navigator.pop(context); // Cierra el bottom sheet
+    Navigator.pop(context); 
     setState(() => _isLoading = true);
     
     Duration currentPos = Duration.zero;
