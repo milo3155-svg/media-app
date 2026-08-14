@@ -1,10 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'dart:io';
 import 'package:just_audio/just_audio.dart';
 import 'package:audio_service/audio_service.dart';
-import 'package:youtube_explode_dart/youtube_explode_dart.dart' as yt;
-import 'package:dio/dio.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -69,12 +68,6 @@ class MyAudioHandler extends BaseAudioHandler with SeekHandler {
   Future<void> playStream(String url, MediaItem item) async {
     mediaItem.add(item);
     await _player.setUrl(url);
-    await _player.play();
-  }
-
-  Future<void> playFile(String path, MediaItem item) async {
-    mediaItem.add(item);
-    await _player.setFilePath(path);
     await _player.play();
   }
 
@@ -159,9 +152,7 @@ class MainScreen extends StatefulWidget {
 
 class _MainScreenState extends State<MainScreen> {
   int _currentIndex = 0;
-
   List<Map<String, dynamic>> _favorites = [];
-  List<Map<String, dynamic>> _downloadedTracks = [];
 
   Map<String, dynamic>? _currentTrack;
   bool _isPlaying = false;
@@ -193,17 +184,10 @@ class _MainScreenState extends State<MainScreen> {
   Future<void> _loadSavedData() async {
     final prefs = await SharedPreferences.getInstance();
     final favString = prefs.getString('saved_favorites');
-    final downString = prefs.getString('saved_downloads');
 
     if (favString != null) {
       setState(() {
         _favorites = List<Map<String, dynamic>>.from(json.decode(favString));
-      });
-    }
-
-    if (downString != null) {
-      setState(() {
-        _downloadedTracks = List<Map<String, dynamic>>.from(json.decode(downString));
       });
     }
   }
@@ -211,7 +195,6 @@ class _MainScreenState extends State<MainScreen> {
   Future<void> _saveLocalData() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('saved_favorites', json.encode(_favorites));
-    await prefs.setString('saved_downloads', json.encode(_downloadedTracks));
   }
 
   Future<void> _playTrack(Map<String, dynamic> track) async {
@@ -234,23 +217,10 @@ class _MainScreenState extends State<MainScreen> {
         title: track['title'] ?? 'Sin título',
         artist: track['artist'] ?? 'Artista desconocido',
         artUri: Uri.tryParse(track['thumbnail'] ?? ''),
-        duration: track['duration'],
       );
 
-      if (track['localPath'] != null) {
-        await _audioHandler.playFile(track['localPath'], mediaItem);
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Obteniendo audio completo...')),
-        );
-        final ytExplode = yt.YoutubeExplode();
-        final manifest = await ytExplode.videos.streamsClient.getManifest(track['id']);
-        final audioStream = manifest.audioOnly.withHighestBitrate();
-        final audioUrl = audioStream.url.toString();
-        ytExplode.close();
-
-        await _audioHandler.playStream(audioUrl, mediaItem);
-      }
+      final streamUrl = 'https://discoveryprovider.audius.co/v1/tracks/${track['id']}/stream?app_name=MediaApp';
+      await _audioHandler.playStream(streamUrl, mediaItem);
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Error al reproducir pista')),
@@ -274,81 +244,6 @@ class _MainScreenState extends State<MainScreen> {
   bool _isFavorite(Map<String, dynamic> track) {
     final trackId = track['id'];
     return _favorites.any((t) => t['id'] == trackId);
-  }
-
-  Future<void> _downloadTrack(Map<String, dynamic> track) async {
-    await Permission.audio.request();
-
-    try {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Preparando descarga completa...')),
-      );
-
-      final ytExplode = yt.YoutubeExplode();
-      final manifest = await ytExplode.videos.streamsClient.getManifest(track['id']);
-      final audioStream = manifest.audioOnly.withHighestBitrate();
-      final url = audioStream.url.toString();
-      ytExplode.close();
-
-      final dir = Directory('/storage/emulated/0/Download');
-      if (!await dir.exists()) {
-        await dir.create(recursive: true);
-      }
-
-      final rawName = track['title'] ?? 'Track';
-      final cleanName = rawName.toString().replaceAll(RegExp(r'[^\w\s\.-]'), '');
-      final fileName = '${cleanName}_${track['id']}.m4a';
-      final filePath = '${dir.path}/$fileName';
-
-      await Dio().download(url, filePath);
-
-      final downloadedTrack = Map<String, dynamic>.from(track);
-      downloadedTrack['localPath'] = filePath;
-
-      setState(() {
-        _downloadedTracks.add(downloadedTrack);
-      });
-
-      await _saveLocalData();
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('¡Canción completa descargada! 📥: $fileName')),
-      );
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Error al descargar canción')),
-      );
-    }
-  }
-
-  Future<void> _deleteDownloadedTrack(Map<String, dynamic> track) async {
-    try {
-      final localPath = track['localPath'];
-      if (localPath != null) {
-        final file = File(localPath);
-        if (await file.exists()) {
-          await file.delete();
-        }
-      }
-
-      setState(() {
-        _downloadedTracks.removeWhere((t) => t['localPath'] == track['localPath']);
-        if (_currentTrack?['localPath'] == track['localPath']) {
-          _audioHandler.stop();
-          _currentTrack = null;
-        }
-      });
-
-      await _saveLocalData();
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Canción eliminada 🗑️')),
-      );
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Error al eliminar archivo')),
-      );
-    }
   }
 
   void _openExpandedPlayer() {
@@ -383,7 +278,7 @@ class _MainScreenState extends State<MainScreen> {
                         icon: const Icon(Icons.keyboard_arrow_down, size: 30),
                         onPressed: () => Navigator.pop(context),
                       ),
-                      const Text('Reproduciendo canción completa', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                      const Text('Audius API (Canción Completa)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
                       IconButton(
                         icon: Icon(
                           isFav ? Icons.favorite : Icons.favorite_border,
@@ -525,7 +420,6 @@ class _MainScreenState extends State<MainScreen> {
         isPlaying: _isPlaying,
         onToggleFavorite: _toggleFavorite,
         isFavorite: _isFavorite,
-        onDownload: _downloadTrack,
       ),
       FavoritesTab(
         primaryColor: widget.primaryColor,
@@ -535,24 +429,12 @@ class _MainScreenState extends State<MainScreen> {
         isPlaying: _isPlaying,
         onToggleFavorite: _toggleFavorite,
       ),
-      DownloadsTab(
-        primaryColor: widget.primaryColor,
-        downloadedTracks: _downloadedTracks,
-        onTrackSelected: (track) => _playTrack(track),
-        currentTrackPath: _currentTrack?['localPath'],
-        isPlaying: _isPlaying,
-        onDelete: _deleteDownloadedTrack,
-      ),
     ];
 
     return Scaffold(
       appBar: AppBar(
         title: Text(
-          _currentIndex == 0
-              ? 'Media App (Música Completa)'
-              : _currentIndex == 1
-                  ? 'Tus Favoritos'
-                  : 'Descargas Offline',
+          _currentIndex == 0 ? 'Media App (Audius Engine)' : 'Tus Favoritos',
         ),
         centerTitle: true,
         backgroundColor: const Color(0xFF1F1F1F),
@@ -601,10 +483,6 @@ class _MainScreenState extends State<MainScreen> {
               color: _favorites.isNotEmpty ? Colors.redAccent : Colors.grey,
             ),
             label: 'Favoritos (${_favorites.length})',
-          ),
-          BottomNavigationBarItem(
-            icon: const Icon(Icons.download_done_rounded),
-            label: 'Offline (${_downloadedTracks.length})',
           ),
         ],
       ),
@@ -696,7 +574,6 @@ class SearchTab extends StatefulWidget {
   final bool isPlaying;
   final Function(Map<String, dynamic>) onToggleFavorite;
   final bool Function(Map<String, dynamic>) isFavorite;
-  final Function(Map<String, dynamic>) onDownload;
 
   const SearchTab({
     super.key,
@@ -706,7 +583,6 @@ class SearchTab extends StatefulWidget {
     required this.isPlaying,
     required this.onToggleFavorite,
     required this.isFavorite,
-    required this.onDownload,
   });
 
   @override
@@ -721,7 +597,7 @@ class _SearchTabState extends State<SearchTab> {
   @override
   void initState() {
     super.initState();
-    _searchTracks('rock clasico');
+    _searchTracks('electronic');
   }
 
   Future<void> _searchTracks(String query) async {
@@ -729,23 +605,28 @@ class _SearchTabState extends State<SearchTab> {
     setState(() => _isLoading = true);
 
     try {
-      final ytExplode = yt.YoutubeExplode();
-      final searchResults = await ytExplode.search.search(query);
-      ytExplode.close();
+      final res = await http.get(
+        Uri.parse('https://discoveryprovider.audius.co/v1/tracks/search?query=${Uri.encodeComponent(query)}&app_name=MediaApp'),
+      );
 
-      setState(() {
-        _tracks = searchResults.map((video) {
-          return {
-            'id': video.id.value,
-            'title': video.title,
-            'artist': video.author,
-            'thumbnail': video.thumbnails.lowResUrl,
-            'duration': video.duration,
-          };
-        }).toList();
-      });
-    } catch (e) {
-      // Manejo silencioso
+      if (res.statusCode == 200) {
+        final data = json.decode(res.body);
+        final items = data['data'] as List?;
+        if (items != null) {
+          setState(() {
+            _tracks = items.map((item) {
+              final artwork = item['artwork']?['150x150'] ?? item['artwork']?['480x480'] ?? '';
+              return {
+                'id': item['id'] ?? '',
+                'title': item['title'] ?? 'Sin título',
+                'artist': item['user']?['name'] ?? 'Artista Audius',
+                'thumbnail': artwork,
+              };
+            }).toList();
+          });
+        }
+      }
+    } catch (_) {
     } finally {
       setState(() => _isLoading = false);
     }
@@ -760,7 +641,7 @@ class _SearchTabState extends State<SearchTab> {
           child: TextField(
             controller: _searchController,
             decoration: InputDecoration(
-              hintText: 'Buscar canción completa, artista o álbum...',
+              hintText: 'Buscar en la red oficial de Audius...',
               prefixIcon: Icon(Icons.search, color: widget.primaryColor),
               suffixIcon: IconButton(
                 icon: Icon(Icons.send, color: widget.primaryColor),
@@ -780,7 +661,7 @@ class _SearchTabState extends State<SearchTab> {
           child: _isLoading
               ? Center(child: CircularProgressIndicator(color: widget.primaryColor))
               : _tracks.isEmpty
-                  ? const Center(child: Text('No se encontraron canciones'))
+                  ? const Center(child: Text('No se encontraron canciones en Audius'))
                   : ListView.builder(
                       itemCount: _tracks.length,
                       itemBuilder: (context, index) {
@@ -817,10 +698,6 @@ class _SearchTabState extends State<SearchTab> {
                             trailing: Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                IconButton(
-                                  icon: const Icon(Icons.download, color: Colors.grey, size: 20),
-                                  onPressed: () => widget.onDownload(track),
-                                ),
                                 IconButton(
                                   icon: Icon(
                                     isFav ? Icons.favorite : Icons.favorite_border,
@@ -916,88 +793,6 @@ class FavoritesTab extends StatelessWidget {
                 IconButton(
                   icon: const Icon(Icons.favorite, color: Colors.redAccent, size: 20),
                   onPressed: () => onToggleFavorite(track),
-                ),
-                IconButton(
-                  icon: Icon(
-                    isSelected ? Icons.pause_circle_filled : Icons.play_circle_fill,
-                    color: primaryColor,
-                    size: 34,
-                  ),
-                  onPressed: () => onTrackSelected(track),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-}
-
-class DownloadsTab extends StatelessWidget {
-  final Color primaryColor;
-  final List<Map<String, dynamic>> downloadedTracks;
-  final Function(Map<String, dynamic>) onTrackSelected;
-  final String? currentTrackPath;
-  final bool isPlaying;
-  final Function(Map<String, dynamic>) onDelete;
-
-  const DownloadsTab({
-    super.key,
-    required this.primaryColor,
-    required this.downloadedTracks,
-    required this.onTrackSelected,
-    this.currentTrackPath,
-    required this.isPlaying,
-    required this.onDelete,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    if (downloadedTracks.isEmpty) {
-      return const Center(
-        child: Text(
-          'No tienes canciones descargadas.\nToca el icono 📥 en la lista para descargar la versión completa.',
-          textAlign: TextAlign.center,
-          style: TextStyle(color: Colors.grey),
-        ),
-      );
-    }
-
-    return ListView.builder(
-      itemCount: downloadedTracks.length,
-      itemBuilder: (context, index) {
-        final track = downloadedTracks[index];
-        final localPath = track['localPath'] ?? '';
-        final isSelected = currentTrackPath == localPath && isPlaying;
-
-        return Card(
-          color: const Color(0xFF1E1E1E),
-          margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-          child: ListTile(
-            leading: ClipRRect(
-              borderRadius: BorderRadius.circular(8.0),
-              child: Image.network(
-                track['thumbnail'] ?? '',
-                width: 50,
-                height: 50,
-                fit: BoxFit.cover,
-                errorBuilder: (c, o, s) => const Icon(Icons.music_note, size: 30),
-              ),
-            ),
-            title: Text(
-              track['title'] ?? 'Sin título',
-              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-            subtitle: const Text('Canción Completa (Offline)', style: TextStyle(color: Colors.greenAccent, fontSize: 11)),
-            trailing: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                IconButton(
-                  icon: const Icon(Icons.delete_outline, color: Colors.grey, size: 20),
-                  onPressed: () => onDelete(track),
                 ),
                 IconButton(
                   icon: Icon(
