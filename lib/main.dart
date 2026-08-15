@@ -1,13 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 
-void main() {
-  runApp(const MediaApp());
-}
+void main() => runApp(const MediaApp());
 
 class MediaApp extends StatelessWidget {
   const MediaApp({super.key});
-
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
@@ -20,72 +16,86 @@ class MediaApp extends StatelessWidget {
 
 class MainNavigation extends StatefulWidget {
   const MainNavigation({super.key});
-
   @override
   State<MainNavigation> createState() => _MainNavigationState();
 }
 
 class _MainNavigationState extends State<MainNavigation> with SingleTickerProviderStateMixin {
   late TabController _tabController;
-  Color _primaryColor = Colors.purpleAccent;
+  bool _isSearching = false;
+  final TextEditingController _searchController = TextEditingController();
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 4, vsync: this);
-  }
-
-  @override
-  void dispose() {
-    _tabController.dispose();
-    super.dispose();
+    _tabController = TabController(length: 3, vsync: this); // Música, Top, Deportes
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF121212), // Fondo explícito
       drawer: Drawer(
         backgroundColor: const Color(0xFF1E1E1E),
         child: ListView(
           padding: EdgeInsets.zero,
           children: [
-            UserAccountsDrawerHeader(
-              accountName: const Text("Usuario"),
-              accountEmail: const Text("Bienvenido"),
-              decoration: BoxDecoration(color: _primaryColor.withOpacity(0.3)),
-            ),
+            const UserAccountsDrawerHeader(accountName: Text("Hola"), accountEmail: Text("Bienvenido")),
+            ListTile(leading: const Icon(Icons.video_library), title: const Text("Videos (YouTube)"), onTap: () {}),
+            ListTile(leading: const Icon(Icons.music_note), title: const Text("Música (YT Music)"), onTap: () {}),
+            const Divider(),
             ListTile(leading: const Icon(Icons.download), title: const Text("Descargas")),
-            ListTile(leading: const Icon(Icons.favorite), title: const Text("Favoritos")),
+            ListTile(leading: const Icon(Icons.settings), title: const Text("Ajustes")),
           ],
         ),
       ),
       appBar: AppBar(
-        title: const Text("Media App"),
-        actions: [IconButton(icon: const Icon(Icons.search), onPressed: () {})],
+        title: _isSearching 
+            ? TextField(controller: _searchController, decoration: const InputDecoration(hintText: "Buscar..."))
+            : const Text("Inicio"),
+        actions: [
+          IconButton(
+            icon: Icon(_isSearching ? Icons.close : Icons.search),
+            onPressed: () => setState(() => _isSearching = !_isSearching),
+          )
+        ],
         bottom: TabBar(
           controller: _tabController,
-          indicatorColor: _primaryColor,
-          labelColor: _primaryColor,
-          unselectedLabelColor: Colors.grey,
           isScrollable: true,
           tabs: const [
-            Tab(text: "Inicio"),
             Tab(text: "Música/Podcasts"),
             Tab(text: "Top 🔝"),
             Tab(text: "Deportes"),
           ],
         ),
       ),
-      // Añadimos un pequeño retraso o estructura para asegurar que renderice
       body: TabBarView(
         controller: _tabController,
-        children: const [
-          Center(child: Text("Inicio", style: TextStyle(color: Colors.white))),
-          Center(child: Text("Música/Podcasts", style: TextStyle(color: Colors.white))),
-          Center(child: Text("Top 🔝", style: TextStyle(color: Colors.white))),
-          Center(child: Text("Deportes", style: TextStyle(color: Colors.white))),
+        children: [
+          _buildDummyList(), // Aquí irán tus listas
+          const Center(child: Text("Top Musical")),
+          const Center(child: Text("Sección Deportes")),
         ],
+      ),
+    );
+  }
+
+  // Ejemplo del menú de 3 puntitos que querías
+  Widget _buildDummyList() {
+    return ListView.builder(
+      itemCount: 5,
+      itemBuilder: (context, index) => ListTile(
+        leading: const Icon(Icons.play_circle_fill),
+        title: Text("Contenido $index"),
+        trailing: PopupMenuButton<String>(
+          onSelected: (value) { /* Lógica de descarga/compartir */ },
+          itemBuilder: (context) => [
+            const PopupMenuItem(value: 'lista', child: Text('Añadir a lista')),
+            const PopupMenuItem(value: 'cola', child: Text('Añadir a cola')),
+            const PopupMenuItem(value: 'mp3', child: Text('Descargar MP3')),
+            const PopupMenuItem(value: 'mp4', child: Text('Descargar MP4')),
+            const PopupMenuItem(value: 'share', child: Text('Compartir en WhatsApp')),
+          ],
+        ),
       ),
     );
   }
