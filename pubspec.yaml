@@ -1,6 +1,5 @@
 name: media_app
-description: Aplicación multimedia.
-publish_to: 'none'
+description: Aplicación multimedia
 version: 1.0.0+1
 
 environment:
@@ -10,8 +9,6 @@ dependencies:
   flutter:
     sdk: flutter
   cupertino_icons: ^1.0.6
-  youtube_explode_dart: ^2.2.0
-  audioplayers: ^5.2.1
 
 dev_dependencies:
   flutter_test:
@@ -20,3 +17,4 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  
