@@ -30,11 +30,18 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
   late TabController _tabController;
   bool _isSearching = false;
   final TextEditingController _searchController = TextEditingController();
+  
+  // Estado de la tarjeta de descargas en inicio
+  bool _showDownloadBanner = true;
+  
+  // Equipo de deportes seleccionado (simulado para el escudo)
+  String _selectedTeam = "Seleccionar Equipo";
+  IconData _teamIcon = Icons.sports_soccer;
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
+    _tabController = TabController(length: 4, vsync: this); // 4 pestañas ahora
   }
 
   @override
@@ -52,12 +59,27 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
         child: ListView(
           padding: EdgeInsets.zero,
           children: [
+            // CABECERA DEL MENÚ CON EL ESCUDO / EQUIPO DINÁMICO
             UserAccountsDrawerHeader(
               accountName: const Text("Usuario"),
-              accountEmail: const Text("Bienvenido"),
+              accountEmail: Text("Equipo: $_selectedTeam"),
               decoration: BoxDecoration(color: Colors.purpleAccent.withOpacity(0.3)),
-              currentAccountPicture: const CircleAvatar(child: Icon(Icons.person, size: 40)),
+              currentAccountPicture: CircleAvatar(
+                backgroundColor: Colors.black26,
+                child: Icon(_teamIcon, size: 35, color: Colors.white),
+              ),
             ),
+            ListTile(
+              leading: const Icon(Icons.favorite, color: Colors.redAccent),
+              title: const Text("Favoritos"),
+              onTap: () => Navigator.pop(context),
+            ),
+            ListTile(
+              leading: const Icon(Icons.download, color: Colors.blueAccent),
+              title: const Text("Gestor de Descargas"),
+              onTap: () => Navigator.pop(context),
+            ),
+            const Divider(color: Colors.grey),
             ListTile(leading: const Icon(Icons.video_library), title: const Text("Modo Videos"), onTap: () {}),
             ListTile(leading: const Icon(Icons.music_note), title: const Text("Modo Música / 2do Plano"), onTap: () {}),
             const Divider(color: Colors.grey),
@@ -84,54 +106,55 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
         ],
         bottom: TabBar(
           controller: _tabController,
-          isScrollable: true,
+          isScrollable: false, // Se ajustan perfecto los 4 iconos
           indicatorColor: Colors.purpleAccent,
           labelColor: Colors.purpleAccent,
           unselectedLabelColor: Colors.grey,
           tabs: const [
-            Tab(text: "Inicio"),
-            Tab(text: "Música / Podcasts"),
-            Tab(text: "Top 🔝"),
+            Tab(icon: Icon(Icons.home), text: "Inicio"),
+            Tab(icon: Icon(Icons.music_note), text: "Música"),
+            Tab(icon: Icon(Icons.trending_up), text: "Top 🔝"),
+            Tab(icon: Icon(Icons.sports_soccer), text: "Deportes"),
           ],
         ),
       ),
       body: TabBarView(
         controller: _tabController,
         children: [
-          _buildCustomHomeFeed(), // <--- AQUÍ ESTÁ NUESTRO FEED PERSONALIZADO (Opción 2)
+          _buildCustomHomeFeed(), 
           _buildContentList("Música y Podcasts"),
           _buildContentList("Top Chart 🔝"),
+          _buildSportsView(), // <--- NUESTRA SECCIÓN DE DEPORTES
         ],
       ),
     );
   }
 
-  // 🌟 PANTALLA DE INICIO DINÁMICA (FEED PERSONALIZADO)
+  // 🏠 INICIO CON TARJETA DESLIZABLE (DISMISSIBLE)
   Widget _buildCustomHomeFeed() {
     return ListView(
       padding: const EdgeInsets.all(16.0),
       children: [
-        // 1. SECCIÓN DE FAVORITOS RÁPIDOS (Horizontal)
         const Text("Tus Favoritos Recientes", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white)),
         const SizedBox(height: 10),
         SizedBox(
-          height: 120,
+          height: 110,
           child: ListView.builder(
             scrollDirection: Axis.horizontal,
-            itemCount: 5,
+            itemCount: 4,
             itemBuilder: (context, index) => Container(
-              width: 110,
+              width: 100,
               margin: const EdgeInsets.only(right: 12),
               child: Column(
                 children: [
                   Expanded(
                     child: ClipRRect(
                       borderRadius: BorderRadius.circular(8),
-                      child: Container(color: Colors.grey[800], child: const Icon(Icons.favorite, color: Colors.redAccent, size: 30)),
+                      child: Container(color: Colors.grey[800], child: const Icon(Icons.favorite, color: Colors.redAccent, size: 28)),
                     ),
                   ),
                   const SizedBox(height: 6),
-                  Text("Favorito $index", maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12)),
+                  Text("Fav $index", maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12)),
                 ],
               ),
             ),
@@ -140,38 +163,65 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
 
         const SizedBox(height: 20),
 
-        // 2. SECCIÓN DE DESCARGAS OFFLINE (Banner rápido)
-        Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: Colors.purpleAccent.withOpacity(0.15),
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: Colors.purpleAccent.withOpacity(0.3)),
-          ),
-          child: const Row(
-            children: [
-              Icon(Icons.download_done, color: Colors.purpleAccent, size: 30),
-              SizedBox(width: 12),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text("Descargas Disponibles", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-                  Text("3 elementos listos para modo offline", style: TextStyle(color: Colors.grey, fontSize: 12)),
-                ],
+        // 🌟 TARJETA DE DESCARGAS DESLIZABLE (DISMISSIBLE)
+        if (_showDownloadBanner)
+          Dismissible(
+            key: const Key('download_banner'),
+            direction: DismissDirection.horizontal,
+            onDismissed: (direction) {
+              setState(() => _showDownloadBanner = false);
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Notificación de descargas descartada')),
+              );
+            },
+            background: Container(
+              alignment: Alignment.centerLeft,
+              padding: const EdgeInsets.only(left: 20),
+              color: Colors.blueAccent.withOpacity(0.5),
+              child: const Icon(Icons.delete, color: Colors.white),
+            ),
+            child: GestureDetector(
+              onTap: () {
+                // Acción al pulsar: llevar al gestor y ocultar aviso
+                setState(() => _showDownloadBanner = false);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Abriendo Gestor de Descargas...')),
+                );
+              },
+              child: Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.purpleAccent.withOpacity(0.15),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: Colors.purpleAccent.withOpacity(0.3)),
+                ),
+                child: const Row(
+                  children: [
+                    Icon(Icons.download_done, color: Colors.purpleAccent, size: 30),
+                    SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text("Descargas Disponibles (Desliza para quitar)", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                          Text("3 elementos listos para modo offline", style: TextStyle(color: Colors.grey, fontSize: 11)),
+                        ],
+                      ),
+                    ),
+                    Icon(Icons.close, size: 18, color: Colors.grey),
+                  ],
+                ),
               ),
-            ],
+            ),
           ),
-        ),
 
         const SizedBox(height: 20),
-
-        // 3. TENDENCIAS DEL DÍA (Vertical tradicional)
         const Text("Tendencias del Día", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white)),
         const SizedBox(height: 10),
         ListView.builder(
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
-          itemCount: 4,
+          itemCount: 3,
           itemBuilder: (context, index) => ListTile(
             contentPadding: EdgeInsets.zero,
             leading: ClipRRect(
@@ -180,26 +230,67 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
             ),
             title: Text("Tendencia Global $index", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
             subtitle: const Text("Creador o Canal", style: TextStyle(color: Colors.grey, fontSize: 12)),
-            trailing: PopupMenuButton<String>(
-              icon: const Icon(Icons.more_vert, color: Colors.grey),
-              onSelected: (value) {},
-              itemBuilder: (context) => [
-                const PopupMenuItem(value: 'fav', child: Text('Añadir a Favoritos')),
-                const PopupMenuItem(value: 'mp3', child: Text('Descargar MP3')),
-                const PopupMenuItem(value: 'mp4', child: Text('Descargar MP4')),
-                const PopupMenuItem(value: 'share', child: Text('Compartir en WhatsApp')),
-              ],
-            ),
+            trailing: const Icon(Icons.more_vert, color: Colors.grey),
           ),
         ),
       ],
     );
   }
 
-  // Vista genérica para las otras pestañas
+  // ⚽ SECCIÓN DE DEPORTES CON SELECCIÓN DE EQUIPO
+  Widget _buildSportsView() {
+    return Padding(
+      padding: const EdgeInsets.all(16.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text("Tu Equipo Favorito", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(backgroundColor: Colors.purpleAccent),
+                icon: const Icon(Icons.shield),
+                label: Text(_selectedTeam),
+                onPressed: () {
+                  // Simulación de selección de equipo para probar el escudo en el Drawer
+                  setState(() {
+                    _selectedTeam = "Club Águila";
+                    _teamIcon = Icons.sports_football;
+                  });
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('¡Equipo actualizado! Revisa el menú de las 3 líneas ⚽')),
+                  );
+                },
+              ),
+            ],
+          ),
+          const Divider(height: 40, color: Colors.grey),
+          const Text("Próximos Partidos y Marcadores", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 10),
+          Expanded(
+            child: ListView(
+              children: [
+                Card(
+                  color: const Color(0xFF1E1E1E),
+                  child: ListTile(
+                    leading: const Icon(Icons.sports_soccer, color: Colors.greenAccent),
+                    title: Text("$_selectedTeam vs Rival X"),
+                    subtitle: const Text("Hoy - 20:00 hrs | Liga MX"),
+                    trailing: const Text("VS", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildContentList(String categoryName) {
     return ListView.builder(
-      itemCount: 6,
+      itemCount: 5,
       itemBuilder: (context, index) => ListTile(
         leading: ClipRRect(
           borderRadius: BorderRadius.circular(6),
@@ -207,16 +298,7 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
         ),
         title: Text("$categoryName - Item $index", style: const TextStyle(fontWeight: FontWeight.bold)),
         subtitle: const Text("Artista o Creador", style: TextStyle(color: Colors.grey, fontSize: 12)),
-        trailing: PopupMenuButton<String>(
-          icon: const Icon(Icons.more_vert, color: Colors.grey),
-          onSelected: (value) {},
-          itemBuilder: (context) => [
-            const PopupMenuItem(value: 'fav', child: Text('Añadir a Favoritos')),
-            const PopupMenuItem(value: 'mp3', child: Text('Descargar MP3')),
-            const PopupMenuItem(value: 'mp4', child: Text('Descargar MP4')),
-            const PopupMenuItem(value: 'share', child: Text('Compartir en WhatsApp')),
-          ],
-        ),
+        trailing: const Icon(Icons.more_vert, color: Colors.grey),
       ),
     );
   }
