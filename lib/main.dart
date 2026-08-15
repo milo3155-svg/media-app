@@ -58,33 +58,6 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
               decoration: BoxDecoration(color: Colors.purpleAccent.withOpacity(0.3)),
               currentAccountPicture: const CircleAvatar(child: Icon(Icons.person, size: 40)),
             ),
-            // --- SECCIÓN BIBLIOTECA ---
-            ListTile(
-              leading: const Icon(Icons.favorite, color: Colors.redAccent),
-              title: const Text("Favoritos"),
-              onTap: () {
-                Navigator.pop(context);
-                _openLibraryPage(context, "Mis Favoritos");
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.download, color: Colors.blueAccent),
-              title: const Text("Gestor de Descargas"),
-              onTap: () {
-                Navigator.pop(context);
-                _openLibraryPage(context, "Descargas Locales");
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.history, color: Colors.orangeAccent),
-              title: const Text("Reproducciones Recientes"),
-              onTap: () {
-                Navigator.pop(context);
-                _openLibraryPage(context, "Historial");
-              },
-            ),
-            const Divider(color: Colors.grey),
-            // --- PLATAFORMAS EXTERNAS / MODOS ---
             ListTile(leading: const Icon(Icons.video_library), title: const Text("Modo Videos"), onTap: () {}),
             ListTile(leading: const Icon(Icons.music_note), title: const Text("Modo Música / 2do Plano"), onTap: () {}),
             const Divider(color: Colors.grey),
@@ -102,7 +75,7 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
                   border: InputBorder.none,
                 ),
               )
-            : const Text("Inicio"),
+            : const Text("Media App"),
         actions: [
           IconButton(
             icon: Icon(_isSearching ? Icons.close : Icons.search),
@@ -116,24 +89,114 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
           labelColor: Colors.purpleAccent,
           unselectedLabelColor: Colors.grey,
           tabs: const [
+            Tab(text: "Inicio"),
             Tab(text: "Música / Podcasts"),
             Tab(text: "Top 🔝"),
-            Tab(text: "Deportes"),
           ],
         ),
       ),
       body: TabBarView(
         controller: _tabController,
         children: [
-          _buildContentList("Contenido de Música y Podcasts"),
+          _buildCustomHomeFeed(), // <--- AQUÍ ESTÁ NUESTRO FEED PERSONALIZADO (Opción 2)
+          _buildContentList("Música y Podcasts"),
           _buildContentList("Top Chart 🔝"),
-          _buildContentList("Sección de Deportes"),
         ],
       ),
     );
   }
 
-  // Vista genérica para simular listas con el menú de 3 puntitos
+  // 🌟 PANTALLA DE INICIO DINÁMICA (FEED PERSONALIZADO)
+  Widget _buildCustomHomeFeed() {
+    return ListView(
+      padding: const EdgeInsets.all(16.0),
+      children: [
+        // 1. SECCIÓN DE FAVORITOS RÁPIDOS (Horizontal)
+        const Text("Tus Favoritos Recientes", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white)),
+        const SizedBox(height: 10),
+        SizedBox(
+          height: 120,
+          child: ListView.builder(
+            scrollDirection: Axis.horizontal,
+            itemCount: 5,
+            itemBuilder: (context, index) => Container(
+              width: 110,
+              margin: const EdgeInsets.only(right: 12),
+              child: Column(
+                children: [
+                  Expanded(
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(8),
+                      child: Container(color: Colors.grey[800], child: const Icon(Icons.favorite, color: Colors.redAccent, size: 30)),
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text("Favorito $index", maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12)),
+                ],
+              ),
+            ),
+          ),
+        ),
+
+        const SizedBox(height: 20),
+
+        // 2. SECCIÓN DE DESCARGAS OFFLINE (Banner rápido)
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Colors.purpleAccent.withOpacity(0.15),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: Colors.purpleAccent.withOpacity(0.3)),
+          ),
+          child: const Row(
+            children: [
+              Icon(Icons.download_done, color: Colors.purpleAccent, size: 30),
+              SizedBox(width: 12),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text("Descargas Disponibles", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                  Text("3 elementos listos para modo offline", style: TextStyle(color: Colors.grey, fontSize: 12)),
+                ],
+              ),
+            ],
+          ),
+        ),
+
+        const SizedBox(height: 20),
+
+        // 3. TENDENCIAS DEL DÍA (Vertical tradicional)
+        const Text("Tendencias del Día", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white)),
+        const SizedBox(height: 10),
+        ListView.builder(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          itemCount: 4,
+          itemBuilder: (context, index) => ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: ClipRRect(
+              borderRadius: BorderRadius.circular(6),
+              child: Container(width: 70, height: 50, color: Colors.grey[800], child: const Icon(Icons.play_arrow)),
+            ),
+            title: Text("Tendencia Global $index", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+            subtitle: const Text("Creador o Canal", style: TextStyle(color: Colors.grey, fontSize: 12)),
+            trailing: PopupMenuButton<String>(
+              icon: const Icon(Icons.more_vert, color: Colors.grey),
+              onSelected: (value) {},
+              itemBuilder: (context) => [
+                const PopupMenuItem(value: 'fav', child: Text('Añadir a Favoritos')),
+                const PopupMenuItem(value: 'mp3', child: Text('Descargar MP3')),
+                const PopupMenuItem(value: 'mp4', child: Text('Descargar MP4')),
+                const PopupMenuItem(value: 'share', child: Text('Compartir en WhatsApp')),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  // Vista genérica para las otras pestañas
   Widget _buildContentList(String categoryName) {
     return ListView.builder(
       itemCount: 6,
@@ -146,30 +209,13 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
         subtitle: const Text("Artista o Creador", style: TextStyle(color: Colors.grey, fontSize: 12)),
         trailing: PopupMenuButton<String>(
           icon: const Icon(Icons.more_vert, color: Colors.grey),
-          onSelected: (value) {
-            // Aquí programaremos las acciones de los 3 puntitos
-          },
+          onSelected: (value) {},
           itemBuilder: (context) => [
             const PopupMenuItem(value: 'fav', child: Text('Añadir a Favoritos')),
-            const PopupMenuItem(value: 'lista', child: Text('Añadir a lista de reproducción')),
-            const PopupMenuItem(value: 'cola', child: Text('Añadir a cola')),
             const PopupMenuItem(value: 'mp3', child: Text('Descargar MP3')),
             const PopupMenuItem(value: 'mp4', child: Text('Descargar MP4')),
             const PopupMenuItem(value: 'share', child: Text('Compartir en WhatsApp')),
           ],
-        ),
-      ),
-    );
-  }
-
-  // Pantalla temporal para abrir las opciones de la biblioteca desde el menú lateral
-  void _openLibraryPage(BuildContext context, String title) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => Scaffold(
-          appBar: AppBar(title: Text(title)),
-          body: Center(child: Text("Aquí verás tus elementos de: $title", style: const TextStyle(fontSize: 16))),
         ),
       ),
     );
