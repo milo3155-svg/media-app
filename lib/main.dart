@@ -79,66 +79,75 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
           ],
         ),
       ),
-      appBar: PreferredSize(
-        preferredSize: Size.fromHeight(_isSearching ? 100.0 : kToolbarHeight + 48.0),
-        child: AppBar(
-          title: _isSearching 
-              ? Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    TextField(
-                      controller: _searchController,
-                      autofocus: true,
-                      decoration: const InputDecoration(
-                        hintText: "Buscar...",
-                        border: InputBorder.none,
-                        isDense: true,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    SizedBox(
-                      height: 36,
-                      child: ListView(
-                        scrollDirection: Axis.horizontal,
-                        children: _filters.map((filter) => Padding(
-                          padding: const EdgeInsets.only(right: 6),
-                          child: ChoiceChip(
-                            label: Text(filter, style: const TextStyle(fontSize: 12)),
-                            selected: _selectedFilter == filter,
-                            onSelected: (selected) => setState(() => _selectedFilter = filter),
-                            visualDensity: VisualDensity.compact,
-                          ),
-                        )).toList(),
-                      ),
-                    ),
-                  ],
-                )
-              : const Text("Media App"),
-          actions: [
-            IconButton(
-              icon: Icon(_isSearching ? Icons.close : Icons.search),
-              onPressed: () => setState(() => _isSearching = !_isSearching),
-            )
+      appBar: AppBar(
+        title: _isSearching ? const Text("Buscar contenido") : const Text("Media App"),
+        actions: [
+          IconButton(
+            icon: Icon(_isSearching ? Icons.close : Icons.search),
+            onPressed: () => setState(() => _isSearching = !_isSearching),
+          )
+        ],
+        bottom: TabBar(
+          controller: _tabController,
+          tabs: const [
+            Tab(icon: Icon(Icons.home), text: "Inicio"),
+            Tab(icon: Icon(Icons.music_note), text: "Música"),
+            Tab(icon: Icon(Icons.trending_up), text: "Top 🔝"),
+            Tab(icon: Icon(Icons.sports_soccer), text: "Deportes"),
           ],
-          bottom: !_isSearching ? TabBar(
-            controller: _tabController,
-            tabs: const [
-              Tab(icon: Icon(Icons.home), text: "Inicio"),
-              Tab(icon: Icon(Icons.music_note), text: "Música"),
-              Tab(icon: Icon(Icons.trending_up), text: "Top 🔝"),
-              Tab(icon: Icon(Icons.sports_soccer), text: "Deportes"),
-            ],
-          ) : null,
         ),
       ),
-      body: TabBarView(
-        controller: _tabController,
+      body: Column(
         children: [
-          _buildCustomHomeFeed(), 
-          _buildContentList("Música"),
-          _buildContentList("Top"),
-          _buildSportsView(),
+          // PANEL DE BÚSQUEDA INTELIGENTE DESPLEGABLE
+          if (_isSearching)
+            Container(
+              padding: const EdgeInsets.all(12),
+              color: const Color(0xFF1E1E1E),
+              child: Column(
+                children: [
+                  TextField(
+                    controller: _searchController,
+                    autofocus: true,
+                    decoration: const InputDecoration(
+                      hintText: "Escribe para buscar...",
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                      prefixIcon: Icon(Icons.search),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  SizedBox(
+                    height: 38,
+                    child: ListView(
+                      scrollDirection: Axis.horizontal,
+                      children: _filters.map((filter) => Padding(
+                        padding: const EdgeInsets.only(right: 6),
+                        child: ChoiceChip(
+                          label: Text(filter, style: const TextStyle(fontSize: 12)),
+                          selected: _selectedFilter == filter,
+                          onSelected: (selected) => setState(() => _selectedFilter = filter),
+                          visualDensity: VisualDensity.compact,
+                        ),
+                      )).toList(),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          
+          // CONTENIDO PRINCIPAL DE LAS PESTAÑAS
+          Expanded(
+            child: TabBarView(
+              controller: _tabController,
+              children: [
+                _buildCustomHomeFeed(), 
+                _buildContentList("Música"),
+                _buildContentList("Top"),
+                _buildSportsView(),
+              ],
+            ),
+          ),
         ],
       ),
     );
