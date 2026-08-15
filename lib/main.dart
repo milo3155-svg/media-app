@@ -35,13 +35,16 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
   String _selectedFilter = "Todo";
   final List<String> _filters = ["Todo", "Música", "Videos", "Deportes"];
   
-  // --- VARIABLES PARA EL TOP MULTICATEGORÍA ---
   String _selectedTopCategory = "Global";
   final List<String> _topCategories = ["Global", "México", "Virales", "Podcasts"];
 
   bool _showDownloadBanner = true;
   String _selectedTeam = "Pachuca";
   IconData _teamIcon = Icons.sports_soccer;
+
+  // --- ESTADO DEL REPRODUCTOR FLOTANTE ---
+  bool _isPlaying = true;
+  bool _hasActiveMedia = true; // Simula que hay algo listo para reproducir
 
   @override
   void initState() {
@@ -118,58 +121,167 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
           ],
         ),
       ),
-      body: Column(
+      body: Stack(
         children: [
-          if (_isSearching)
-            Container(
-              padding: const EdgeInsets.all(12),
-              color: const Color(0xFF1E1E1E),
-              child: Column(
-                children: [
-                  TextField(
-                    controller: _searchController,
-                    decoration: const InputDecoration(hintText: "Escribe...", border: OutlineInputBorder(), isDense: true, prefixIcon: Icon(Icons.search)),
-                  ),
-                  const SizedBox(height: 8),
-                  SizedBox(
-                    height: 38,
-                    child: ListView(
-                      scrollDirection: Axis.horizontal,
-                      children: _filters.map((filter) => Padding(
-                        padding: const EdgeInsets.only(right: 6),
-                        child: ChoiceChip(
-                          label: Text(filter, style: const TextStyle(fontSize: 12)),
-                          selected: _selectedFilter == filter,
-                          onSelected: (selected) => setState(() => _selectedFilter = filter),
-                          visualDensity: VisualDensity.compact,
+          // CONTENIDO PRINCIPAL (Columna de Buscador + Tabs)
+          Column(
+            children: [
+              if (_isSearching)
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  color: const Color(0xFF1E1E1E),
+                  child: Column(
+                    children: [
+                      TextField(
+                        controller: _searchController,
+                        decoration: const InputDecoration(hintText: "Escribe...", border: OutlineInputBorder(), isDense: true, prefixIcon: Icon(Icons.search)),
+                      ),
+                      const SizedBox(height: 8),
+                      SizedBox(
+                        height: 38,
+                        child: ListView(
+                          scrollDirection: Axis.horizontal,
+                          children: _filters.map((filter) => Padding(
+                            padding: const EdgeInsets.only(right: 6),
+                            child: ChoiceChip(
+                              label: Text(filter, style: const TextStyle(fontSize: 12)),
+                              selected: _selectedFilter == filter,
+                              onSelected: (selected) => setState(() => _selectedFilter = filter),
+                              visualDensity: VisualDensity.compact,
+                            ),
+                          )).toList(),
                         ),
-                      )).toList(),
-                    ),
+                      ),
+                    ],
                   ),
-                ],
+                ),
+              Expanded(
+                child: TabBarView(
+                  controller: _tabController,
+                  children: [
+                    _buildCustomHomeFeed(), 
+                    _buildContentList("Música"),
+                    _buildTopMulticategoryView(),
+                    _buildSportsView(),
+                  ],
+                ),
+              ),
+            ],
+          ),
+
+          // --- PUNTO 5: MINI REPRODUCTOR FLOTANTE INFERIOR ---
+          if (_hasActiveMedia)
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: GestureDetector(
+                onTap: () => _openExpandedPlayer(context),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF1F1F1F),
+                    border: Border(top: BorderSide(color: Colors.purpleAccent.withOpacity(0.4), width: 1)),
+                    boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.5), blurRadius: 8, offset: const Offset(0, -2))],
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 45,
+                        height: 45,
+                        decoration: BoxDecoration(color: Colors.purpleAccent.withOpacity(0.2), borderRadius: BorderRadius.circular(6)),
+                        child: const Icon(Icons.music_note, color: Colors.purpleAccent),
+                      ),
+                      const SizedBox(width: 12),
+                      const Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text("Reproduciendo en segundo plano", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                            Text("Artista o Creador • Toque para ampliar", style: TextStyle(color: Colors.grey, fontSize: 11)),
+                          ],
+                        ),
+                      ),
+                      IconButton(
+                        icon: Icon(_isPlaying ? Icons.pause : Icons.play_arrow, color: Colors.white),
+                        onPressed: () => setState(() => _isPlaying = !_isPlaying),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.close, color: Colors.grey),
+                        onPressed: () => setState(() => _hasActiveMedia = false),
+                      ),
+                    ],
+                  ),
+                ),
               ),
             ),
-          Expanded(
-            child: TabBarView(
-              controller: _tabController,
-              children: [
-                _buildCustomHomeFeed(), 
-                _buildContentList("Música"),
-                _buildTopMulticategoryView(), // <--- AQUÍ ESTÁ EL NUEVO TOP MULTICATEGORÍA
-                _buildSportsView(),
-              ],
-            ),
-          ),
         ],
       ),
     );
   }
 
-  // --- PUNTO 4: VISTA TOP MULTICATEGORÍA ---
+  // --- PANTALLA COMPLETA INMERSIVA (MODAL EXPANDIDO) ---
+  void _openExpandedPlayer(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF181818),
+      builder: (context) => Container(
+        height: MediaQuery.of(context).size.height * 0.85,
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.grey, borderRadius: BorderRadius.circular(2))),
+            const SizedBox(height: 20),
+            const Text("Reproductor Inmersivo", style: TextStyle(fontSize: 16, color: Colors.grey)),
+            const Spacer(),
+            Container(
+              width: 240,
+              height: 240,
+              decoration: BoxDecoration(
+                color: Colors.purpleAccent.withOpacity(0.2),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: Colors.purpleAccent.withOpacity(0.5)),
+              ),
+              child: const Icon(Icons.play_circle_filled, size: 80, color: Colors.purpleAccent),
+            ),
+            const SizedBox(height: 30),
+            const Text("Título del Contenido Actual", style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 8),
+            const Text("Canal o Artista Oficial", style: TextStyle(color: Colors.grey, fontSize: 14)),
+            const Spacer(),
+            // Barra de progreso simulada
+            LinearProgressIndicator(value: 0.4, backgroundColor: Colors.grey[800], color: Colors.purpleAccent),
+            const SizedBox(height: 20),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                IconButton(icon: const Icon(Icons.shuffle, size: 28), onPressed: () {}),
+                IconButton(icon: const Icon(Icons.skip_previous, size: 36), onPressed: () {}),
+                CircleAvatar(
+                  radius: 28,
+                  backgroundColor: Colors.purpleAccent,
+                  child: IconButton(
+                    icon: Icon(_isPlaying ? Icons.pause : Icons.play_arrow, color: Colors.white),
+                    onPressed: () => setState(() => _isPlaying = !_isPlaying),
+                  ),
+                ),
+                IconButton(icon: const Icon(Icons.skip_next, size: 36), onPressed: () {}),
+                IconButton(icon: const Icon(Icons.repeat, size: 28), onPressed: () {}),
+              ],
+            ),
+            const SizedBox(height: 20),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildTopMulticategoryView() {
     return Column(
       children: [
-        // Subfiltros horizontales para el Top
         Container(
           padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
           color: const Color(0xFF181818),
@@ -182,15 +294,12 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
                 child: ChoiceChip(
                   label: Text(category),
                   selected: _selectedTopCategory == category,
-                  onSelected: (selected) {
-                    setState(() => _selectedTopCategory = category);
-                  },
+                  onSelected: (selected) => setState(() => _selectedTopCategory = category),
                 ),
               )).toList(),
             ),
           ),
         ),
-        // Lista dinámica basada en la categoría seleccionada
         Expanded(
           child: ListView.builder(
             itemCount: 8,
@@ -203,7 +312,7 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
               subtitle: const Text("Artista o Creador Popular", style: TextStyle(fontSize: 12, color: Colors.grey)),
               trailing: PopupMenuButton<String>(
                 icon: const Icon(Icons.more_vert),
-                onSelected: (value) => _handleMenuAction(context, value, "Top #${index + 1} ($_selectedTopCategory)"),
+                onSelected: (value) => _handleMenuAction(context, value, "Top #${index + 1}"),
                 itemBuilder: (context) => _buildMenuItems(),
               ),
             ),
