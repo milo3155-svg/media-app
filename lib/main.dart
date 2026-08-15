@@ -31,7 +31,6 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
   bool _isSearching = false;
   final TextEditingController _searchController = TextEditingController();
   
-  // --- VARIABLES PARA BUSCADOR INTELIGENTE ---
   List<String> _recentSearches = ["Pop 2026", "Liga MX resumen", "Podcast tech"];
   String _selectedFilter = "Todo";
   final List<String> _filters = ["Todo", "Música", "Videos", "Deportes"];
@@ -80,52 +79,58 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
           ],
         ),
       ),
-      appBar: AppBar(
-        title: _isSearching 
-            ? Column(
-                children: [
-                  TextField(
-                    controller: _searchController,
-                    autofocus: true,
-                    decoration: const InputDecoration(hintText: "Buscar...", border: InputBorder.none),
-                    onSubmitted: (value) {
-                      setState(() {
-                        if (value.isNotEmpty && !_recentSearches.contains(value)) _recentSearches.insert(0, value);
-                      });
-                    },
-                  ),
-                  SizedBox(
-                    height: 40,
-                    child: ListView(
-                      scrollDirection: Axis.horizontal,
-                      children: _filters.map((filter) => Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 4),
-                        child: ChoiceChip(
-                          label: Text(filter),
-                          selected: _selectedFilter == filter,
-                          onSelected: (selected) => setState(() => _selectedFilter = filter),
-                        ),
-                      )).toList(),
+      appBar: PreferredSize(
+        preferredSize: Size.fromHeight(_isSearching ? 100.0 : kToolbarHeight + 48.0),
+        child: AppBar(
+          title: _isSearching 
+              ? Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    TextField(
+                      controller: _searchController,
+                      autofocus: true,
+                      decoration: const InputDecoration(
+                        hintText: "Buscar...",
+                        border: InputBorder.none,
+                        isDense: true,
+                      ),
                     ),
-                  ),
-                ],
-              )
-            : const Text("Media App"),
-        actions: [
-          IconButton(
-            icon: Icon(_isSearching ? Icons.close : Icons.search),
-            onPressed: () => setState(() => _isSearching = !_isSearching),
-          )
-        ],
-        bottom: !_isSearching ? TabBar(
-          controller: _tabController,
-          tabs: const [
-            Tab(icon: Icon(Icons.home), text: "Inicio"),
-            Tab(icon: Icon(Icons.music_note), text: "Música"),
-            Tab(icon: Icon(Icons.trending_up), text: "Top 🔝"),
-            Tab(icon: Icon(Icons.sports_soccer), text: "Deportes"),
+                    const SizedBox(height: 4),
+                    SizedBox(
+                      height: 36,
+                      child: ListView(
+                        scrollDirection: Axis.horizontal,
+                        children: _filters.map((filter) => Padding(
+                          padding: const EdgeInsets.only(right: 6),
+                          child: ChoiceChip(
+                            label: Text(filter, style: const TextStyle(fontSize: 12)),
+                            selected: _selectedFilter == filter,
+                            onSelected: (selected) => setState(() => _selectedFilter = filter),
+                            visualDensity: VisualDensity.compact,
+                          ),
+                        )).toList(),
+                      ),
+                    ),
+                  ],
+                )
+              : const Text("Media App"),
+          actions: [
+            IconButton(
+              icon: Icon(_isSearching ? Icons.close : Icons.search),
+              onPressed: () => setState(() => _isSearching = !_isSearching),
+            )
           ],
-        ) : null,
+          bottom: !_isSearching ? TabBar(
+            controller: _tabController,
+            tabs: const [
+              Tab(icon: Icon(Icons.home), text: "Inicio"),
+              Tab(icon: Icon(Icons.music_note), text: "Música"),
+              Tab(icon: Icon(Icons.trending_up), text: "Top 🔝"),
+              Tab(icon: Icon(Icons.sports_soccer), text: "Deportes"),
+            ],
+          ) : null,
+        ),
       ),
       body: TabBarView(
         controller: _tabController,
