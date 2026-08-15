@@ -78,8 +78,11 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
 
   // --- FUNCIÓN DE BÚSQUEDA REAL ---
   Future<void> _performRealSearch(String query) async {
-    if (query.isEmpty) return;
+    if (query.trim().isEmpty) return;
     FocusScope.of(context).unfocus(); // Ocultar teclado
+    
+    // CAMBIO CLAVE: Mover automáticamente a la pestaña de "Búsqueda" (índice 1)
+    _tabController.animateTo(1);
     
     setState(() {
       _isLoadingSearch = true;
@@ -89,7 +92,7 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
       var searchList = await _yt.search.search(query);
       if (mounted) {
         setState(() {
-          _searchResults = searchList.take(10).toList();
+          _searchResults = searchList.take(15).toList();
           _isLoadingSearch = false;
         });
       }
@@ -196,13 +199,19 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
                   color: const Color(0xFF1E1E1E),
                   child: Column(
                     children: [
+                      // CAMBIO CLAVE: Botón de envío y acción de búsqueda en el teclado
                       TextField(
                         controller: _searchController,
-                        decoration: const InputDecoration(
+                        textInputAction: TextInputAction.search,
+                        decoration: InputDecoration(
                           hintText: "Buscar música o videos...",
-                          border: OutlineInputBorder(),
+                          border: const OutlineInputBorder(),
                           isDense: true,
-                          prefixIcon: Icon(Icons.search),
+                          prefixIcon: const Icon(Icons.search),
+                          suffixIcon: IconButton(
+                            icon: const Icon(Icons.send, color: Colors.purpleAccent),
+                            onPressed: () => _performRealSearch(_searchController.text),
+                          ),
                         ),
                         onSubmitted: (value) => _performRealSearch(value),
                       ),
@@ -230,11 +239,11 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
                   controller: _tabController,
                   children: [
                     _buildCustomHomeFeed(), 
-                    // Pestaña donde mostramos los resultados de búsqueda en vivo
+                    // Pestaña de Búsqueda (Aquí aparecen los datos reales)
                     _isLoadingSearch 
                         ? const Center(child: CircularProgressIndicator(color: Colors.purpleAccent))
                         : _searchResults.isEmpty 
-                            ? const Center(child: Text("Busca contenido para verlo aquí", style: TextStyle(color: Colors.grey)))
+                            ? const Center(child: Text("Realiza una búsqueda en la lupa 🔍", style: TextStyle(color: Colors.grey)))
                             : ListView.builder(
                                 itemCount: _searchResults.length,
                                 itemBuilder: (context, index) {
@@ -372,6 +381,7 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
     );
   }
 
+  // --- LAS OTRAS PESTAÑAS (MUESTRAN DISEÑO DE PRUEBA) ---
   Widget _buildTopMulticategoryView() {
     return Column(
       children: [
