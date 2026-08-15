@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'dart:convert';
+import 'dart:io'; // <--- ¡AQUÍ ESTÁ LA LÍNEA MÁGICA!
 import 'package:video_player/video_player.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:just_audio_background/just_audio_background.dart';
@@ -78,7 +79,7 @@ class _MediaAppState extends State<MediaApp> {
   // 🧠 EL MOTOR MULTIMEDIA GLOBAL
   // ==========================================
   Future<void> _playMedia(Map<String, dynamic> video, List<Map<String, dynamic>> playlist, int index) async {
-    FocusManager.instance.primaryFocus?.unfocus(); // Ocultar teclado
+    FocusManager.instance.primaryFocus?.unfocus(); 
     setState(() {
       _currentVideo = video;
       _playlist = playlist;
@@ -92,7 +93,6 @@ class _MediaAppState extends State<MediaApp> {
     try {
       final ytExplode = yt.YoutubeExplode();
       
-      // MECANISMO DE REINTENTO (Para evitar el "Error a la 1ra")
       yt.StreamManifest? manifest;
       int retries = 2;
       while (retries > 0) {
@@ -109,7 +109,6 @@ class _MediaAppState extends State<MediaApp> {
 
       if (manifest == null) throw Exception("Manifest nulo");
 
-      // HACK ANTI-BLOQUEO: Usamos video de MUY BAJA calidad para sacar el audio sin que YouTube marque Error 403
       final lowestVideo = manifest.muxed.sortByVideoQuality().first;
       final bestVideo = manifest.muxed.withHighestBitrate();
 
@@ -170,7 +169,6 @@ class _MediaAppState extends State<MediaApp> {
       _isAudioMode = toAudio;
       _isLoadingMedia = true;
     });
-    // Volvemos a extraer con el nuevo modo
     _playMedia(_currentVideo!, _playlist, _currentIndex);
   }
 
@@ -220,14 +218,14 @@ class _MediaAppState extends State<MediaApp> {
       home: Scaffold(
         body: Stack(
           children: [
-            // CAPA 1: LA APLICACIÓN NORMAL (Inicio y Búsqueda)
+            // CAPA 1: LA APLICACIÓN NORMAL
             BaseAppScreen(
               primaryColor: _primaryColor,
               onChangeColor: _changeThemeColor,
               onVideoSelected: _playMedia,
             ),
 
-            // CAPA 2: EL REPRODUCTOR ANIMADO (Mágico)
+            // CAPA 2: EL REPRODUCTOR FLOTANTE
             if (_isPlayerVisible && _currentVideo != null)
               AnimatedPositioned(
                 duration: const Duration(milliseconds: 300),
@@ -252,11 +250,9 @@ class _MediaAppState extends State<MediaApp> {
     );
   }
 
-  // EL MINI-REPRODUCTOR FLOTANTE
   Widget _buildMiniPlayer() {
     return Row(
       children: [
-        // Miniatura o Mini-video
         SizedBox(
           width: 110,
           height: double.infinity,
@@ -306,7 +302,6 @@ class _MediaAppState extends State<MediaApp> {
     );
   }
 
-  // EL REPRODUCTOR COMPLETO
   Widget _buildExpandedPlayer() {
     final pos = _isAudioMode ? _audioPlayer.position : (_videoController?.value.position ?? Duration.zero);
     final dur = _isAudioMode ? (_audioPlayer.duration ?? Duration.zero) : (_videoController?.value.duration ?? Duration.zero);
@@ -314,13 +309,11 @@ class _MediaAppState extends State<MediaApp> {
     return SafeArea(
       child: Column(
         children: [
-          // Flecha para minimizar
           IconButton(
             icon: const Icon(Icons.keyboard_arrow_down, size: 36, color: Colors.white),
             onPressed: () => setState(() => _isPlayerExpanded = false),
           ),
           
-          // Pantalla Visual
           AspectRatio(
             aspectRatio: 16 / 9,
             child: Container(
@@ -339,7 +332,6 @@ class _MediaAppState extends State<MediaApp> {
 
           const SizedBox(height: 16),
 
-          // Selector Inteligente
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
@@ -361,7 +353,6 @@ class _MediaAppState extends State<MediaApp> {
 
           const SizedBox(height: 16),
 
-          // Títulos
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16.0),
             child: Column(
@@ -375,7 +366,6 @@ class _MediaAppState extends State<MediaApp> {
 
           const SizedBox(height: 10),
 
-          // Barra de Progreso
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 20.0),
             child: Row(
@@ -400,7 +390,6 @@ class _MediaAppState extends State<MediaApp> {
             ),
           ),
 
-          // Controles de Reproducción
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
             children: [
@@ -432,7 +421,6 @@ class _MediaAppState extends State<MediaApp> {
 
           const Divider(color: Colors.grey, height: 30),
           
-          // Lista de reproducción mejorada y limpia
           const Padding(
             padding: EdgeInsets.symmetric(horizontal: 16.0),
             child: Align(alignment: Alignment.centerLeft, child: Text('Siguiente en la lista:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.white70))),
@@ -461,7 +449,7 @@ class _MediaAppState extends State<MediaApp> {
 }
 
 // ==========================================
-// 🏠 PANTALLA BASE (TENDENCIAS Y BUSCADOR)
+// 🏠 PANTALLA BASE NORMAL
 // ==========================================
 class BaseAppScreen extends StatefulWidget {
   final Color primaryColor;
@@ -590,7 +578,7 @@ class _BaseAppScreenState extends State<BaseAppScreen> {
           : activeList.isEmpty
               ? Center(child: Text(_currentIndex == 0 ? 'No hay tendencias.' : 'Tu lista de favoritos está vacía.', style: const TextStyle(color: Colors.grey)))
               : ListView.builder(
-                  padding: const EdgeInsets.only(bottom: 80), // Espacio para el mini reproductor
+                  padding: const EdgeInsets.only(bottom: 80),
                   itemCount: activeList.length,
                   itemBuilder: (context, index) {
                     final video = activeList[index];
@@ -623,7 +611,7 @@ class _BaseAppScreenState extends State<BaseAppScreen> {
 }
 
 // ==========================================
-// 🔍 PANTALLA DE BÚSQUEDA DEDICADA
+// 🔍 PANTALLA DE BÚSQUEDA
 // ==========================================
 class SearchScreen extends StatefulWidget {
   final Color primaryColor;
@@ -773,8 +761,8 @@ class _SearchScreenState extends State<SearchScreen> {
           title: Text(video['title'], maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
           subtitle: Text(video['uploader'], maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.grey, fontSize: 12)),
           onTap: () {
-            Navigator.pop(context); // Cierra buscador
-            widget.onVideoSelected(video, _searchResults, index); // Manda orden de play
+            Navigator.pop(context); 
+            widget.onVideoSelected(video, _searchResults, index); 
           },
         );
       },
