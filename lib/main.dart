@@ -31,7 +31,7 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
   bool _isSearching = false;
   final TextEditingController _searchController = TextEditingController();
   
-  // --- NUEVAS VARIABLES PARA EL BUSCADOR INTELIGENTE ---
+  // --- VARIABLES PARA BUSCADOR INTELIGENTE ---
   List<String> _recentSearches = ["Pop 2026", "Liga MX resumen", "Podcast tech"];
   String _selectedFilter = "Todo";
   final List<String> _filters = ["Todo", "Música", "Videos", "Deportes"];
@@ -80,7 +80,6 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
           ],
         ),
       ),
-      // --- APPBAR MODIFICADO CON BUSCADOR INTELIGENTE ---
       appBar: AppBar(
         title: _isSearching 
             ? Column(
@@ -91,7 +90,7 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
                     decoration: const InputDecoration(hintText: "Buscar...", border: InputBorder.none),
                     onSubmitted: (value) {
                       setState(() {
-                        if (!_recentSearches.contains(value)) _recentSearches.insert(0, value);
+                        if (value.isNotEmpty && !_recentSearches.contains(value)) _recentSearches.insert(0, value);
                       });
                     },
                   ),
@@ -140,8 +139,65 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
     );
   }
 
-  // (El resto de tus métodos _buildCustomHomeFeed, _buildSportsView, etc. permanecen igual abajo...)
-  // [Copia tus métodos previos aquí para mantener el resto de la funcionalidad]
-  
-  // ... (Recuerda mantener _buildCustomHomeFeed, _buildSportsView, _buildContentList, _buildMenuItems, _handleMenuAction y _showShareBottomSheet aquí abajo)
+  Widget _buildCustomHomeFeed() {
+    return ListView(
+      padding: const EdgeInsets.all(16.0),
+      children: [
+        const Text("Favoritos", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+        const SizedBox(height: 10),
+        SizedBox(height: 110, child: ListView.builder(scrollDirection: Axis.horizontal, itemCount: 4, itemBuilder: (context, index) => Container(width: 100, margin: const EdgeInsets.only(right: 12), color: Colors.grey[800], child: const Icon(Icons.favorite, color: Colors.redAccent)))),
+        const SizedBox(height: 20),
+        if (_showDownloadBanner)
+          Dismissible(
+            key: const Key('download_banner'),
+            onDismissed: (_) => setState(() => _showDownloadBanner = false),
+            child: Container(padding: const EdgeInsets.all(12), decoration: BoxDecoration(color: Colors.purpleAccent.withOpacity(0.15), borderRadius: BorderRadius.circular(10)), child: const Text("Descargas disponibles (Desliza para quitar)")),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildSportsView() {
+    return Padding(
+      padding: const EdgeInsets.all(16.0),
+      child: Column(
+        children: [
+          ElevatedButton.icon(
+            icon: const Icon(Icons.shield),
+            label: Text(_selectedTeam),
+            onPressed: () => setState(() { _selectedTeam = "Club Águila"; _teamIcon = Icons.sports_football; }),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildContentList(String categoryName) {
+    return ListView.builder(
+      itemCount: 5,
+      itemBuilder: (context, index) => ListTile(
+        title: Text("$categoryName - Item $index"),
+        trailing: PopupMenuButton<String>(
+          icon: const Icon(Icons.more_vert),
+          onSelected: (value) => _handleMenuAction(context, value, "$categoryName - Item $index"),
+          itemBuilder: (context) => _buildMenuItems(),
+        ),
+      ),
+    );
+  }
+
+  List<PopupMenuEntry<String>> _buildMenuItems() {
+    return [
+      const PopupMenuItem(value: 'fav', child: Text('Añadir a Favoritos')),
+      const PopupMenuItem(value: 'share', child: Text('Compartir...')),
+    ];
+  }
+
+  void _handleMenuAction(BuildContext context, String value, String itemTitle) {
+    if (value == 'share') _showShareBottomSheet(context, itemTitle);
+  }
+
+  void _showShareBottomSheet(BuildContext context, String itemTitle) {
+    showModalBottomSheet(context: context, builder: (context) => const SizedBox(height: 200, child: Center(child: Text("Opciones de compartir"))));
+  }
 }
