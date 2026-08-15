@@ -1,5 +1,4 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <!-- Este permiso es obligatorio para buscar en YouTube y reproducir audio -->
     <uses-permission android:name="android.permission.INTERNET"/>
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
 
@@ -7,6 +6,12 @@
         android:label="media_app"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
+        
+        <!-- ESTA ES LA MIGRACIÓN V2 NECESARIA -->
+        <meta-data
+            android:name="flutterEmbedding"
+            android:value="2" />
+
         <activity
             android:name=".MainActivity"
             android:exported="true"
