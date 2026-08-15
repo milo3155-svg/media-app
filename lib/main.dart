@@ -1,9 +1,25 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+
+void main() {
+  runApp(const MediaApp());
+}
+
+class MediaApp extends StatelessWidget {
+  const MediaApp({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      debugShowCheckedModeBanner: false,
+      theme: ThemeData.dark().copyWith(scaffoldBackgroundColor: const Color(0xFF121212)),
+      home: const MainNavigation(),
+    );
+  }
+}
 
 class MainNavigation extends StatefulWidget {
-  final Color primaryColor;
-  final Function(Color) onColorChange;
-  const MainNavigation({super.key, required this.primaryColor, required this.onColorChange});
+  const MainNavigation({super.key});
 
   @override
   State<MainNavigation> createState() => _MainNavigationState();
@@ -11,6 +27,7 @@ class MainNavigation extends StatefulWidget {
 
 class _MainNavigationState extends State<MainNavigation> with SingleTickerProviderStateMixin {
   late TabController _tabController;
+  Color _primaryColor = Colors.purpleAccent;
 
   @override
   void initState() {
@@ -19,9 +36,15 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
   }
 
   @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
-      // --- MENÚ LATERAL ---
+      backgroundColor: const Color(0xFF121212), // Fondo explícito
       drawer: Drawer(
         backgroundColor: const Color(0xFF1E1E1E),
         child: ListView(
@@ -30,27 +53,22 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
             UserAccountsDrawerHeader(
               accountName: const Text("Usuario"),
               accountEmail: const Text("Bienvenido"),
-              decoration: BoxDecoration(color: widget.primaryColor.withOpacity(0.3)),
+              decoration: BoxDecoration(color: _primaryColor.withOpacity(0.3)),
             ),
-            ListTile(leading: const Icon(Icons.download), title: const Text("Gestor de Descargas")),
+            ListTile(leading: const Icon(Icons.download), title: const Text("Descargas")),
             ListTile(leading: const Icon(Icons.favorite), title: const Text("Favoritos")),
-            // ... (Resto de tus opciones)
           ],
         ),
       ),
-
-      // --- APBAR + TABS SUPERIORES ---
       appBar: AppBar(
         title: const Text("Media App"),
-        actions: [
-          IconButton(icon: const Icon(Icons.search), onPressed: () {}),
-        ],
+        actions: [IconButton(icon: const Icon(Icons.search), onPressed: () {})],
         bottom: TabBar(
           controller: _tabController,
-          indicatorColor: widget.primaryColor,
-          labelColor: widget.primaryColor,
+          indicatorColor: _primaryColor,
+          labelColor: _primaryColor,
           unselectedLabelColor: Colors.grey,
-          isScrollable: true, // Útil para que quepan bien los 4 textos
+          isScrollable: true,
           tabs: const [
             Tab(text: "Inicio"),
             Tab(text: "Música/Podcasts"),
@@ -59,15 +77,14 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
           ],
         ),
       ),
-
-      // --- CONTENIDO ---
+      // Añadimos un pequeño retraso o estructura para asegurar que renderice
       body: TabBarView(
         controller: _tabController,
         children: const [
-          Center(child: Text("Inicio")),
-          Center(child: Text("Música/Podcasts")),
-          Center(child: Text("Top 🔝")),
-          Center(child: Text("Deportes")),
+          Center(child: Text("Inicio", style: TextStyle(color: Colors.white))),
+          Center(child: Text("Música/Podcasts", style: TextStyle(color: Colors.white))),
+          Center(child: Text("Top 🔝", style: TextStyle(color: Colors.white))),
+          Center(child: Text("Deportes", style: TextStyle(color: Colors.white))),
         ],
       ),
     );
