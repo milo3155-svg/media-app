@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
-import 'dart:convert';
+import 'package:youtube_explode_dart/youtube_explode_dart.dart';
+import 'package:audioplayers/audioplayers.dart';
 
 void main() => runApp(const MediaApp());
 
@@ -33,71 +33,93 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
   bool _isSearching = false;
   final TextEditingController _searchController = TextEditingController();
   
-  List<String> _recentSearches = ["Pop 2026", "Liga MX resumen", "Podcast tech"];
+  List<String> _recentSearches = ["Pop 2026", "Podcast tech"];
   String _selectedFilter = "Todo";
   final List<String> _filters = ["Todo", "Música", "Videos", "Deportes"];
   
-  // Lista para almacenar resultados reales de la red
-  List<String> _searchResults = [];
-  bool _isLoadingSearch = false;
-
   String _selectedTopCategory = "Global";
   final List<String> _topCategories = ["Global", "México", "Virales", "Podcasts"];
 
-  bool _showDownloadBanner = true;
   String _selectedTeam = "Pachuca";
   IconData _teamIcon = Icons.sports_soccer;
 
-  bool _isPlaying = true;
-  bool _hasActiveMedia = true;
+  // --- MOTOR PRINCIPAL REAL ---
+  final YoutubeExplode _yt = YoutubeExplode();
+  final AudioPlayer _audioPlayer = AudioPlayer();
+  
+  List<Video> _searchResults = [];
+  bool _isLoadingSearch = false;
+  Video? _currentMedia;
+  bool _isPlaying = false;
+  bool _hasActiveMedia = false;
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 4, vsync: this);
+    
+    // Escuchar cuando el audio termina para actualizar el botón
+    _audioPlayer.onPlayerComplete.listen((event) {
+      setState(() => _isPlaying = false);
+    });
   }
 
   @override
   void dispose() {
     _tabController.dispose();
     _searchController.dispose();
+    _yt.close();
+    _audioPlayer.dispose();
     super.dispose();
   }
 
-  // --- FUNCIÓN DE BÚSQUEDA CONECTADA A LA RED ---
+  // --- BUSCADOR REAL DE YOUTUBE ---
   Future<void> _performRealSearch(String query) async {
     if (query.isEmpty) return;
+    FocusScope.of(context).unfocus(); // Ocultar teclado
     
     setState(() {
       _isLoadingSearch = true;
-      if (!_recentSearches.contains(query)) {
-        _recentSearches.insert(0, query);
-      }
+      if (!_recentSearches.contains(query)) _recentSearches.insert(0, query);
     });
 
     try {
-      // Usamos una API pública de prueba para que veas cómo se conecta y trae datos reales
-      final url = Uri.parse('https://jsonplaceholder.typicode.com/posts?title_like=$query');
-      final response = await http.get(url);
-
-      if (response.statusCode == 200) {
-        List data = json.decode(response.body);
-        setState(() {
-          _searchResults = data.take(5).map((item) => "${item['title'].toString().substring(0, 20)}...").toList();
-          _isLoadingSearch = false;
-        });
-      } else {
-        setState(() {
-          _searchResults = ["Resultado real para: $query", "Contenido multimedia encontrado"];
-          _isLoadingSearch = false;
-        });
-      }
-    } catch (e) {
+      var searchList = await _yt.search.search(query);
       setState(() {
-        _searchResults = ["Sin conexión, mostrando modo offline para: $query"];
+        _searchResults = searchList.take(8).toList();
         _isLoadingSearch = false;
       });
+    } catch (e) {
+      setState(() => _isLoadingSearch = false);
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Error de conexión al buscar')));
     }
+  }
+
+  // --- REPRODUCTOR REAL ---
+  Future<void> _playMedia(Video video) async {
+    setState(() {
+      _currentMedia = video;
+      _hasActiveMedia = true;
+      _isPlaying = false;
+    });
+
+    try {
+      var manifest = await _yt.videos.streamsClient.getManifest(video.id);
+      var audioInfo = manifest.audioOnly.withHighestBitrate();
+      await _audioPlayer.play(UrlSource(audioInfo.url.toString()));
+      setState(() => _isPlaying = true);
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Error al extraer el audio')));
+    }
+  }
+
+  void _togglePlayPause() {
+    if (_isPlaying) {
+      _audioPlayer.pause();
+    } else {
+      _audioPlayer.resume();
+    }
+    setState(() => _isPlaying = !_isPlaying);
   }
 
   @override
@@ -120,32 +142,19 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
             ListTile(leading: const Icon(Icons.favorite, color: Colors.redAccent), title: const Text("Favoritos"), onTap: () => Navigator.pop(context)),
             ListTile(leading: const Icon(Icons.download, color: Colors.blueAccent), title: const Text("Gestor de Descargas"), onTap: () => Navigator.pop(context)),
             const Divider(color: Colors.grey),
-            ListTile(leading: const Icon(Icons.video_library), title: const Text("Modo Videos"), onTap: () => Navigator.pop(context)),
-            ListTile(leading: const Icon(Icons.music_note), title: const Text("Modo Música / 2do Plano"), onTap: () => Navigator.pop(context)),
-            const Divider(color: Colors.grey),
             ListTile(
               leading: const Icon(Icons.cleaning_services, color: Colors.orangeAccent),
               title: const Text("Liberar Caché"),
-              subtitle: const Text("142 MB usados", style: TextStyle(fontSize: 11, color: Colors.grey)),
               onTap: () {
                 Navigator.pop(context);
                 ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('¡Caché limpiada con éxito! 🧹')));
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.color_lens, color: Colors.purpleAccent),
-              title: const Text("Tema y Apariencia"),
-              subtitle: const Text("Modo Oscuro Activo", style: TextStyle(fontSize: 11, color: Colors.grey)),
-              onTap: () {
-                Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('La aplicación ya utiliza el tema optimizado 🌙')));
               },
             ),
           ],
         ),
       ),
       appBar: AppBar(
-        title: _isSearching ? const Text("Buscar contenido") : const Text("Media App"),
+        title: _isSearching ? const Text("Búsqueda Global") : const Text("Media App"),
         actions: [
           IconButton(
             icon: Icon(_isSearching ? Icons.close : Icons.search),
@@ -157,7 +166,7 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
           tabs: const [
             Tab(icon: Icon(Icons.home), text: "Inicio"),
             Tab(icon: Icon(Icons.music_note), text: "Música"),
-            Tab(icon: Icon(Icons.trending_up), text: "Top 🔝"),
+            Tab(icon: Icon(Icons.trending_up), text: "Top"),
             Tab(icon: Icon(Icons.sports_soccer), text: "Deportes"),
           ],
         ),
@@ -175,7 +184,7 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
                       TextField(
                         controller: _searchController,
                         decoration: const InputDecoration(
-                          hintText: "Buscar en la red...",
+                          hintText: "Buscar música o videos...",
                           border: OutlineInputBorder(),
                           isDense: true,
                           prefixIcon: Icon(Icons.search),
@@ -183,42 +192,26 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
                         onSubmitted: (value) => _performRealSearch(value),
                       ),
                       const SizedBox(height: 8),
-                      SizedBox(
-                        height: 38,
-                        child: ListView(
-                          scrollDirection: Axis.horizontal,
-                          children: _filters.map((filter) => Padding(
-                            padding: const EdgeInsets.only(right: 6),
-                            child: ChoiceChip(
-                              label: Text(filter, style: const TextStyle(fontSize: 12)),
-                              selected: _selectedFilter == filter,
-                              onSelected: (selected) => setState(() => _selectedFilter = filter),
-                              visualDensity: VisualDensity.compact,
-                            ),
-                          )).toList(),
-                        ),
-                      ),
-                      // PANEL DE RESULTADOS EN VIVO
+                      // PANEL DE RESULTADOS REALES
                       if (_isLoadingSearch)
                         const Padding(
-                          padding: EdgeInsets.all(8.0),
-                          child: LinearProgressIndicator(color: Colors.purpleAccent),
+                          padding: EdgeInsets.all(16.0),
+                          child: CircularProgressIndicator(color: Colors.purpleAccent),
                         )
                       else if (_searchResults.isNotEmpty)
                         SizedBox(
-                          height: 120,
+                          height: 250,
                           child: ListView.builder(
                             itemCount: _searchResults.length,
-                            itemBuilder: (context, index) => ListTile(
-                              dense: true,
-                              leading: const Icon(Icons.bolt, color: Colors.purpleAccent),
-                              title: Text(_searchResults[index], style: const TextStyle(fontSize: 13)),
-                              onTap: () {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(content: Text('Reproduciendo: ${_searchResults[index]}'))
-                                );
-                              },
-                            ),
+                            itemBuilder: (context, index) {
+                              final video = _searchResults[index];
+                              return ListTile(
+                                leading: Image.network(video.thumbnails.lowResUrl, width: 60, fit: BoxFit.cover),
+                                title: Text(video.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13)),
+                                subtitle: Text(video.author, style: const TextStyle(fontSize: 11, color: Colors.grey)),
+                                onTap: () => _playMedia(video),
+                              );
+                            },
                           ),
                         ),
                     ],
@@ -229,7 +222,7 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
                   controller: _tabController,
                   children: [
                     _buildCustomHomeFeed(), 
-                    _buildContentList("Música"),
+                    const Center(child: Text("Sección de Música")),
                     _buildTopMulticategoryView(),
                     _buildSportsView(),
                   ],
@@ -237,7 +230,9 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
               ),
             ],
           ),
-          if (_hasActiveMedia)
+          
+          // --- MINI REPRODUCTOR INFERIOR CON DATOS REALES ---
+          if (_hasActiveMedia && _currentMedia != null)
             Positioned(
               left: 0,
               right: 0,
@@ -253,30 +248,31 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
                   ),
                   child: Row(
                     children: [
-                      Container(
-                        width: 45,
-                        height: 45,
-                        decoration: BoxDecoration(color: Colors.purpleAccent.withOpacity(0.2), borderRadius: BorderRadius.circular(6)),
-                        child: const Icon(Icons.music_note, color: Colors.purpleAccent),
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(6),
+                        child: Image.network(_currentMedia!.thumbnails.lowResUrl, width: 45, height: 45, fit: BoxFit.cover),
                       ),
                       const SizedBox(width: 12),
-                      const Expanded(
+                      Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Text("Reproduciendo en segundo plano", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                            Text("Artista o Creador • Toque para ampliar", style: TextStyle(color: Colors.grey, fontSize: 11)),
+                            Text(_currentMedia!.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                            Text(_currentMedia!.author, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.grey, fontSize: 11)),
                           ],
                         ),
                       ),
                       IconButton(
                         icon: Icon(_isPlaying ? Icons.pause : Icons.play_arrow, color: Colors.white),
-                        onPressed: () => setState(() => _isPlaying = !_isPlaying),
+                        onPressed: _togglePlayPause,
                       ),
                       IconButton(
                         icon: const Icon(Icons.close, color: Colors.grey),
-                        onPressed: () => setState(() => _hasActiveMedia = false),
+                        onPressed: () {
+                          _audioPlayer.stop();
+                          setState(() => _hasActiveMedia = false);
+                        },
                       ),
                     ],
                   ),
@@ -289,61 +285,65 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
   }
 
   void _openExpandedPlayer(BuildContext context) {
+    if (_currentMedia == null) return;
+    
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: const Color(0xFF181818),
-      builder: (context) => Container(
-        height: MediaQuery.of(context).size.height * 0.85,
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.grey, borderRadius: BorderRadius.circular(2))),
-            const SizedBox(height: 20),
-            const Text("Reproductor Inmersivo", style: TextStyle(fontSize: 16, color: Colors.grey)),
-            const Spacer(),
-            Container(
-              width: 240,
-              height: 240,
-              decoration: BoxDecoration(
-                color: Colors.purpleAccent.withOpacity(0.2),
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: Colors.purpleAccent.withOpacity(0.5)),
-              ),
-              child: const Icon(Icons.play_circle_filled, size: 80, color: Colors.purpleAccent),
-            ),
-            const SizedBox(height: 30),
-            const Text("Título del Contenido Actual", style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 8),
-            const Text("Canal o Artista Oficial", style: TextStyle(color: Colors.grey, fontSize: 14)),
-            const Spacer(),
-            LinearProgressIndicator(value: 0.4, backgroundColor: Colors.grey[800], color: Colors.purpleAccent),
-            const SizedBox(height: 20),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setModalState) {
+          return Container(
+            height: MediaQuery.of(context).size.height * 0.85,
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                IconButton(icon: const Icon(Icons.shuffle, size: 28), onPressed: () {}),
-                IconButton(icon: const Icon(Icons.skip_previous, size: 36), onPressed: () {}),
-                CircleAvatar(
-                  radius: 28,
-                  backgroundColor: Colors.purpleAccent,
-                  child: IconButton(
-                    icon: Icon(_isPlaying ? Icons.pause : Icons.play_arrow, color: Colors.white),
-                    onPressed: () => setState(() => _isPlaying = !_isPlaying),
-                  ),
+                Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.grey, borderRadius: BorderRadius.circular(2))),
+                const SizedBox(height: 20),
+                const Text("Reproductor en curso", style: TextStyle(fontSize: 16, color: Colors.grey)),
+                const Spacer(),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(20),
+                  child: Image.network(_currentMedia!.thumbnails.highResUrl, width: 280, height: 280, fit: BoxFit.cover),
                 ),
-                IconButton(icon: const Icon(Icons.skip_next, size: 36), onPressed: () {}),
-                IconButton(icon: const Icon(Icons.repeat, size: 28), onPressed: () {}),
+                const SizedBox(height: 30),
+                Text(_currentMedia!.title, maxLines: 2, textAlign: TextAlign.center, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                const SizedBox(height: 8),
+                Text(_currentMedia!.author, style: const TextStyle(color: Colors.grey, fontSize: 14)),
+                const Spacer(),
+                LinearProgressIndicator(value: null, backgroundColor: Colors.grey[800], color: Colors.purpleAccent),
+                const SizedBox(height: 20),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  children: [
+                    IconButton(icon: const Icon(Icons.shuffle, size: 28), onPressed: () {}),
+                    IconButton(icon: const Icon(Icons.skip_previous, size: 36), onPressed: () {}),
+                    CircleAvatar(
+                      radius: 32,
+                      backgroundColor: Colors.purpleAccent,
+                      child: IconButton(
+                        icon: Icon(_isPlaying ? Icons.pause : Icons.play_arrow, color: Colors.white, size: 32),
+                        onPressed: () {
+                          _togglePlayPause();
+                          setModalState(() {}); 
+                        },
+                      ),
+                    ),
+                    IconButton(icon: const Icon(Icons.skip_next, size: 36), onPressed: () {}),
+                    IconButton(icon: const Icon(Icons.repeat, size: 28), onPressed: () {}),
+                  ],
+                ),
+                const SizedBox(height: 20),
               ],
             ),
-            const SizedBox(height: 20),
-          ],
-        ),
+          );
+        }
       ),
     );
   }
 
+  // --- COMPONENTES VISUALES ---
   Widget _buildTopMulticategoryView() {
     return Column(
       children: [
@@ -354,12 +354,12 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
             height: 40,
             child: ListView(
               scrollDirection: Axis.horizontal,
-              children: _topCategories.map((category) => Padding(
+              children: _topCategories.map((cat) => Padding(
                 padding: const EdgeInsets.only(right: 8),
                 child: ChoiceChip(
-                  label: Text(category),
-                  selected: _selectedTopCategory == category,
-                  onSelected: (selected) => setState(() => _selectedTopCategory = category),
+                  label: Text(cat),
+                  selected: _selectedTopCategory == cat,
+                  onSelected: (selected) => setState(() => _selectedTopCategory = cat),
                 ),
               )).toList(),
             ),
@@ -369,17 +369,9 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
           child: ListView.builder(
             itemCount: 8,
             itemBuilder: (context, index) => ListTile(
-              leading: CircleAvatar(
-                backgroundColor: Colors.purpleAccent.withOpacity(0.2),
-                child: Text("${index + 1}", style: const TextStyle(color: Colors.purpleAccent, fontWeight: FontWeight.bold)),
-              ),
+              leading: CircleAvatar(backgroundColor: Colors.purpleAccent.withOpacity(0.2), child: Text("${index + 1}", style: const TextStyle(color: Colors.purpleAccent))),
               title: Text("Top #${index + 1} de $_selectedTopCategory"),
-              subtitle: const Text("Artista o Creador Popular", style: TextStyle(fontSize: 12, color: Colors.grey)),
-              trailing: PopupMenuButton<String>(
-                icon: const Icon(Icons.more_vert),
-                onSelected: (value) => _handleMenuAction(context, value, "Top #${index + 1}"),
-                itemBuilder: (context) => _buildMenuItems(),
-              ),
+              subtitle: const Text("Contenido viral", style: TextStyle(fontSize: 12, color: Colors.grey)),
             ),
           ),
         ),
@@ -415,34 +407,5 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
         SizedBox(height: 110, child: ListView.builder(scrollDirection: Axis.horizontal, itemCount: 4, itemBuilder: (context, index) => Container(width: 100, margin: const EdgeInsets.only(right: 12), color: Colors.grey[800], child: const Icon(Icons.favorite, color: Colors.redAccent)))),
       ],
     );
-  }
-
-  Widget _buildContentList(String categoryName) {
-    return ListView.builder(
-      itemCount: 5,
-      itemBuilder: (context, index) => ListTile(
-        title: Text("$categoryName - Item $index"),
-        trailing: PopupMenuButton<String>(
-          icon: const Icon(Icons.more_vert),
-          onSelected: (value) => _handleMenuAction(context, value, "$categoryName - Item $index"),
-          itemBuilder: (context) => _buildMenuItems(),
-        ),
-      ),
-    );
-  }
-
-  List<PopupMenuEntry<String>> _buildMenuItems() {
-    return [
-      const PopupMenuItem(value: 'fav', child: Text('Añadir a Favoritos')),
-      const PopupMenuItem(value: 'share', child: Text('Compartir...')),
-    ];
-  }
-
-  void _handleMenuAction(BuildContext context, String value, String itemTitle) {
-    if (value == 'share') _showShareBottomSheet(context, itemTitle);
-  }
-
-  void _showShareBottomSheet(BuildContext context, String itemTitle) {
-    showModalBottomSheet(context: context, builder: (context) => const SizedBox(height: 200, child: Center(child: Text("Opciones de compartir"))));
   }
 }
