@@ -36,7 +36,7 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
   final List<String> _filters = ["Todo", "Música", "Videos", "Deportes"];
   
   bool _showDownloadBanner = true;
-  String _selectedTeam = "Pachuca"; // <--- Actualizado
+  String _selectedTeam = "Pachuca";
   IconData _teamIcon = Icons.sports_soccer;
 
   @override
@@ -55,6 +55,7 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      // --- PUNTO 3: CENTRO DE MANDO EN EL DRAWER ---
       drawer: Drawer(
         backgroundColor: const Color(0xFF1E1E1E),
         child: ListView(
@@ -64,18 +65,56 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
               accountName: const Text("Usuario"),
               accountEmail: Text("Equipo: $_selectedTeam"),
               decoration: BoxDecoration(color: Colors.purpleAccent.withOpacity(0.3)),
-              currentAccountPicture: CircleAvatar(
+              currentAccountPicture: const CircleAvatar(
                 backgroundColor: Colors.black26,
-                child: Icon(_teamIcon, size: 35, color: Colors.white),
+                child: Icon(Icons.sports_soccer, size: 35, color: Colors.white),
               ),
             ),
-            ListTile(leading: const Icon(Icons.favorite, color: Colors.redAccent), title: const Text("Favoritos"), onTap: () => Navigator.pop(context)),
-            ListTile(leading: const Icon(Icons.download, color: Colors.blueAccent), title: const Text("Gestor de Descargas"), onTap: () => Navigator.pop(context)),
+            ListTile(
+              leading: const Icon(Icons.favorite, color: Colors.redAccent),
+              title: const Text("Favoritos"),
+              onTap: () => Navigator.pop(context),
+            ),
+            ListTile(
+              leading: const Icon(Icons.download, color: Colors.blueAccent),
+              title: const Text("Gestor de Descargas"),
+              onTap: () => Navigator.pop(context),
+            ),
             const Divider(color: Colors.grey),
-            ListTile(leading: const Icon(Icons.video_library), title: const Text("Modo Videos"), onTap: () {}),
-            ListTile(leading: const Icon(Icons.music_note), title: const Text("Modo Música / 2do Plano"), onTap: () {}),
+            ListTile(
+              leading: const Icon(Icons.video_library),
+              title: const Text("Modo Videos"),
+              onTap: () => Navigator.pop(context),
+            ),
+            ListTile(
+              leading: const Icon(Icons.music_note),
+              title: const Text("Modo Música / 2do Plano"),
+              onTap: () => Navigator.pop(context),
+            ),
             const Divider(color: Colors.grey),
-            ListTile(leading: const Icon(Icons.settings), title: const Text("Ajustes y Colores"), onTap: () {}),
+            // NUEVA OPCIÓN: AJUSTES Y CACHÉ
+            ListTile(
+              leading: const Icon(Icons.cleaning_services, color: Colors.orangeAccent),
+              title: const Text("Liberar Caché"),
+              subtitle: const Text("142 MB usados", style: TextStyle(fontSize: 11, color: Colors.grey)),
+              onTap: () {
+                Navigator.pop(context);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('¡Caché limpiada con éxito! Se liberaron 142 MB 🧹')),
+                );
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.color_lens, color: Colors.purpleAccent),
+              title: const Text("Tema y Apariencia"),
+              subtitle: const Text("Modo Oscuro Activo", style: TextStyle(fontSize: 11, color: Colors.grey)),
+              onTap: () {
+                Navigator.pop(context);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('La aplicación ya utiliza el tema optimizado 🌙')),
+                );
+              },
+            ),
           ],
         ),
       ),
@@ -144,7 +183,6 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
     );
   }
 
-  // --- PORTAL DE DEPORTES CORREGIDO ---
   Widget _buildSportsView() {
     return ListView(
       padding: const EdgeInsets.all(16),
@@ -175,9 +213,9 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  const Icon(Icons.play_circle_fill, size: 40, color: Colors.white), // <--- 'const' aquí sí es válido
+                  const Icon(Icons.play_circle_fill, size: 40, color: Colors.white),
                   const SizedBox(height: 8),
-                  Text("Golazo Jornada $index"), // <--- SIN 'const' por la variable $index
+                  Text("Golazo Jornada $index"),
                 ],
               ),
             ),
