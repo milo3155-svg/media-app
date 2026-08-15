@@ -1,8 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:youtube_explode_dart/youtube_explode_dart.dart';
-import 'package:audioplayers/audioplayers.dart';
 
-void main() async {
+void main() {
   WidgetsFlutterBinding.ensureInitialized();
   runApp(const MediaApp());
 }
@@ -14,43 +12,29 @@ class MediaApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      theme: ThemeData.dark().copyWith(
-        scaffoldBackgroundColor: const Color(0xFF121212),
-        primaryColor: Colors.purpleAccent,
-        colorScheme: const ColorScheme.dark(primary: Colors.purpleAccent),
+      title: 'Prueba de Estabilidad',
+      theme: ThemeData.dark(),
+      home: const Scaffold(
+        backgroundColor: Color(0xFF121212),
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.check_circle, color: Colors.greenAccent, size: 80),
+              SizedBox(height: 20),
+              Text(
+                "App Estable - Paso 1 ✅",
+                style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold),
+              ),
+              SizedBox(height: 10),
+              Text(
+                "Si puedes leer esto, no hay errores graves.",
+                style: TextStyle(color: Colors.grey, fontSize: 14),
+              ),
+            ],
+          ),
+        ),
       ),
-      home: const MainNavigation(),
-    );
-  }
-}
-
-class MainNavigation extends StatefulWidget {
-  const MainNavigation({super.key});
-
-  @override
-  State<MainNavigation> createState() => _MainNavigationState();
-}
-
-class _MainNavigationState extends State<MainNavigation> with SingleTickerProviderStateMixin {
-  late TabController _tabController;
-  
-  @override
-  void initState() {
-    super.initState();
-    _tabController = TabController(length: 4, vsync: this);
-  }
-
-  @override
-  void dispose() {
-    _tabController.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text("Media App")),
-      body: const Center(child: Text("App funcionando correctamente")),
     );
   }
 }
