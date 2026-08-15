@@ -76,12 +76,10 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
     super.dispose();
   }
 
-  // --- FUNCIÓN DE BÚSQUEDA REAL ---
   Future<void> _performRealSearch(String query) async {
     if (query.trim().isEmpty) return;
-    FocusScope.of(context).unfocus(); // Ocultar teclado
+    FocusScope.of(context).unfocus(); 
     
-    // CAMBIO CLAVE: Mover automáticamente a la pestaña de "Búsqueda" (índice 1)
     _tabController.animateTo(1);
     
     setState(() {
@@ -106,23 +104,36 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
     }
   }
 
-  // --- FUNCIÓN DE REPRODUCCIÓN REAL ---
+  // --- FUNCIÓN DE REPRODUCCIÓN BLINDADA ---
   Future<void> _playMedia(Video video) async {
     setState(() {
       _currentMedia = video;
       _hasActiveMedia = true;
-      _isPlaying = false;
+      _isPlaying = false; // Estado "Cargando" visible
     });
 
     try {
+      // 1. Detenemos cualquier audio que se haya quedado colgado
+      await _audioPlayer.stop(); 
+      
       var manifest = await _yt.videos.streamsClient.getManifest(video.id);
-      var audioInfo = manifest.audioOnly.withHighestBitrate();
-      await _audioPlayer.play(UrlSource(audioInfo.url.toString()));
+      
+      // 2. EL TRUCO: Forzamos un stream MP4 progresivo (Muxed)
+      // Tomamos el primero de la lista (que suele ser 360p) para que cargue ultra rápido.
+      var streamInfo = manifest.muxed.isNotEmpty 
+          ? manifest.muxed.first 
+          : manifest.audioOnly.first;
+
+      // 3. Enviamos la URL directa al motor
+      await _audioPlayer.play(UrlSource(streamInfo.url.toString()));
+      
+      // 4. Activamos el botón de pausa una vez que Android empieza a recibir los datos
       if (mounted) setState(() => _isPlaying = true);
+      
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Error al extraer el audio de este video.'))
+          const SnackBar(content: Text('Formato de audio no soportado para este contenido.'))
         );
       }
     }
@@ -199,7 +210,6 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
                   color: const Color(0xFF1E1E1E),
                   child: Column(
                     children: [
-                      // CAMBIO CLAVE: Botón de envío y acción de búsqueda en el teclado
                       TextField(
                         controller: _searchController,
                         textInputAction: TextInputAction.search,
@@ -239,7 +249,6 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
                   controller: _tabController,
                   children: [
                     _buildCustomHomeFeed(), 
-                    // Pestaña de Búsqueda (Aquí aparecen los datos reales)
                     _isLoadingSearch 
                         ? const Center(child: CircularProgressIndicator(color: Colors.purpleAccent))
                         : _searchResults.isEmpty 
@@ -269,7 +278,6 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
             ],
           ),
           
-          // --- REPRODUCTOR FLOTANTE CON DATOS REALES ---
           if (_hasActiveMedia && _currentMedia != null)
             Positioned(
               left: 0,
@@ -381,7 +389,6 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
     );
   }
 
-  // --- LAS OTRAS PESTAÑAS (MUESTRAN DISEÑO DE PRUEBA) ---
   Widget _buildTopMulticategoryView() {
     return Column(
       children: [
