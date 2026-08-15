@@ -1,13 +1,20 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'dart:convert';
-import 'dart:io';
 import 'package:video_player/video_player.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:just_audio_background/just_audio_background.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart' as yt;
 import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+// ==========================================
+// 🌍 VARIABLES GLOBALES (El secreto para que no se corte)
+// ==========================================
+final AudioPlayer globalAudioPlayer = AudioPlayer();
+
+enum AppMode { video, music }
+AppMode globalAppMode = AppMode.video; // Modo por defecto
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -73,7 +80,7 @@ class _MediaAppState extends State<MediaApp> {
 }
 
 // ==========================================
-// 🏠 PANTALLA PRINCIPAL (TENDENCIAS Y MENÚ)
+// 🏠 PANTALLA PRINCIPAL (CON MINI-REPRODUCTOR)
 // ==========================================
 class HomeScreen extends StatefulWidget {
   final Color primaryColor;
@@ -181,21 +188,29 @@ class _HomeScreenState extends State<HomeScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
-                  Icon(Icons.library_music, size: 48, color: widget.primaryColor),
+                  Icon(Icons.play_circle_filled, size: 48, color: widget.primaryColor),
                   const SizedBox(height: 10),
                   const Text('Media App', style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold)),
                 ],
               ),
             ),
             ListTile(
-              leading: const Icon(Icons.video_library, color: Colors.white),
-              title: const Text('Video', style: TextStyle(fontSize: 16)),
-              onTap: () => Navigator.pop(context),
+              leading: Icon(Icons.video_library, color: globalAppMode == AppMode.video ? widget.primaryColor : Colors.white),
+              title: Text('Video', style: TextStyle(fontSize: 16, color: globalAppMode == AppMode.video ? widget.primaryColor : Colors.white, fontWeight: globalAppMode == AppMode.video ? FontWeight.bold : FontWeight.normal)),
+              onTap: () {
+                setState(() => globalAppMode = AppMode.video);
+                Navigator.pop(context);
+                ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: const Text('Modo Video Activado'), backgroundColor: widget.primaryColor, duration: const Duration(seconds: 1)));
+              },
             ),
             ListTile(
-              leading: const Icon(Icons.music_note, color: Colors.white),
-              title: const Text('Música', style: TextStyle(fontSize: 16)),
-              onTap: () => Navigator.pop(context),
+              leading: Icon(Icons.music_note, color: globalAppMode == AppMode.music ? widget.primaryColor : Colors.white),
+              title: Text('Música', style: TextStyle(fontSize: 16, color: globalAppMode == AppMode.music ? widget.primaryColor : Colors.white, fontWeight: globalAppMode == AppMode.music ? FontWeight.bold : FontWeight.normal)),
+              onTap: () {
+                setState(() => globalAppMode = AppMode.music);
+                Navigator.pop(context);
+                ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: const Text('Modo Música Activado'), backgroundColor: widget.primaryColor, duration: const Duration(seconds: 1)));
+              },
             ),
             const Divider(color: Colors.grey),
             ListTile(
@@ -229,6 +244,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   primaryColor: widget.primaryColor,
                   favorites: _favorites,
                   onToggleFavorite: _toggleFavorite,
+                  onVideoSelected: _openPlayer,
                 )),
               ).then((_) => setState(() {}));
             },
@@ -236,26 +252,81 @@ class _HomeScreenState extends State<HomeScreen> {
           const SizedBox(width: 8),
         ],
       ),
-      body: _isLoading
-          ? Center(child: CircularProgressIndicator(color: widget.primaryColor))
-          : activeList.isEmpty
-              ? Center(child: Text(_currentIndex == 0 ? 'No hay tendencias.' : 'Tu lista de favoritos está vacía.', style: const TextStyle(color: Colors.grey)))
-              : ListView.builder(
-                  itemCount: activeList.length,
-                  itemBuilder: (context, index) {
-                    final video = activeList[index];
-                    return ListTile(
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                      leading: ClipRRect(
-                        borderRadius: BorderRadius.circular(8.0),
-                        child: Image.network(video['thumbnail'], width: 80, height: 60, fit: BoxFit.cover),
+      body: Column(
+        children: [
+          Expanded(
+            child: _isLoading
+                ? Center(child: CircularProgressIndicator(color: widget.primaryColor))
+                : activeList.isEmpty
+                    ? Center(child: Text(_currentIndex == 0 ? 'No hay tendencias.' : 'Tu lista de favoritos está vacía.', style: const TextStyle(color: Colors.grey)))
+                    : ListView.builder(
+                        itemCount: activeList.length,
+                        itemBuilder: (context, index) {
+                          final video = activeList[index];
+                          return ListTile(
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                            leading: ClipRRect(
+                              borderRadius: BorderRadius.circular(8.0),
+                              child: Image.network(video['thumbnail'], width: 80, height: 60, fit: BoxFit.cover),
+                            ),
+                            title: Text(video['title'], maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                            subtitle: Text(video['uploader'], maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.grey, fontSize: 12)),
+                            onTap: () => _openPlayer(video, activeList, index),
+                          );
+                        },
                       ),
-                      title: Text(video['title'], maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-                      subtitle: Text(video['uploader'], maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.grey, fontSize: 12)),
-                      onTap: () => _openPlayer(video, activeList, index),
-                    );
-                  },
+          ),
+          // 🎵 MINI REPRODUCTOR FLOTANTE PARA LA MÚSICA
+          StreamBuilder<SequenceState?>(
+            stream: globalAudioPlayer.sequenceStateStream,
+            builder: (context, snapshot) {
+              final state = snapshot.data;
+              if (state?.currentSource == null || globalAppMode != AppMode.music) return const SizedBox.shrink();
+              
+              final mediaItem = state!.currentSource!.tag as MediaItem;
+              return GestureDetector(
+                onTap: () {
+                  // Volver a abrir el player en grande
+                  _openPlayer(
+                    {'id': mediaItem.id, 'title': mediaItem.title, 'uploader': mediaItem.artist, 'thumbnail': mediaItem.artUri.toString()}, 
+                    [], 0 // Pasamos vacío temporalmente porque ya está reproduciendo
+                  );
+                },
+                child: Container(
+                  color: const Color(0xFF2C2C2C),
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  child: Row(
+                    children: [
+                      ClipRRect(borderRadius: BorderRadius.circular(4), child: Image.network(mediaItem.artUri.toString(), width: 40, height: 40, fit: BoxFit.cover)),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(mediaItem.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.white)),
+                            Text(mediaItem.artist ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11, color: Colors.grey)),
+                          ],
+                        ),
+                      ),
+                      StreamBuilder<PlayerState>(
+                        stream: globalAudioPlayer.playerStateStream,
+                        builder: (context, snap) {
+                          final playing = snap.data?.playing ?? false;
+                          return IconButton(
+                            icon: Icon(playing ? Icons.pause : Icons.play_arrow, color: widget.primaryColor, size: 30),
+                            onPressed: () => playing ? globalAudioPlayer.pause() : globalAudioPlayer.play(),
+                          );
+                        },
+                      ),
+                    ],
+                  ),
                 ),
+              );
+            },
+          ),
+        ],
+      ),
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _currentIndex,
         onTap: (index) => setState(() => _currentIndex = index),
@@ -278,8 +349,9 @@ class SearchScreen extends StatefulWidget {
   final Color primaryColor;
   final List<Map<String, dynamic>> favorites;
   final Function(Map<String, dynamic>) onToggleFavorite;
+  final Function(Map<String, dynamic>, List<Map<String, dynamic>>, int) onVideoSelected;
 
-  const SearchScreen({super.key, required this.primaryColor, required this.favorites, required this.onToggleFavorite});
+  const SearchScreen({super.key, required this.primaryColor, required this.favorites, required this.onToggleFavorite, required this.onVideoSelected});
 
   @override
   State<SearchScreen> createState() => _SearchScreenState();
@@ -323,13 +395,10 @@ class _SearchScreenState extends State<SearchScreen> {
     }
     try {
       final ytExplode = yt.YoutubeExplode();
-      // FIX APLICADO: getQuerySuggestions en lugar de getSearchSuggestions
       final results = await ytExplode.search.getQuerySuggestions(query);
       ytExplode.close();
       if (mounted) setState(() => _suggestions = results);
-    } catch (e) {
-      // Ignorar errores de sugerencias para no interrumpir
-    }
+    } catch (e) {}
   }
 
   Future<void> _performSearch(String query) async {
@@ -454,19 +523,9 @@ class _SearchScreenState extends State<SearchScreen> {
           title: Text(video['title'], maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
           subtitle: Text(video['uploader'], maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.grey, fontSize: 12)),
           onTap: () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (context) => PlayerScreen(
-                  primaryColor: widget.primaryColor,
-                  initialVideo: video,
-                  playlist: _searchResults,
-                  initialIndex: index,
-                  favorites: widget.favorites,
-                  onToggleFavorite: widget.onToggleFavorite,
-                ),
-              ),
-            );
+            // Regresa y abre el reproductor
+            Navigator.pop(context);
+            widget.onVideoSelected(video, _searchResults, index);
           },
         );
       },
@@ -475,7 +534,7 @@ class _SearchScreenState extends State<SearchScreen> {
 }
 
 // ==========================================
-// 🎥 PANTALLA DEL REPRODUCTOR DEDICADO
+// 🎥 PANTALLA DEL REPRODUCTOR INTELIGENTE
 // ==========================================
 class PlayerScreen extends StatefulWidget {
   final Color primaryColor;
@@ -504,24 +563,23 @@ class _PlayerScreenState extends State<PlayerScreen> {
   late int _currentIndex;
   
   VideoPlayerController? _videoController;
-  final AudioPlayer _audioPlayer = AudioPlayer();
   
-  String _videoUrl = '';
-  String _audioUrl = '';
+  List<yt.MuxedStreamInfo> _videoStreams = [];
   String _errorMessage = '';
   
   bool _isLoading = true;
-  bool _isAudioMode = false;
+  String _currentQualityLabel = 'Cargando...';
 
   @override
   void initState() {
     super.initState();
     _currentVideo = widget.initialVideo;
     _currentIndex = widget.initialIndex;
-    _initExtract();
+    _initEngine();
   }
 
-  Future<void> _initExtract() async {
+  // EL CEREBRO DE LA APP: Decide qué motor encender
+  Future<void> _initEngine() async {
     setState(() {
       _isLoading = true;
       _errorMessage = '';
@@ -532,62 +590,57 @@ class _PlayerScreenState extends State<PlayerScreen> {
       final manifest = await ytExplode.videos.streamsClient.getManifest(_currentVideo['id']);
       ytExplode.close();
 
-      final mp4Muxed = manifest.muxed.where((s) => s.container.name == 'mp4');
-      if (mp4Muxed.isNotEmpty) {
-         _videoUrl = mp4Muxed.withHighestBitrate().url.toString();
+      if (globalAppMode == AppMode.video) {
+        // MODO VIDEO
+        _videoStreams = manifest.muxed.sortByVideoQuality().toList();
+        if (_videoStreams.isNotEmpty) {
+          // Si el audio estaba sonando, lo apagamos para no mezclar
+          await globalAudioPlayer.stop(); 
+          _currentQualityLabel = '${_videoStreams.first.videoQuality.name}p';
+          await _startVideo(_videoStreams.first.url.toString());
+        }
       } else {
-         _videoUrl = manifest.muxed.withHighestBitrate().url.toString();
-      }
+        // MODO MÚSICA (2DO PLANO AUTOMÁTICO)
+        // Evitamos reiniciar si ya estamos escuchando la misma canción
+        if (globalAudioPlayer.sequenceState?.currentSource?.tag.id != _currentVideo['id']) {
+          _videoController?.dispose(); // Matamos el video
+          _videoController = null;
 
-      final mp4Audio = manifest.audioOnly.where((s) => s.container.name == 'mp4' || s.audioCodec.contains('mp4a'));
-      if (mp4Audio.isNotEmpty) {
-         _audioUrl = mp4Audio.withHighestBitrate().url.toString();
-      } else {
-         _audioUrl = manifest.audioOnly.withHighestBitrate().url.toString();
+          String audioUrl = '';
+          final mp4Audio = manifest.audioOnly.where((s) => s.container.name == 'mp4' || s.audioCodec.contains('mp4a'));
+          if (mp4Audio.isNotEmpty) {
+             audioUrl = mp4Audio.withHighestBitrate().url.toString();
+          } else {
+             audioUrl = manifest.muxed.withHighestBitrate().url.toString(); // Fallback seguro
+          }
+          await _startAudio(audioUrl);
+        } else {
+           setState(() => _isLoading = false); // Ya estaba sonando
+        }
       }
-      
-      if (_isAudioMode) {
-        await _startAudio(Duration.zero);
-      } else {
-        await _startVideo(_videoUrl, Duration.zero);
-      }
-      
     } catch (e) {
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-          _errorMessage = 'No se pudo obtener el formato de este video.';
-        });
-      }
+      if (mounted) setState(() { _isLoading = false; _errorMessage = 'Error al cargar este contenido.'; });
     }
   }
 
-  Future<void> _startVideo(String url, Duration startAt) async {
+  Future<void> _startVideo(String url) async {
     final oldController = _videoController;
     _videoController = VideoPlayerController.networkUrl(Uri.parse(url));
     
     await _videoController!.initialize();
-    await _videoController!.seekTo(startAt);
     _videoController!.play();
-    
-    _videoController!.addListener(() {
-      if (mounted) setState(() {});
-    });
+    _videoController!.addListener(() { if (mounted) setState(() {}); });
 
-    if (mounted) {
-      setState(() {
-        _isAudioMode = false;
-        _isLoading = false;
-      });
-    }
+    if (mounted) setState(() => _isLoading = false);
     oldController?.dispose();
   }
 
-  Future<void> _startAudio(Duration startAt) async {
+  Future<void> _startAudio(String url) async {
     try {
-      await _audioPlayer.setAudioSource(
+      await globalAudioPlayer.stop();
+      await globalAudioPlayer.setAudioSource(
         AudioSource.uri(
-          Uri.parse(_audioUrl),
+          Uri.parse(url),
           tag: MediaItem(
             id: _currentVideo['id'],
             title: _currentVideo['title'],
@@ -596,74 +649,42 @@ class _PlayerScreenState extends State<PlayerScreen> {
           ),
         ),
       );
-      await _audioPlayer.seek(startAt);
-      _audioPlayer.play();
-      
-      _audioPlayer.positionStream.listen((_) {
-        if (mounted) setState(() {});
-      });
-
-      if (mounted) {
-        setState(() {
-          _isAudioMode = true;
-          _isLoading = false;
-        });
-      }
+      globalAudioPlayer.play();
+      if (mounted) setState(() => _isLoading = false);
     } catch (e) {
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-          _errorMessage = 'Error al reproducir el audio.';
-        });
-      }
+      if (mounted) setState(() { _isLoading = false; _errorMessage = 'Error al reproducir.'; });
     }
+  }
+
+  Future<void> _changeVideoQuality(String url, String label) async {
+    Navigator.pop(context); // Cierra menú
+    setState(() { _isLoading = true; _currentQualityLabel = label; });
+    final pos = _videoController!.value.position;
+    await _startVideo(url);
+    _videoController!.seekTo(pos);
   }
 
   void _changeVideo(int newIndex) {
     if (newIndex >= 0 && newIndex < widget.playlist.length) {
       _videoController?.pause();
-      _audioPlayer.stop();
       setState(() {
         _currentIndex = newIndex;
         _currentVideo = widget.playlist[newIndex];
       });
-      _initExtract();
-    }
-  }
-
-  Future<void> _changeMode(bool toAudio) async {
-    if (_isAudioMode == toAudio) return;
-
-    setState(() => _isLoading = true);
-    
-    Duration currentPos = Duration.zero;
-    if (_isAudioMode) {
-      currentPos = _audioPlayer.position;
-      await _audioPlayer.stop();
-    } else if (_videoController != null) {
-      currentPos = _videoController!.value.position;
-      await _videoController!.pause();
-    }
-
-    if (toAudio) {
-      await _startAudio(currentPos);
-    } else {
-      await _startVideo(_videoUrl, currentPos);
+      _initEngine();
     }
   }
 
   void _seekRelative(int seconds) {
-    if (_isAudioMode) {
-      final pos = _audioPlayer.position;
-      _audioPlayer.seek(pos + Duration(seconds: seconds));
+    if (globalAppMode == AppMode.music) {
+      globalAudioPlayer.seek(globalAudioPlayer.position + Duration(seconds: seconds));
     } else if (_videoController != null) {
-      final pos = _videoController!.value.position;
-      _videoController!.seekTo(pos + Duration(seconds: seconds));
+      _videoController!.seekTo(_videoController!.value.position + Duration(seconds: seconds));
     }
   }
 
   void _toggleFullScreen() {
-    if (_videoController == null || _isAudioMode) return;
+    if (_videoController == null || globalAppMode == AppMode.music) return;
     
     Navigator.of(context).push(MaterialPageRoute(builder: (context) {
       return FullScreenPlayerPage(controller: _videoController!, primaryColor: widget.primaryColor);
@@ -682,8 +703,10 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
   @override
   void dispose() {
-    _videoController?.dispose();
-    _audioPlayer.dispose();
+    // IMPORTANTE: Matamos el video al salir, pero DEJAMOS VIVA LA MÚSICA
+    if (globalAppMode == AppMode.video) {
+      _videoController?.dispose();
+    }
     super.dispose();
   }
 
@@ -697,6 +720,33 @@ class _PlayerScreenState extends State<PlayerScreen> {
         backgroundColor: Colors.transparent,
         elevation: 0,
         leading: IconButton(icon: const Icon(Icons.keyboard_arrow_down, size: 32), onPressed: () => Navigator.pop(context)),
+        actions: [
+          // Solo mostrar engrane en modo video
+          if (globalAppMode == AppMode.video)
+            IconButton(
+              icon: const Icon(Icons.settings, color: Colors.white),
+              onPressed: () {
+                showModalBottomSheet(
+                  context: context,
+                  backgroundColor: const Color(0xFF1E1E1E),
+                  shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+                  builder: (context) => SafeArea(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Padding(padding: EdgeInsets.all(16), child: Text('Calidad de Video', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white))),
+                        ..._videoStreams.map((stream) => ListTile(
+                          leading: const Icon(Icons.hd, color: Colors.white70),
+                          title: Text('${stream.videoQuality.name}p', style: const TextStyle(color: Colors.white)),
+                          onTap: () => _changeVideoQuality(stream.url.toString(), '${stream.videoQuality.name}p'),
+                        )),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
+        ],
       ),
       body: Stack(
         children: [
@@ -710,7 +760,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                       ? Center(child: CircularProgressIndicator(color: widget.primaryColor))
                       : _errorMessage.isNotEmpty
                           ? Center(child: Text(_errorMessage, style: const TextStyle(color: Colors.redAccent)))
-                          : _isAudioMode
+                          : globalAppMode == AppMode.music
                               ? Image.network(_currentVideo['thumbnail'], fit: BoxFit.cover, color: Colors.black54, colorBlendMode: BlendMode.darken)
                               : (_videoController != null && _videoController!.value.isInitialized)
                                   ? VideoPlayer(_videoController!)
@@ -718,32 +768,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
                 ),
               ),
               
-              const SizedBox(height: 16),
-
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    ChoiceChip(
-                      label: const Text('🎬 MODO VIDEO', style: TextStyle(fontWeight: FontWeight.bold)),
-                      selected: !_isAudioMode,
-                      onSelected: (val) => _changeMode(false),
-                      selectedColor: widget.primaryColor.withOpacity(0.3),
-                      labelStyle: TextStyle(color: !_isAudioMode ? widget.primaryColor : Colors.white),
-                    ),
-                    const SizedBox(width: 15),
-                    ChoiceChip(
-                      label: const Text('🎧 MODO 2DO PLANO', style: TextStyle(fontWeight: FontWeight.bold)),
-                      selected: _isAudioMode,
-                      onSelected: (val) => _changeMode(true),
-                      selectedColor: widget.primaryColor.withOpacity(0.3),
-                      labelStyle: TextStyle(color: _isAudioMode ? widget.primaryColor : Colors.white),
-                    ),
-                  ],
-                ),
-              ),
-
               const SizedBox(height: 16),
 
               Padding(
@@ -758,6 +782,8 @@ class _PlayerScreenState extends State<PlayerScreen> {
                           Text(_currentVideo['title'], style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white), maxLines: 2, overflow: TextOverflow.ellipsis),
                           const SizedBox(height: 4),
                           Text(_currentVideo['uploader'], style: const TextStyle(fontSize: 14, color: Colors.grey)),
+                          if (globalAppMode == AppMode.video)
+                             Text('Calidad: $_currentQualityLabel', style: TextStyle(fontSize: 12, color: widget.primaryColor)),
                         ],
                       ),
                     ),
@@ -774,39 +800,42 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
               const SizedBox(height: 20),
 
+              // BARRA DE PROGRESO REACTIVA
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                child: Row(
-                  children: [
-                    Text(_formatDuration(_isAudioMode ? _audioPlayer.position : (_videoController?.value.position ?? Duration.zero)), style: const TextStyle(fontSize: 12, color: Colors.grey)),
-                    Expanded(
-                      child: SliderTheme(
-                        data: SliderTheme.of(context).copyWith(
-                          trackHeight: 3.0,
-                          thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6.0),
-                          activeTrackColor: widget.primaryColor,
-                          thumbColor: widget.primaryColor,
+                child: StreamBuilder<Duration>(
+                  stream: globalAppMode == AppMode.music ? globalAudioPlayer.positionStream : Stream.empty(),
+                  builder: (context, snapshot) {
+                    final pos = globalAppMode == AppMode.music ? (snapshot.data ?? Duration.zero) : (_videoController?.value.position ?? Duration.zero);
+                    final dur = globalAppMode == AppMode.music ? (globalAudioPlayer.duration ?? Duration.zero) : (_videoController?.value.duration ?? Duration.zero);
+                    
+                    return Row(
+                      children: [
+                        Text(_formatDuration(pos), style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                        Expanded(
+                          child: SliderTheme(
+                            data: SliderTheme.of(context).copyWith(trackHeight: 3.0, thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6.0), activeTrackColor: widget.primaryColor, thumbColor: widget.primaryColor),
+                            child: Slider(
+                              min: 0.0,
+                              max: dur.inSeconds.toDouble() > 0 ? dur.inSeconds.toDouble() : 1.0,
+                              value: pos.inSeconds.toDouble().clamp(0.0, dur.inSeconds.toDouble() > 0 ? dur.inSeconds.toDouble() : 1.0),
+                              onChanged: (val) {
+                                final newPos = Duration(seconds: val.toInt());
+                                globalAppMode == AppMode.music ? globalAudioPlayer.seek(newPos) : _videoController?.seekTo(newPos);
+                              },
+                            ),
+                          ),
                         ),
-                        child: Slider(
-                          min: 0.0,
-                          max: _isAudioMode ? (_audioPlayer.duration?.inSeconds.toDouble() ?? 1.0) : (_videoController?.value.duration.inSeconds.toDouble() ?? 1.0),
-                          value: _isAudioMode 
-                              ? _audioPlayer.position.inSeconds.toDouble().clamp(0.0, _audioPlayer.duration?.inSeconds.toDouble() ?? 1.0)
-                              : (_videoController?.value.position.inSeconds.toDouble().clamp(0.0, _videoController?.value.duration.inSeconds.toDouble() ?? 1.0) ?? 0.0),
-                          onChanged: (val) {
-                            final newPos = Duration(seconds: val.toInt());
-                            _isAudioMode ? _audioPlayer.seek(newPos) : _videoController?.seekTo(newPos);
-                          },
-                        ),
-                      ),
-                    ),
-                    Text(_formatDuration(_isAudioMode ? (_audioPlayer.duration ?? Duration.zero) : (_videoController?.value.duration ?? Duration.zero)), style: const TextStyle(fontSize: 12, color: Colors.grey)),
-                  ],
+                        Text(_formatDuration(dur), style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                      ],
+                    );
+                  }
                 ),
               ),
 
               const SizedBox(height: 10),
 
+              // CONTROLES
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                 children: [
@@ -814,23 +843,25 @@ class _PlayerScreenState extends State<PlayerScreen> {
                   IconButton(icon: const Icon(Icons.replay_10), color: Colors.white70, iconSize: 32, onPressed: () => _seekRelative(-10)),
                   Container(
                     decoration: BoxDecoration(shape: BoxShape.circle, color: widget.primaryColor.withOpacity(0.2)),
-                    child: IconButton(
-                      iconSize: 64,
-                      icon: Icon(
-                        _isAudioMode 
-                            ? (_audioPlayer.playing ? Icons.pause : Icons.play_arrow)
-                            : ((_videoController?.value.isPlaying ?? false) ? Icons.pause : Icons.play_arrow),
-                        color: widget.primaryColor,
-                      ),
-                      onPressed: () {
-                        setState(() {
-                          if (_isAudioMode) {
-                            _audioPlayer.playing ? _audioPlayer.pause() : _audioPlayer.play();
-                          } else {
-                            (_videoController?.value.isPlaying ?? false) ? _videoController!.pause() : _videoController!.play();
-                          }
-                        });
-                      },
+                    child: StreamBuilder<PlayerState>(
+                      stream: globalAppMode == AppMode.music ? globalAudioPlayer.playerStateStream : Stream.empty(),
+                      builder: (context, snapshot) {
+                        final isPlaying = globalAppMode == AppMode.music 
+                             ? (snapshot.data?.playing ?? false) 
+                             : (_videoController?.value.isPlaying ?? false);
+                             
+                        return IconButton(
+                          iconSize: 64,
+                          icon: Icon(isPlaying ? Icons.pause : Icons.play_arrow, color: widget.primaryColor),
+                          onPressed: () {
+                            if (globalAppMode == AppMode.music) {
+                              isPlaying ? globalAudioPlayer.pause() : globalAudioPlayer.play();
+                            } else {
+                              setState(() => isPlaying ? _videoController!.pause() : _videoController!.play());
+                            }
+                          },
+                        );
+                      }
                     ),
                   ),
                   IconButton(icon: const Icon(Icons.forward_10), color: Colors.white70, iconSize: 32, onPressed: () => _seekRelative(10)),
@@ -838,7 +869,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                 ],
               ),
               const SizedBox(height: 10),
-              if (!_isAudioMode)
+              if (globalAppMode == AppMode.video)
                 Center(
                   child: IconButton(
                     icon: const Icon(Icons.fullscreen, color: Colors.white, size: 32),
@@ -861,12 +892,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                 ),
                 child: Column(
                   children: [
-                    Container(
-                      margin: const EdgeInsets.symmetric(vertical: 12),
-                      width: 40,
-                      height: 5,
-                      decoration: BoxDecoration(color: Colors.grey[600], borderRadius: BorderRadius.circular(10)),
-                    ),
+                    Container(margin: const EdgeInsets.symmetric(vertical: 12), width: 40, height: 5, decoration: BoxDecoration(color: Colors.grey[600], borderRadius: BorderRadius.circular(10))),
                     const Text('Siguiente en la lista', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
                     const SizedBox(height: 10),
                     Expanded(
@@ -929,13 +955,6 @@ class _FullScreenPlayerPageState extends State<FullScreenPlayerPage> {
     super.dispose();
   }
 
-  String _formatDuration(Duration duration) {
-    String twoDigits(int n) => n.toString().padLeft(2, '0');
-    final minutes = twoDigits(duration.inMinutes.remainder(60));
-    final seconds = twoDigits(duration.inSeconds.remainder(60));
-    return '$minutes:$seconds';
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -945,21 +964,13 @@ class _FullScreenPlayerPageState extends State<FullScreenPlayerPage> {
         child: Stack(
           fit: StackFit.expand,
           children: [
-            Center(
-              child: AspectRatio(
-                aspectRatio: widget.controller.value.aspectRatio,
-                child: VideoPlayer(widget.controller),
-              ),
-            ),
+            Center(child: AspectRatio(aspectRatio: widget.controller.value.aspectRatio, child: VideoPlayer(widget.controller))),
             if (_showControls)
               Container(
                 color: Colors.black54,
                 child: Stack(
                   children: [
-                    Positioned(
-                      top: 10, left: 10,
-                      child: IconButton(icon: const Icon(Icons.fullscreen_exit, color: Colors.white, size: 32), onPressed: () => Navigator.pop(context)),
-                    ),
+                    Positioned(top: 10, left: 10, child: IconButton(icon: const Icon(Icons.fullscreen_exit, color: Colors.white, size: 32), onPressed: () => Navigator.pop(context))),
                     Align(
                       alignment: Alignment.center,
                       child: Row(
