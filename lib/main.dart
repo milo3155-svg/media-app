@@ -42,9 +42,8 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
   String _selectedTeam = "Pachuca";
   IconData _teamIcon = Icons.sports_soccer;
 
-  // --- ESTADO DEL REPRODUCTOR FLOTANTE ---
   bool _isPlaying = true;
-  bool _hasActiveMedia = true; // Simula que hay algo listo para reproducir
+  bool _hasActiveMedia = true;
 
   @override
   void initState() {
@@ -123,7 +122,6 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
       ),
       body: Stack(
         children: [
-          // CONTENIDO PRINCIPAL (Columna de Buscador + Tabs)
           Column(
             children: [
               if (_isSearching)
@@ -168,8 +166,6 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
               ),
             ],
           ),
-
-          // --- PUNTO 5: MINI REPRODUCTOR FLOTANTE INFERIOR ---
           if (_hasActiveMedia)
             Positioned(
               left: 0,
@@ -221,7 +217,6 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
     );
   }
 
-  // --- PANTALLA COMPLETA INMERSIVA (MODAL EXPANDIDO) ---
   void _openExpandedPlayer(BuildContext context) {
     showModalBottomSheet(
       context: context,
@@ -252,7 +247,6 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
             const SizedBox(height: 8),
             const Text("Canal o Artista Oficial", style: TextStyle(color: Colors.grey, fontSize: 14)),
             const Spacer(),
-            // Barra de progreso simulada
             LinearProgressIndicator(value: 0.4, backgroundColor: Colors.grey[800], color: Colors.purpleAccent),
             const SizedBox(height: 20),
             Row(
