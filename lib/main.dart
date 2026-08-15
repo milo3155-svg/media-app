@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:youtube_explode_dart/youtube_explode_dart.dart';
+import 'package:audioplayers/audioplayers.dart';
 
-void main() {
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   runApp(const MediaApp());
 }
@@ -43,20 +45,93 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
   String _selectedTeam = "Pachuca";
   IconData _teamIcon = Icons.sports_soccer;
 
-  bool _hasActiveMedia = true;
+  // --- MOTOR PRINCIPAL ---
+  final YoutubeExplode _yt = YoutubeExplode();
+  final AudioPlayer _audioPlayer = AudioPlayer();
+  
+  List<Video> _searchResults = [];
+  bool _isLoadingSearch = false;
+  
+  Video? _currentMedia;
   bool _isPlaying = false;
+  bool _hasActiveMedia = false;
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 4, vsync: this);
+    
+    // Escuchar cuando la pista termina
+    _audioPlayer.onPlayerComplete.listen((event) {
+      if (mounted) setState(() => _isPlaying = false);
+    });
   }
 
   @override
   void dispose() {
     _tabController.dispose();
     _searchController.dispose();
+    _yt.close();
+    _audioPlayer.dispose();
     super.dispose();
+  }
+
+  // --- FUNCIÓN DE BÚSQUEDA REAL ---
+  Future<void> _performRealSearch(String query) async {
+    if (query.isEmpty) return;
+    FocusScope.of(context).unfocus(); // Ocultar teclado
+    
+    setState(() {
+      _isLoadingSearch = true;
+    });
+
+    try {
+      var searchList = await _yt.search.search(query);
+      if (mounted) {
+        setState(() {
+          _searchResults = searchList.take(10).toList();
+          _isLoadingSearch = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isLoadingSearch = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Error al buscar. Verifica tu conexión.'))
+        );
+      }
+    }
+  }
+
+  // --- FUNCIÓN DE REPRODUCCIÓN REAL ---
+  Future<void> _playMedia(Video video) async {
+    setState(() {
+      _currentMedia = video;
+      _hasActiveMedia = true;
+      _isPlaying = false;
+    });
+
+    try {
+      var manifest = await _yt.videos.streamsClient.getManifest(video.id);
+      var audioInfo = manifest.audioOnly.withHighestBitrate();
+      await _audioPlayer.play(UrlSource(audioInfo.url.toString()));
+      if (mounted) setState(() => _isPlaying = true);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Error al extraer el audio de este video.'))
+        );
+      }
+    }
+  }
+
+  void _togglePlayPause() {
+    if (_isPlaying) {
+      _audioPlayer.pause();
+    } else {
+      _audioPlayer.resume();
+    }
+    setState(() => _isPlaying = !_isPlaying);
   }
 
   @override
@@ -95,14 +170,17 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
         actions: [
           IconButton(
             icon: Icon(_isSearching ? Icons.close : Icons.search),
-            onPressed: () => setState(() => _isSearching = !_isSearching),
+            onPressed: () => setState(() {
+              _isSearching = !_isSearching;
+              if (!_isSearching) _searchResults.clear();
+            }),
           )
         ],
         bottom: TabBar(
           controller: _tabController,
           tabs: const [
             Tab(icon: Icon(Icons.home), text: "Inicio"),
-            Tab(icon: Icon(Icons.music_note), text: "Música"),
+            Tab(icon: Icon(Icons.music_note), text: "Búsqueda"),
             Tab(icon: Icon(Icons.trending_up), text: "Top"),
             Tab(icon: Icon(Icons.sports_soccer), text: "Deportes"),
           ],
@@ -126,6 +204,7 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
                           isDense: true,
                           prefixIcon: Icon(Icons.search),
                         ),
+                        onSubmitted: (value) => _performRealSearch(value),
                       ),
                       const SizedBox(height: 8),
                       SizedBox(
@@ -151,7 +230,28 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
                   controller: _tabController,
                   children: [
                     _buildCustomHomeFeed(), 
-                    const Center(child: Text("Sección de Música (Próximamente real)")),
+                    // Pestaña donde mostramos los resultados de búsqueda en vivo
+                    _isLoadingSearch 
+                        ? const Center(child: CircularProgressIndicator(color: Colors.purpleAccent))
+                        : _searchResults.isEmpty 
+                            ? const Center(child: Text("Busca contenido para verlo aquí", style: TextStyle(color: Colors.grey)))
+                            : ListView.builder(
+                                itemCount: _searchResults.length,
+                                itemBuilder: (context, index) {
+                                  final video = _searchResults[index];
+                                  return ListTile(
+                                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                                    leading: ClipRRect(
+                                      borderRadius: BorderRadius.circular(8),
+                                      child: Image.network(video.thumbnails.lowResUrl, width: 80, height: 60, fit: BoxFit.cover),
+                                    ),
+                                    title: Text(video.title, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 14)),
+                                    subtitle: Text(video.author, style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                                    trailing: const Icon(Icons.play_arrow, color: Colors.purpleAccent),
+                                    onTap: () => _playMedia(video),
+                                  );
+                                },
+                              ),
                     _buildTopMulticategoryView(),
                     _buildSportsView(),
                   ],
@@ -160,7 +260,8 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
             ],
           ),
           
-          if (_hasActiveMedia)
+          // --- REPRODUCTOR FLOTANTE CON DATOS REALES ---
+          if (_hasActiveMedia && _currentMedia != null)
             Positioned(
               left: 0,
               right: 0,
@@ -176,30 +277,31 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
                   ),
                   child: Row(
                     children: [
-                      Container(
-                        width: 45,
-                        height: 45,
-                        decoration: BoxDecoration(color: Colors.purpleAccent.withOpacity(0.2), borderRadius: BorderRadius.circular(6)),
-                        child: const Icon(Icons.music_note, color: Colors.purpleAccent),
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(6),
+                        child: Image.network(_currentMedia!.thumbnails.lowResUrl, width: 45, height: 45, fit: BoxFit.cover),
                       ),
                       const SizedBox(width: 12),
-                      const Expanded(
+                      Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Text("Pista de prueba", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                            Text("Toca para abrir el reproductor", style: TextStyle(color: Colors.grey, fontSize: 11)),
+                            Text(_currentMedia!.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                            Text(_currentMedia!.author, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.grey, fontSize: 11)),
                           ],
                         ),
                       ),
                       IconButton(
                         icon: Icon(_isPlaying ? Icons.pause : Icons.play_arrow, color: Colors.white),
-                        onPressed: () => setState(() => _isPlaying = !_isPlaying),
+                        onPressed: _togglePlayPause,
                       ),
                       IconButton(
                         icon: const Icon(Icons.close, color: Colors.grey),
-                        onPressed: () => setState(() => _hasActiveMedia = false),
+                        onPressed: () {
+                          _audioPlayer.stop();
+                          setState(() => _hasActiveMedia = false);
+                        },
                       ),
                     ],
                   ),
@@ -212,6 +314,8 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
   }
 
   void _openExpandedPlayer(BuildContext context) {
+    if (_currentMedia == null) return;
+    
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -228,21 +332,16 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
                 const SizedBox(height: 20),
                 const Text("Reproductor Inmersivo", style: TextStyle(fontSize: 16, color: Colors.grey)),
                 const Spacer(),
-                Container(
-                  width: 280,
-                  height: 280,
-                  decoration: BoxDecoration(
-                    color: Colors.purpleAccent.withOpacity(0.2),
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: const Icon(Icons.play_circle_fill, size: 80, color: Colors.purpleAccent),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(20),
+                  child: Image.network(_currentMedia!.thumbnails.highResUrl, width: 280, height: 280, fit: BoxFit.cover),
                 ),
                 const SizedBox(height: 30),
-                const Text("Pista de prueba", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                Text(_currentMedia!.title, maxLines: 2, textAlign: TextAlign.center, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                 const SizedBox(height: 8),
-                const Text("Artista Desconocido", style: TextStyle(color: Colors.grey, fontSize: 14)),
+                Text(_currentMedia!.author, style: const TextStyle(color: Colors.grey, fontSize: 14)),
                 const Spacer(),
-                LinearProgressIndicator(value: 0.3, backgroundColor: Colors.grey[800], color: Colors.purpleAccent),
+                LinearProgressIndicator(value: null, backgroundColor: Colors.grey[800], color: Colors.purpleAccent),
                 const SizedBox(height: 20),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceEvenly,
@@ -255,7 +354,7 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
                       child: IconButton(
                         icon: Icon(_isPlaying ? Icons.pause : Icons.play_arrow, color: Colors.white, size: 32),
                         onPressed: () {
-                          setState(() => _isPlaying = !_isPlaying);
+                          _togglePlayPause();
                           setModalState(() {}); 
                         },
                       ),
@@ -300,7 +399,7 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
             itemBuilder: (context, index) => ListTile(
               leading: CircleAvatar(backgroundColor: Colors.purpleAccent.withOpacity(0.2), child: Text("${index + 1}", style: const TextStyle(color: Colors.purpleAccent))),
               title: Text("Top #${index + 1} de $_selectedTopCategory"),
-              subtitle: const Text("Contenido de prueba", style: TextStyle(fontSize: 12, color: Colors.grey)),
+              subtitle: const Text("Tendencias de la red", style: TextStyle(fontSize: 12, color: Colors.grey)),
             ),
           ),
         ),
