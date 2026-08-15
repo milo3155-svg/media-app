@@ -35,6 +35,10 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
   String _selectedFilter = "Todo";
   final List<String> _filters = ["Todo", "Música", "Videos", "Deportes"];
   
+  // --- VARIABLES PARA EL TOP MULTICATEGORÍA ---
+  String _selectedTopCategory = "Global";
+  final List<String> _topCategories = ["Global", "México", "Virales", "Podcasts"];
+
   bool _showDownloadBanner = true;
   String _selectedTeam = "Pachuca";
   IconData _teamIcon = Icons.sports_soccer;
@@ -55,7 +59,6 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      // --- PUNTO 3: CENTRO DE MANDO EN EL DRAWER ---
       drawer: Drawer(
         backgroundColor: const Color(0xFF1E1E1E),
         child: ListView(
@@ -70,38 +73,19 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
                 child: Icon(Icons.sports_soccer, size: 35, color: Colors.white),
               ),
             ),
-            ListTile(
-              leading: const Icon(Icons.favorite, color: Colors.redAccent),
-              title: const Text("Favoritos"),
-              onTap: () => Navigator.pop(context),
-            ),
-            ListTile(
-              leading: const Icon(Icons.download, color: Colors.blueAccent),
-              title: const Text("Gestor de Descargas"),
-              onTap: () => Navigator.pop(context),
-            ),
+            ListTile(leading: const Icon(Icons.favorite, color: Colors.redAccent), title: const Text("Favoritos"), onTap: () => Navigator.pop(context)),
+            ListTile(leading: const Icon(Icons.download, color: Colors.blueAccent), title: const Text("Gestor de Descargas"), onTap: () => Navigator.pop(context)),
             const Divider(color: Colors.grey),
-            ListTile(
-              leading: const Icon(Icons.video_library),
-              title: const Text("Modo Videos"),
-              onTap: () => Navigator.pop(context),
-            ),
-            ListTile(
-              leading: const Icon(Icons.music_note),
-              title: const Text("Modo Música / 2do Plano"),
-              onTap: () => Navigator.pop(context),
-            ),
+            ListTile(leading: const Icon(Icons.video_library), title: const Text("Modo Videos"), onTap: () => Navigator.pop(context)),
+            ListTile(leading: const Icon(Icons.music_note), title: const Text("Modo Música / 2do Plano"), onTap: () => Navigator.pop(context)),
             const Divider(color: Colors.grey),
-            // NUEVA OPCIÓN: AJUSTES Y CACHÉ
             ListTile(
               leading: const Icon(Icons.cleaning_services, color: Colors.orangeAccent),
               title: const Text("Liberar Caché"),
               subtitle: const Text("142 MB usados", style: TextStyle(fontSize: 11, color: Colors.grey)),
               onTap: () {
                 Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('¡Caché limpiada con éxito! Se liberaron 142 MB 🧹')),
-                );
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('¡Caché limpiada con éxito! 🧹')));
               },
             ),
             ListTile(
@@ -110,9 +94,7 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
               subtitle: const Text("Modo Oscuro Activo", style: TextStyle(fontSize: 11, color: Colors.grey)),
               onTap: () {
                 Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('La aplicación ya utiliza el tema optimizado 🌙')),
-                );
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('La aplicación ya utiliza el tema optimizado 🌙')));
               },
             ),
           ],
@@ -173,13 +155,61 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
               children: [
                 _buildCustomHomeFeed(), 
                 _buildContentList("Música"),
-                _buildContentList("Top"),
+                _buildTopMulticategoryView(), // <--- AQUÍ ESTÁ EL NUEVO TOP MULTICATEGORÍA
                 _buildSportsView(),
               ],
             ),
           ),
         ],
       ),
+    );
+  }
+
+  // --- PUNTO 4: VISTA TOP MULTICATEGORÍA ---
+  Widget _buildTopMulticategoryView() {
+    return Column(
+      children: [
+        // Subfiltros horizontales para el Top
+        Container(
+          padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+          color: const Color(0xFF181818),
+          child: SizedBox(
+            height: 40,
+            child: ListView(
+              scrollDirection: Axis.horizontal,
+              children: _topCategories.map((category) => Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: ChoiceChip(
+                  label: Text(category),
+                  selected: _selectedTopCategory == category,
+                  onSelected: (selected) {
+                    setState(() => _selectedTopCategory = category);
+                  },
+                ),
+              )).toList(),
+            ),
+          ),
+        ),
+        // Lista dinámica basada en la categoría seleccionada
+        Expanded(
+          child: ListView.builder(
+            itemCount: 8,
+            itemBuilder: (context, index) => ListTile(
+              leading: CircleAvatar(
+                backgroundColor: Colors.purpleAccent.withOpacity(0.2),
+                child: Text("${index + 1}", style: const TextStyle(color: Colors.purpleAccent, fontWeight: FontWeight.bold)),
+              ),
+              title: Text("Top #${index + 1} de $_selectedTopCategory"),
+              subtitle: const Text("Artista o Creador Popular", style: TextStyle(fontSize: 12, color: Colors.grey)),
+              trailing: PopupMenuButton<String>(
+                icon: const Icon(Icons.more_vert),
+                onSelected: (value) => _handleMenuAction(context, value, "Top #${index + 1} ($_selectedTopCategory)"),
+                itemBuilder: (context) => _buildMenuItems(),
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 
@@ -198,29 +228,6 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
             trailing: const Icon(Icons.bar_chart),
           ),
         ),
-        const SizedBox(height: 20),
-        const Text("Goles y Resúmenes", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-        const SizedBox(height: 10),
-        SizedBox(
-          height: 140,
-          child: ListView.builder(
-            scrollDirection: Axis.horizontal,
-            itemCount: 3,
-            itemBuilder: (context, index) => Container(
-              width: 180,
-              margin: const EdgeInsets.only(right: 12),
-              decoration: BoxDecoration(color: Colors.grey[800], borderRadius: BorderRadius.circular(8)),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Icon(Icons.play_circle_fill, size: 40, color: Colors.white),
-                  const SizedBox(height: 8),
-                  Text("Golazo Jornada $index"),
-                ],
-              ),
-            ),
-          ),
-        ),
       ],
     );
   }
@@ -232,13 +239,6 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
         const Text("Favoritos", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
         const SizedBox(height: 10),
         SizedBox(height: 110, child: ListView.builder(scrollDirection: Axis.horizontal, itemCount: 4, itemBuilder: (context, index) => Container(width: 100, margin: const EdgeInsets.only(right: 12), color: Colors.grey[800], child: const Icon(Icons.favorite, color: Colors.redAccent)))),
-        const SizedBox(height: 20),
-        if (_showDownloadBanner)
-          Dismissible(
-            key: const Key('download_banner'),
-            onDismissed: (_) => setState(() => _showDownloadBanner = false),
-            child: Container(padding: const EdgeInsets.all(12), decoration: BoxDecoration(color: Colors.purpleAccent.withOpacity(0.15), borderRadius: BorderRadius.circular(10)), child: const Text("Descargas disponibles (Desliza para quitar)")),
-          ),
       ],
     );
   }
