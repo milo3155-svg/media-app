@@ -5,7 +5,8 @@ plugins {
 }
 
 android {
-    namespace "com.example.media_app"
+    // AQUÍ ESTÁ LA MAGIA: Tu verdadero namespace
+    namespace "com.milo.media_app" 
     compileSdkVersion 34
 
     compileOptions {
@@ -18,7 +19,8 @@ android {
     }
 
     defaultConfig {
-        applicationId "com.example.media_app"
+        // Y AQUÍ TAMBIÉN: Tu verdadero applicationId
+        applicationId "com.milo.media_app" 
         minSdkVersion 21
         targetSdkVersion 34
         versionCode 1
