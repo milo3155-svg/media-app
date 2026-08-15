@@ -41,7 +41,7 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 4, vsync: this); // 4 pestañas ahora
+    _tabController = TabController(length: 4, vsync: this);
   }
 
   @override
@@ -106,7 +106,7 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
         ],
         bottom: TabBar(
           controller: _tabController,
-          isScrollable: false, // Se ajustan perfecto los 4 iconos
+          isScrollable: false,
           indicatorColor: Colors.purpleAccent,
           labelColor: Colors.purpleAccent,
           unselectedLabelColor: Colors.grey,
@@ -124,7 +124,7 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
           _buildCustomHomeFeed(), 
           _buildContentList("Música y Podcasts"),
           _buildContentList("Top Chart 🔝"),
-          _buildSportsView(), // <--- NUESTRA SECCIÓN DE DEPORTES
+          _buildSportsView(),
         ],
       ),
     );
@@ -163,7 +163,7 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
 
         const SizedBox(height: 20),
 
-        // 🌟 TARJETA DE DESCARGAS DESLIZABLE (DISMISSIBLE)
+        // 🌟 TARJETA DE DESCARGAS DESLIZABLE
         if (_showDownloadBanner)
           Dismissible(
             key: const Key('download_banner'),
@@ -182,7 +182,6 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
             ),
             child: GestureDetector(
               onTap: () {
-                // Acción al pulsar: llevar al gestor y ocultar aviso
                 setState(() => _showDownloadBanner = false);
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(content: Text('Abriendo Gestor de Descargas...')),
@@ -230,14 +229,18 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
             ),
             title: Text("Tendencia Global $index", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
             subtitle: const Text("Creador o Canal", style: TextStyle(color: Colors.grey, fontSize: 12)),
-            trailing: const Icon(Icons.more_vert, color: Colors.grey),
+            trailing: PopupMenuButton<String>(
+              icon: const Icon(Icons.more_vert, color: Colors.grey),
+              onSelected: (value) => _handleMenuAction(context, value, "Tendencia Global $index"),
+              itemBuilder: (context) => _buildMenuItems(),
+            ),
           ),
         ),
       ],
     );
   }
 
-  // ⚽ SECCIÓN DE DEPORTES CON SELECCIÓN DE EQUIPO
+  // ⚽ SECCIÓN DE DEPORTES
   Widget _buildSportsView() {
     return Padding(
       padding: const EdgeInsets.all(16.0),
@@ -253,7 +256,6 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
                 icon: const Icon(Icons.shield),
                 label: Text(_selectedTeam),
                 onPressed: () {
-                  // Simulación de selección de equipo para probar el escudo en el Drawer
                   setState(() {
                     _selectedTeam = "Club Águila";
                     _teamIcon = Icons.sports_football;
@@ -288,6 +290,7 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
     );
   }
 
+  // 🎵 LISTA GENÉRICA CON MENÚ CONTEXTUAL
   Widget _buildContentList(String categoryName) {
     return ListView.builder(
       itemCount: 5,
@@ -298,7 +301,105 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
         ),
         title: Text("$categoryName - Item $index", style: const TextStyle(fontWeight: FontWeight.bold)),
         subtitle: const Text("Artista o Creador", style: TextStyle(color: Colors.grey, fontSize: 12)),
-        trailing: const Icon(Icons.more_vert, color: Colors.grey),
+        trailing: PopupMenuButton<String>(
+          icon: const Icon(Icons.more_vert, color: Colors.grey),
+          onSelected: (value) => _handleMenuAction(context, value, "$categoryName - Item $index"),
+          itemBuilder: (context) => _buildMenuItems(),
+        ),
+      ),
+    );
+  }
+
+  // Opciones del menú de 3 puntitos
+  List<PopupMenuEntry<String>> _buildMenuItems() {
+    return [
+      const PopupMenuItem(value: 'fav', child: Text('Añadir a Favoritos')),
+      const PopupMenuItem(value: 'lista', child: Text('Añadir a lista')),
+      const PopupMenuItem(value: 'cola', child: Text('Añadir a cola')),
+      const PopupMenuItem(value: 'mp3', child: Text('Descargar MP3')),
+      const PopupMenuItem(value: 'mp4', child: Text('Descargar MP4')),
+      const PopupMenuItem(value: 'share', child: Text('Compartir...')),
+    ];
+  }
+
+  // --- LÓGICA DE LOS 3 PUNTITOS ---
+  void _handleMenuAction(BuildContext context, String value, String itemTitle) {
+    switch (value) {
+      case 'fav':
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('"${itemTitle}" añadido a Favoritos ❤️')),
+        );
+        break;
+      case 'lista':
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('"${itemTitle}" añadido a la lista de reproducción 📂')),
+        );
+        break;
+      case 'cola':
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('"${itemTitle}" añadido a la cola de reproducción 🎶')),
+        );
+        break;
+      case 'mp3':
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Iniciando descarga de MP3 para: $itemTitle 📥')),
+        );
+        break;
+      case 'mp4':
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Iniciando descarga de MP4 para: $itemTitle 🎥')),
+        );
+        break;
+      case 'share':
+        _showShareBottomSheet(context, itemTitle);
+        break;
+    }
+  }
+
+  // --- VENTANA FLOTANTE PARA COMPARTIR ---
+  void _showShareBottomSheet(BuildContext context, String itemTitle) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF1E1E1E),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (context) => Container(
+        padding: const EdgeInsets.all(20),
+        height: 220,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              "Compartir vía WhatsApp",
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white),
+            ),
+            const SizedBox(height: 15),
+            ListTile(
+              leading: const Icon(Icons.share, color: Colors.greenAccent),
+              title: Text("Compartir contenido: $itemTitle"),
+              subtitle: const Text("Manda este video/canción a un chat", style: TextStyle(fontSize: 12, color: Colors.grey)),
+              onTap: () {
+                Navigator.pop(context);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Abriendo WhatsApp con el enlace del contenido... 🚀')),
+                );
+              },
+            ),
+            const Divider(color: Colors.grey),
+            ListTile(
+              leading: const Icon(Icons.phone_android, color: Colors.purpleAccent),
+              title: const Text("Compartir la aplicación"),
+              subtitle: const Text("Invita a otros a descargar esta Media App", style: TextStyle(fontSize: 12, color: Colors.grey)),
+              onTap: () {
+                Navigator.pop(context);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Abriendo WhatsApp para recomendar la App... 📱')),
+                );
+              },
+            ),
+          ],
+        ),
       ),
     );
   }
