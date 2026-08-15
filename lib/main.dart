@@ -3,7 +3,6 @@ import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 import 'package:audioplayers/audioplayers.dart';
 
 void main() async {
-  // --- ESTA LÍNEA EVITA QUE LA APP SE CIERRE AL ARRANCAR ---
   WidgetsFlutterBinding.ensureInitialized();
   runApp(const MediaApp());
 }
@@ -25,6 +24,33 @@ class MediaApp extends StatelessWidget {
   }
 }
 
-// ... (Resto del código que ya tenías en main.dart desde la última vez)
-// Asegúrate de que el resto del código siga debajo de esta línea, 
-// solo reemplazamos el main() inicial.
+class MainNavigation extends StatefulWidget {
+  const MainNavigation({super.key});
+
+  @override
+  State<MainNavigation> createState() => _MainNavigationState();
+}
+
+class _MainNavigationState extends State<MainNavigation> with SingleTickerProviderStateMixin {
+  late TabController _tabController;
+  
+  @override
+  void initState() {
+    super.initState();
+    _tabController = TabController(length: 4, vsync: this);
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text("Media App")),
+      body: const Center(child: Text("App funcionando correctamente")),
+    );
+  }
+}
