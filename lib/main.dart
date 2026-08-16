@@ -51,8 +51,6 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
   final AudioPlayer _audioPlayer = AudioPlayer();
   VideoPlayerController? _videoController;
   
-  // --- COMUNICADOR EN VIVO PARA EL REPRODUCTOR GIGANTE ---
-  // Esto fuerza a la pantalla superior a actualizarse sin tener que presionar botones
   final ValueNotifier<int> _uiUpdater = ValueNotifier(0);
   
   bool _globalVideoMode = true; 
@@ -68,6 +66,9 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
   bool _isLoadingMedia = false; 
   bool _hasActiveMedia = false;
   
+  // --- NUEVO: ESTADOS DE CONTROL ---
+  bool _isRepeating = false;
+  
   Duration _duration = Duration.zero;
   Duration _position = Duration.zero;
 
@@ -76,7 +77,7 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
     super.initState();
     _tabController = TabController(length: 4, vsync: this);
     
-    // Sensores del motor de audio (avisando también a la UI)
+    // Sensores de Audio
     _audioPlayer.onDurationChanged.listen((d) { 
       if (mounted) { setState(() => _duration = d); _uiUpdater.value++; } 
     });
@@ -84,7 +85,13 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
       if (mounted) { setState(() => _position = p); _uiUpdater.value++; } 
     });
     _audioPlayer.onPlayerComplete.listen((event) {
-      if (mounted) { setState(() { _isPlaying = false; _position = Duration.zero; }); _uiUpdater.value++; }
+      if (mounted) { 
+        // Si no está en repetición, apaga el play
+        if (!_isRepeating) {
+          setState(() { _isPlaying = false; _position = Duration.zero; }); 
+        }
+        _uiUpdater.value++; 
+      }
     });
 
     _loadTopContent("Global");
@@ -141,7 +148,7 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
       _position = Duration.zero;
       _duration = Duration.zero;
     });
-    _uiUpdater.value++; // Avisamos que empezó a cargar
+    _uiUpdater.value++; 
 
     try {
       await _audioPlayer.stop(); 
@@ -153,13 +160,14 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
       var manifest = await _yt.videos.streamsClient.getManifest(video.id);
 
       if (_globalVideoMode) {
-        // --- MODO VIDEO ---
         var streamInfo = manifest.muxed.withHighestBitrate();
         _videoController = VideoPlayerController.networkUrl(Uri.parse(streamInfo.url.toString()));
         
         await _videoController!.initialize();
         
-        // El video ya cargó, quitamos la pantalla de carga y avisamos a la UI instantáneamente
+        // Aplicamos el bucle si está activo
+        _videoController!.setLooping(_isRepeating);
+        
         if (mounted) {
           setState(() { _isLoadingMedia = false; });
           _uiUpdater.value++; 
@@ -172,14 +180,17 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
               _duration = _videoController!.value.duration;
               _isPlaying = _videoController!.value.isPlaying;
             });
-            _uiUpdater.value++; // Refresca barra de progreso del video
+            _uiUpdater.value++; 
           }
         });
         
         await _videoController!.play();
       } else {
-        // --- MODO SOLO AUDIO ---
         var streamInfo = manifest.muxed.isNotEmpty ? manifest.muxed.first : manifest.audioOnly.first;
+        
+        // Aplicamos el bucle en audio si está activo
+        await _audioPlayer.setReleaseMode(_isRepeating ? ReleaseMode.loop : ReleaseMode.release);
+        
         await _audioPlayer.play(UrlSource(streamInfo.url.toString()));
         if (mounted) {
           setState(() { _isPlaying = true; _isLoadingMedia = false; });
@@ -191,19 +202,62 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
       if (mounted) {
         setState(() => _isLoadingMedia = false);
         _uiUpdater.value++;
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Error al procesar el archivo multimedia.')));
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Error al procesar el archivo.')));
       }
     }
   }
 
+  // --- CONTROLES MEJORADOS ---
+
+  // Play/Pausa instantáneo (Optimistic UI)
   void _togglePlayPause() {
+    // 1. Cambiamos el estado visual de inmediato sin esperar a la red
+    setState(() => _isPlaying = !_isPlaying);
+    _uiUpdater.value++; 
+
+    // 2. Mandamos la orden real al motor
     if (_globalVideoMode && _videoController != null) {
-      _isPlaying ? _videoController!.pause() : _videoController!.play();
+      _isPlaying ? _videoController!.play() : _videoController!.pause();
     } else {
-      _isPlaying ? _audioPlayer.pause() : _audioPlayer.resume();
-      setState(() => _isPlaying = !_isPlaying);
+      _isPlaying ? _audioPlayer.resume() : _audioPlayer.pause();
     }
-    _uiUpdater.value++; // Refrescar botón de play/pausa al instante
+  }
+
+  // Adelantar / Retrasar 10 segundos
+  void _seekRelative(int seconds) {
+    if (_duration == Duration.zero) return;
+    
+    Duration newPosition = _position + Duration(seconds: seconds);
+    
+    // Límites para no salirnos del rango
+    if (newPosition < Duration.zero) newPosition = Duration.zero;
+    if (newPosition > _duration) newPosition = _duration;
+
+    // Actualizamos visualmente al instante
+    setState(() => _position = newPosition);
+    _uiUpdater.value++;
+
+    if (_globalVideoMode && _videoController != null) {
+      _videoController!.seekTo(newPosition);
+    } else {
+      _audioPlayer.seek(newPosition);
+    }
+  }
+
+  // Activar/Desactivar Repetición
+  void _toggleRepeat() {
+    setState(() => _isRepeating = !_isRepeating);
+    
+    if (_globalVideoMode && _videoController != null) {
+      _videoController!.setLooping(_isRepeating);
+    } else {
+      _audioPlayer.setReleaseMode(_isRepeating ? ReleaseMode.loop : ReleaseMode.release);
+    }
+    
+    _uiUpdater.value++;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(_isRepeating ? 'Repetir activado 🔁' : 'Repetir desactivado'), duration: const Duration(seconds: 1))
+    );
   }
 
   String _formatDuration(Duration d) {
@@ -212,6 +266,8 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
     return '$minutes:$seconds';
   }
 
+  // --- MENÚS EMERGENTES ---
+  
   void _showVideoOptions(BuildContext context, Video video) {
     showModalBottomSheet(
       context: context,
@@ -228,6 +284,38 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
             ListTile(leading: const Icon(Icons.favorite_border), title: const Text('Agregar a Favoritos'), onTap: () { Navigator.pop(context); }),
             ListTile(leading: const Icon(Icons.download), title: const Text('Descargar'), onTap: () { Navigator.pop(context); }),
             ListTile(leading: const Icon(Icons.share), title: const Text('Compartir'), onTap: () { Navigator.pop(context); }),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // El menú que se abre con el engrane
+  void _showSettingsMenu(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF1E1E1E),
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const ListTile(
+              title: Text("Configuración de Reproducción", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.purpleAccent)),
+              trailing: Icon(Icons.settings, color: Colors.purpleAccent),
+            ),
+            const Divider(),
+            ListTile(
+              leading: const Icon(Icons.high_quality), 
+              title: const Text('Calidad de Video'),
+              trailing: const Text('Automático >', style: TextStyle(color: Colors.grey)),
+              onTap: () { Navigator.pop(context); },
+            ),
+            ListTile(
+              leading: const Icon(Icons.speed), 
+              title: const Text('Velocidad de Reproducción'),
+              trailing: const Text('Normal (1x) >', style: TextStyle(color: Colors.grey)),
+              onTap: () { Navigator.pop(context); },
+            ),
           ],
         ),
       ),
@@ -397,112 +485,151 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
       isScrollControlled: true,
       backgroundColor: const Color(0xFF181818),
       builder: (context) {
-        // --- USAMOS EL COMUNICADOR EN VIVO AQUÍ ---
-        return ValueListenableBuilder<int>(
-          valueListenable: _uiUpdater,
-          builder: (context, value, child) {
-            return Container(
-              height: MediaQuery.of(context).size.height * 0.90, 
-              padding: const EdgeInsets.only(top: 40, left: 20, right: 20, bottom: 20),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        return StreamBuilder<Duration>(
+          stream: Stream.periodic(const Duration(milliseconds: 500), (_) => _position),
+          builder: (context, snapshot) {
+            return ValueListenableBuilder<int>(
+              valueListenable: _uiUpdater,
+              builder: (context, value, child) {
+                return Container(
+                  height: MediaQuery.of(context).size.height * 0.90, 
+                  padding: const EdgeInsets.only(top: 40, left: 20, right: 20, bottom: 20),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
-                      IconButton(icon: const Icon(Icons.keyboard_arrow_down, size: 32), onPressed: () => Navigator.pop(context)),
-                      const Text("Reproduciendo Ahora", style: TextStyle(fontSize: 14, color: Colors.grey)),
-                      IconButton(
-                        icon: const Icon(Icons.settings), 
-                        onPressed: () {
-                          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Selector de Calidad / Velocidad')));
-                        }
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 15),
-                  
-                  // --- ÁREA DE VIDEO / PORTADA ---
-                  Container(
-                    height: 250,
-                    width: double.infinity,
-                    decoration: BoxDecoration(color: Colors.black, borderRadius: BorderRadius.circular(16)),
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(16),
-                      child: _isLoadingMedia 
-                          ? Stack(
-                              alignment: Alignment.center,
-                              children: [
-                                Image.network(_currentMedia!.thumbnails.highResUrl, fit: BoxFit.cover, width: double.infinity, color: Colors.black45, colorBlendMode: BlendMode.darken),
-                                const CircularProgressIndicator(color: Colors.purpleAccent),
-                              ],
-                            )
-                          : (_globalVideoMode && _videoController != null && _videoController!.value.isInitialized
-                              ? Center(child: AspectRatio(aspectRatio: _videoController!.value.aspectRatio, child: VideoPlayer(_videoController!)))
-                              : Image.network(_currentMedia!.thumbnails.highResUrl, fit: BoxFit.cover)),
-                    ),
-                  ),
-                  const SizedBox(height: 20),
-                  
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(_currentMedia!.title, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-                            const SizedBox(height: 4),
-                            Text(_currentMedia!.author, style: const TextStyle(color: Colors.grey, fontSize: 16)),
-                          ],
-                        ),
-                      ),
-                      IconButton(icon: const Icon(Icons.thumb_up_alt_outlined), onPressed: () {}),
-                    ],
-                  ),
-                  const Spacer(),
-                  
-                  // --- BARRA DE PROGRESO Y TIEMPO (AHORA FLUIDA) ---
-                  Column(
-                    children: [
-                      LinearProgressIndicator(
-                        value: _duration.inSeconds > 0 ? (_position.inSeconds / _duration.inSeconds).clamp(0.0, 1.0) : 0.0, 
-                        backgroundColor: Colors.grey[800], 
-                        color: Colors.purpleAccent
-                      ),
-                      const SizedBox(height: 8),
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          Text(_formatDuration(_position), style: const TextStyle(fontSize: 12, color: Colors.grey)),
-                          Text(_formatDuration(_duration), style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                          IconButton(icon: const Icon(Icons.keyboard_arrow_down, size: 32), onPressed: () => Navigator.pop(context)),
+                          const Text("Reproduciendo Ahora", style: TextStyle(fontSize: 14, color: Colors.grey)),
+                          IconButton(
+                            icon: const Icon(Icons.settings), 
+                            onPressed: () => _showSettingsMenu(context), // <--- ENGRANE ACTIVADO
+                          ),
                         ],
                       ),
-                    ],
-                  ),
-                  
-                  const SizedBox(height: 20),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                    children: [
-                      IconButton(icon: const Icon(Icons.shuffle, size: 28), onPressed: () {}),
-                      IconButton(icon: const Icon(Icons.skip_previous, size: 36), onPressed: () {}),
-                      CircleAvatar(
-                        radius: 35,
-                        backgroundColor: Colors.purpleAccent,
-                        child: _isLoadingMedia 
-                          ? const CircularProgressIndicator(color: Colors.white)
-                          : IconButton(
-                              icon: Icon(_isPlaying ? Icons.pause : Icons.play_arrow, color: Colors.white, size: 35),
-                              onPressed: () => _togglePlayPause(),
-                            ),
+                      const SizedBox(height: 15),
+                      
+                      Container(
+                        height: 250,
+                        width: double.infinity,
+                        decoration: BoxDecoration(color: Colors.black, borderRadius: BorderRadius.circular(16)),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(16),
+                          child: _isLoadingMedia 
+                              ? Stack(
+                                  alignment: Alignment.center,
+                                  children: [
+                                    Image.network(_currentMedia!.thumbnails.highResUrl, fit: BoxFit.cover, width: double.infinity, color: Colors.black45, colorBlendMode: BlendMode.darken),
+                                    const CircularProgressIndicator(color: Colors.purpleAccent),
+                                  ],
+                                )
+                              : (_globalVideoMode && _videoController != null && _videoController!.value.isInitialized
+                                  ? Center(child: AspectRatio(aspectRatio: _videoController!.value.aspectRatio, child: VideoPlayer(_videoController!)))
+                                  : Image.network(_currentMedia!.thumbnails.highResUrl, fit: BoxFit.cover)),
+                        ),
                       ),
-                      IconButton(icon: const Icon(Icons.skip_next, size: 36), onPressed: () {}),
-                      IconButton(icon: const Icon(Icons.repeat, size: 28), onPressed: () {}),
+                      const SizedBox(height: 20),
+                      
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(_currentMedia!.title, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+                                const SizedBox(height: 4),
+                                Text(_currentMedia!.author, style: const TextStyle(color: Colors.grey, fontSize: 16)),
+                              ],
+                            ),
+                          ),
+                          IconButton(icon: const Icon(Icons.thumb_up_alt_outlined), onPressed: () {}),
+                        ],
+                      ),
+                      const Spacer(),
+                      
+                      Column(
+                        children: [
+                          // El Slider permite ahora arrastrar la barrita
+                          SliderTheme(
+                            data: SliderThemeData(
+                              trackHeight: 4,
+                              thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
+                              overlayShape: const RoundSliderOverlayShape(overlayRadius: 14),
+                              activeTrackColor: Colors.purpleAccent,
+                              inactiveTrackColor: Colors.grey[800],
+                              thumbColor: Colors.purpleAccent,
+                            ),
+                            child: Slider(
+                              value: _duration.inSeconds > 0 ? _position.inSeconds.toDouble() : 0.0,
+                              min: 0.0,
+                              max: _duration.inSeconds > 0 ? _duration.inSeconds.toDouble() : 1.0,
+                              onChanged: (val) {
+                                final newPosition = Duration(seconds: val.toInt());
+                                setState(() => _position = newPosition);
+                                if (_globalVideoMode && _videoController != null) {
+                                  _videoController!.seekTo(newPosition);
+                                } else {
+                                  _audioPlayer.seek(newPosition);
+                                }
+                              },
+                            ),
+                          ),
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 16),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text(_formatDuration(_position), style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                                Text(_formatDuration(_duration), style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                      
+                      const SizedBox(height: 10),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                        children: [
+                          // Botón de Shuffle (Solo informativo por ahora)
+                          IconButton(
+                            icon: const Icon(Icons.shuffle, size: 28), 
+                            color: Colors.grey,
+                            onPressed: () {
+                              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Modo Aleatorio: Requiere una lista de reproducción'), duration: Duration(seconds: 1)));
+                            }
+                          ),
+                          // Botón Retrasar 10s
+                          IconButton(icon: const Icon(Icons.replay_10, size: 36), onPressed: () => _seekRelative(-10)),
+                          
+                          CircleAvatar(
+                            radius: 35,
+                            backgroundColor: Colors.purpleAccent,
+                            child: _isLoadingMedia 
+                              ? const CircularProgressIndicator(color: Colors.white)
+                              : IconButton(
+                                  icon: Icon(_isPlaying ? Icons.pause : Icons.play_arrow, color: Colors.white, size: 35),
+                                  onPressed: () => _togglePlayPause(),
+                                ),
+                          ),
+                          
+                          // Botón Adelantar 10s
+                          IconButton(icon: const Icon(Icons.forward_10, size: 36), onPressed: () => _seekRelative(10)),
+                          
+                          // Botón Repetir (Bucle)
+                          IconButton(
+                            icon: Icon(Icons.repeat, size: 28), 
+                            color: _isRepeating ? Colors.purpleAccent : Colors.grey,
+                            onPressed: () => _toggleRepeat(),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
                     ],
                   ),
-                  const SizedBox(height: 10),
-                ],
-              ),
+                );
+              }
             );
           }
         );
