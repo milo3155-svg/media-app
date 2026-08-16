@@ -51,7 +51,8 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
   final AudioPlayer _audioPlayer = AudioPlayer();
   VideoPlayerController? _videoController;
   
-  bool _isVideoMode = false; // Controla si usamos el motor de video o de audio
+  // --- CONFIGURACIÓN GLOBAL (Controlado desde el Drawer) ---
+  bool _globalVideoMode = true; 
   
   List<Video> _searchResults = [];
   bool _isLoadingSearch = false;
@@ -91,7 +92,6 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
     super.dispose();
   }
 
-  // Un canal universal para la barra de progreso (funciona para audio y video)
   Stream<Duration> get _progressStream async* {
     while (true) {
       await Future.delayed(const Duration(milliseconds: 500));
@@ -140,7 +140,6 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
     });
 
     try {
-      // 1. Limpiamos cualquier motor que estuviera sonando
       await _audioPlayer.stop(); 
       if (_videoController != null) {
         await _videoController!.dispose();
@@ -149,7 +148,7 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
 
       var manifest = await _yt.videos.streamsClient.getManifest(video.id);
 
-      if (_isVideoMode) {
+      if (_globalVideoMode) {
         // --- MODO VIDEO ---
         var streamInfo = manifest.muxed.withHighestBitrate();
         _videoController = VideoPlayerController.networkUrl(Uri.parse(streamInfo.url.toString()));
@@ -167,19 +166,20 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
         
         await _videoController!.play();
       } else {
-        // --- MODO SOLO AUDIO ---
-        var streamInfo = manifest.audioOnly.withHighestBitrate();
+        // --- MODO SOLO AUDIO BLINDADO ---
+        // Volvemos a usar "muxed.first" para engañar a Android y que no tire el error "al extraer formato"
+        var streamInfo = manifest.muxed.isNotEmpty ? manifest.muxed.first : manifest.audioOnly.first;
         await _audioPlayer.play(UrlSource(streamInfo.url.toString()));
         if (mounted) setState(() => _isPlaying = true);
       }
       
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Error al extraer este formato.')));
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Error al procesar el archivo multimedia.')));
     }
   }
 
   void _togglePlayPause() {
-    if (_isVideoMode && _videoController != null) {
+    if (_globalVideoMode && _videoController != null) {
       _isPlaying ? _videoController!.pause() : _videoController!.play();
     } else {
       _isPlaying ? _audioPlayer.pause() : _audioPlayer.resume();
@@ -191,6 +191,29 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
     final minutes = d.inMinutes;
     final seconds = d.inSeconds.remainder(60).toString().padLeft(2, '0');
     return '$minutes:$seconds';
+  }
+
+  // --- MENÚ INFERIOR DE 3 PUNTITOS PARA LAS LISTAS ---
+  void _showVideoOptions(BuildContext context, Video video) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF1E1E1E),
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: ClipRRect(borderRadius: BorderRadius.circular(4), child: Image.network(video.thumbnails.lowResUrl, width: 50, height: 40, fit: BoxFit.cover)),
+              title: Text(video.title, maxLines: 1, overflow: TextOverflow.ellipsis),
+            ),
+            const Divider(),
+            ListTile(leading: const Icon(Icons.favorite_border), title: const Text('Agregar a Favoritos'), onTap: () { Navigator.pop(context); }),
+            ListTile(leading: const Icon(Icons.download), title: const Text('Descargar'), onTap: () { Navigator.pop(context); }),
+            ListTile(leading: const Icon(Icons.share), title: const Text('Compartir'), onTap: () { Navigator.pop(context); }),
+          ],
+        ),
+      ),
+    );
   }
 
   @override
@@ -207,7 +230,23 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
               decoration: BoxDecoration(color: Colors.purpleAccent.withOpacity(0.3)),
               currentAccountPicture: const CircleAvatar(backgroundColor: Colors.black26, child: Icon(Icons.sports_soccer, size: 35, color: Colors.white)),
             ),
+            
+            // --- NUEVO: TOGGLE DE AUDIO/VIDEO EN EL MENÚ ---
+            SwitchListTile(
+              title: const Text("Modo Video", style: TextStyle(fontWeight: FontWeight.bold)),
+              subtitle: Text(_globalVideoMode ? "Reproduciendo video y audio" : "Ahorro de datos (Solo Audio)", style: const TextStyle(fontSize: 12, color: Colors.grey)),
+              secondary: Icon(_globalVideoMode ? Icons.videocam : Icons.audiotrack, color: Colors.purpleAccent),
+              activeColor: Colors.purpleAccent,
+              value: _globalVideoMode,
+              onChanged: (val) {
+                setState(() => _globalVideoMode = val);
+                Navigator.pop(context);
+                ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(val ? 'Modo de Reproducción: Video' : 'Modo de Reproducción: Solo Audio')));
+              },
+            ),
+            const Divider(color: Colors.grey),
             ListTile(leading: const Icon(Icons.favorite, color: Colors.redAccent), title: const Text("Favoritos"), onTap: () => Navigator.pop(context)),
+            ListTile(leading: const Icon(Icons.download, color: Colors.blueAccent), title: const Text("Gestor de Descargas"), onTap: () => Navigator.pop(context)),
           ],
         ),
       ),
@@ -271,8 +310,12 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
                                     leading: ClipRRect(borderRadius: BorderRadius.circular(8), child: Image.network(video.thumbnails.lowResUrl, width: 80, height: 60, fit: BoxFit.cover)),
                                     title: Text(video.title, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 14)),
                                     subtitle: Text(video.author, style: const TextStyle(fontSize: 12, color: Colors.grey)),
-                                    trailing: const Icon(Icons.play_arrow, color: Colors.purpleAccent),
                                     onTap: () => _playMedia(video),
+                                    // --- RESTAURADOS LOS 3 PUNTITOS EN CADA RESULTADO ---
+                                    trailing: IconButton(
+                                      icon: const Icon(Icons.more_vert, color: Colors.grey),
+                                      onPressed: () => _showVideoOptions(context, video),
+                                    ),
                                   );
                                 },
                               ),
@@ -345,33 +388,13 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     IconButton(icon: const Icon(Icons.keyboard_arrow_down, size: 32), onPressed: () => Navigator.pop(context)),
-                    const Text("Reproductor Inmersivo", style: TextStyle(fontSize: 14, color: Colors.grey)),
-                    IconButton(icon: const Icon(Icons.more_vert), onPressed: () {}),
-                  ],
-                ),
-                
-                // --- BOTONES PARA CAMBIAR ENTRE AUDIO Y VIDEO ---
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    ChoiceChip(
-                      label: const Text("🎵 Solo Audio"),
-                      selected: !_isVideoMode,
-                      onSelected: (val) {
-                        setState(() => _isVideoMode = false);
-                        setModalState(() {});
-                        _playMedia(_currentMedia!);
-                      },
-                    ),
-                    const SizedBox(width: 10),
-                    ChoiceChip(
-                      label: const Text("🎬 Video"),
-                      selected: _isVideoMode,
-                      onSelected: (val) {
-                        setState(() => _isVideoMode = true);
-                        setModalState(() {});
-                        _playMedia(_currentMedia!);
-                      },
+                    const Text("Reproduciendo Ahora", style: TextStyle(fontSize: 14, color: Colors.grey)),
+                    // --- RESTAURADO EL ÍCONO DE CALIDADES EN EL REPRODUCTOR ---
+                    IconButton(
+                      icon: const Icon(Icons.settings), 
+                      onPressed: () {
+                        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Selector de Calidad / Velocidad')));
+                      }
                     ),
                   ],
                 ),
@@ -384,7 +407,7 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
                   decoration: BoxDecoration(color: Colors.black, borderRadius: BorderRadius.circular(16)),
                   child: ClipRRect(
                     borderRadius: BorderRadius.circular(16),
-                    child: _isVideoMode && _videoController != null && _videoController!.value.isInitialized
+                    child: _globalVideoMode && _videoController != null && _videoController!.value.isInitialized
                         ? Center(child: AspectRatio(aspectRatio: _videoController!.value.aspectRatio, child: VideoPlayer(_videoController!)))
                         : Image.network(_currentMedia!.thumbnails.highResUrl, fit: BoxFit.cover),
                   ),
@@ -483,8 +506,12 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
                     leading: ClipRRect(borderRadius: BorderRadius.circular(4), child: Image.network(video.thumbnails.lowResUrl, width: 60, height: 45, fit: BoxFit.cover)),
                     title: Text(video.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 14)),
                     subtitle: Text(video.author, style: const TextStyle(fontSize: 12, color: Colors.grey)),
-                    trailing: Text("#${index + 1}", style: const TextStyle(color: Colors.purpleAccent, fontWeight: FontWeight.bold)),
                     onTap: () => _playMedia(video),
+                    // --- RESTAURADOS LOS 3 PUNTITOS EN LA LISTA TOP ---
+                    trailing: IconButton(
+                      icon: const Icon(Icons.more_vert, color: Colors.grey),
+                      onPressed: () => _showVideoOptions(context, video),
+                    ),
                   );
                 },
               ),
