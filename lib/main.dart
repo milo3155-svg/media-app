@@ -5,7 +5,7 @@ import 'package:video_player/video_player.dart';
 import 'package:audio_service/audio_service.dart';
 
 // ==========================================
-// 1. EL CEREBRO DEL SEGUNDO PLANO (LOCK SCREEN)
+// 1. EL CEREBRO DEL SEGUNDO PLANO
 // ==========================================
 class SimpleAudioHandler extends BaseAudioHandler {
   Function()? onPlayCommand;
@@ -30,23 +30,12 @@ class SimpleAudioHandler extends BaseAudioHandler {
   Future<void> fastForward() async => onFastForwardCommand?.call();
 }
 
-// Variable global para que la app se comunique con la pantalla de bloqueo
-late SimpleAudioHandler globalAudioHandler;
+// Ahora es "nullable" (?) para que la app no dependa 100% de él para arrancar
+SimpleAudioHandler? globalAudioHandler;
 
-void main() async {
+void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  
-  // 2. INICIALIZAMOS EL SERVICIO ANTES DE ARRANCAR LA APP
-  globalAudioHandler = await AudioService.init(
-    builder: () => SimpleAudioHandler(),
-    config: const AudioServiceConfig(
-      androidNotificationChannelId: 'com.milo.media_app.channel.audio',
-      androidNotificationChannelName: 'Reproductor Multimedia',
-      androidNotificationOngoing: true,
-      androidStopForegroundOnPause: true, // Permite deslizar la notificación para cerrarla
-    ),
-  );
-  
+  // Arrancamos la interfaz INMEDIATAMENTE para evitar la pantalla negra
   runApp(const MediaApp());
 }
 
@@ -112,27 +101,14 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
     super.initState();
     _tabController = TabController(length: 4, vsync: this);
     
-    // 3. CONECTAMOS LOS BOTONES DE LA PANTALLA DE BLOQUEO A NUESTRA APP
-    globalAudioHandler.onPlayCommand = _togglePlayPause;
-    globalAudioHandler.onPauseCommand = _togglePlayPause;
-    globalAudioHandler.onRewindCommand = () => _seekRelative(-10);
-    globalAudioHandler.onFastForwardCommand = () => _seekRelative(10);
-    globalAudioHandler.onSeekCommand = (pos) {
-      setState(() => _position = pos);
-      if (_globalVideoMode && _videoController != null) {
-        _videoController!.seekTo(pos);
-      } else {
-        _audioPlayer.seek(pos);
-      }
-      _syncSystemState();
-      _uiUpdater.value++;
-    };
+    // Lanzamos la configuración de segundo plano de forma silenciosa
+    _initBackgroundService();
     
     // Sensores de Audio
     _audioPlayer.onDurationChanged.listen((d) { 
       if (mounted) { 
         setState(() => _duration = d); 
-        _syncSystemState(); // Avisa a la pantalla de bloqueo cuánto dura
+        _syncSystemState(); 
         _uiUpdater.value++; 
       } 
     });
@@ -152,6 +128,40 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
     _loadTopContent("Global");
   }
 
+  // 2. INICIALIZACIÓN SILENCIOSA DEL SERVICIO
+  Future<void> _initBackgroundService() async {
+    try {
+      globalAudioHandler = await AudioService.init(
+        builder: () => SimpleAudioHandler(),
+        config: const AudioServiceConfig(
+          androidNotificationChannelId: 'com.milo.media_app.channel.audio',
+          androidNotificationChannelName: 'Reproductor Multimedia',
+          androidNotificationOngoing: true,
+          androidStopForegroundOnPause: true,
+        ),
+      );
+      
+      // Conectamos los botones de la notificación a la app
+      globalAudioHandler?.onPlayCommand = _togglePlayPause;
+      globalAudioHandler?.onPauseCommand = _togglePlayPause;
+      globalAudioHandler?.onRewindCommand = () => _seekRelative(-10);
+      globalAudioHandler?.onFastForwardCommand = () => _seekRelative(10);
+      globalAudioHandler?.onSeekCommand = (pos) {
+        setState(() => _position = pos);
+        if (_globalVideoMode && _videoController != null) {
+          _videoController!.seekTo(pos);
+        } else {
+          _audioPlayer.seek(pos);
+        }
+        _syncSystemState();
+        _uiUpdater.value++;
+      };
+    } catch (e) {
+      // Si Android bloquea el servicio, la app lo ignora y sigue funcionando
+      debugPrint("Error al iniciar el servicio de audio en segundo plano: $e");
+    }
+  }
+
   @override
   void dispose() {
     _tabController.dispose();
@@ -163,12 +173,11 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
     super.dispose();
   }
 
-  // 4. ESTA FUNCIÓN DIBUJA LA NOTIFICACIÓN EN LA PANTALLA DE BLOQUEO
+  // 3. SINCRONIZA LA APP CON LA PANTALLA DE BLOQUEO (Solo si el servicio logró iniciar)
   void _syncSystemState() {
-    if (_currentMedia == null) return;
+    if (_currentMedia == null || globalAudioHandler == null) return;
     
-    // Muestra Título, Autor e Imagen en la notificación
-    globalAudioHandler.mediaItem.add(MediaItem(
+    globalAudioHandler!.mediaItem.add(MediaItem(
       id: _currentMedia!.id.value,
       title: _currentMedia!.title,
       artist: _currentMedia!.author,
@@ -176,8 +185,7 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
       duration: _duration,
     ));
 
-    // Muestra los botones de Play/Pausa/Adelantar
-    globalAudioHandler.playbackState.add(PlaybackState(
+    globalAudioHandler!.playbackState.add(PlaybackState(
       controls: [
         MediaControl.rewind,
         _isPlaying ? MediaControl.pause : MediaControl.play,
@@ -249,7 +257,7 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
         
         if (mounted) {
           setState(() { _isLoadingMedia = false; _isPlaying = true; });
-          _syncSystemState(); // Activamos la pantalla de bloqueo
+          _syncSystemState(); 
           _uiUpdater.value++; 
         }
         
@@ -257,7 +265,6 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
           if (mounted && _videoController != null) {
             setState(() {
               _position = _videoController!.value.position;
-              // Sincronizar solo si cambia drásticamente para no saturar
               if (_duration != _videoController!.value.duration) {
                 _duration = _videoController!.value.duration;
                 _syncSystemState();
@@ -275,7 +282,7 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
         
         if (mounted) {
           setState(() { _isPlaying = true; _isLoadingMedia = false; });
-          _syncSystemState(); // Activamos la pantalla de bloqueo
+          _syncSystemState(); 
           _uiUpdater.value++;
         }
       }
@@ -291,7 +298,7 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
 
   void _togglePlayPause() {
     setState(() => _isPlaying = !_isPlaying);
-    _syncSystemState(); // Actualiza el botón en la barra de notificaciones
+    _syncSystemState(); 
     _uiUpdater.value++; 
 
     if (_globalVideoMode && _videoController != null) {
@@ -309,7 +316,7 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
     if (newPosition > _duration) newPosition = _duration;
 
     setState(() => _position = newPosition);
-    _syncSystemState(); // Refresca la barra en la pantalla de bloqueo
+    _syncSystemState(); 
     _uiUpdater.value++;
 
     if (_globalVideoMode && _videoController != null) {
@@ -488,7 +495,7 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
                         icon: const Icon(Icons.close, color: Colors.grey),
                         onPressed: () {
                           _audioPlayer.stop(); _videoController?.dispose(); _videoController = null;
-                          globalAudioHandler.stop(); // Quita la notificación de la pantalla
+                          globalAudioHandler?.stop(); 
                           setState(() => _hasActiveMedia = false);
                         },
                       ),
