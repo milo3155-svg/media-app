@@ -2,9 +2,51 @@ import 'package:flutter/material.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:video_player/video_player.dart';
+import 'package:audio_service/audio_service.dart';
+
+// ==========================================
+// 1. EL CEREBRO DEL SEGUNDO PLANO (LOCK SCREEN)
+// ==========================================
+class SimpleAudioHandler extends BaseAudioHandler {
+  Function()? onPlayCommand;
+  Function()? onPauseCommand;
+  Function(Duration)? onSeekCommand;
+  Function()? onRewindCommand;
+  Function()? onFastForwardCommand;
+
+  @override
+  Future<void> play() async => onPlayCommand?.call();
+
+  @override
+  Future<void> pause() async => onPauseCommand?.call();
+
+  @override
+  Future<void> seek(Duration position) async => onSeekCommand?.call(position);
+
+  @override
+  Future<void> rewind() async => onRewindCommand?.call();
+
+  @override
+  Future<void> fastForward() async => onFastForwardCommand?.call();
+}
+
+// Variable global para que la app se comunique con la pantalla de bloqueo
+late SimpleAudioHandler globalAudioHandler;
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  
+  // 2. INICIALIZAMOS EL SERVICIO ANTES DE ARRANCAR LA APP
+  globalAudioHandler = await AudioService.init(
+    builder: () => SimpleAudioHandler(),
+    config: const AudioServiceConfig(
+      androidNotificationChannelId: 'com.milo.media_app.channel.audio',
+      androidNotificationChannelName: 'Reproductor Multimedia',
+      androidNotificationOngoing: true,
+      androidStopForegroundOnPause: true, // Permite deslizar la notificación para cerrarla
+    ),
+  );
+  
   runApp(const MediaApp());
 }
 
@@ -37,16 +79,13 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
   bool _isSearching = false;
   final TextEditingController _searchController = TextEditingController();
   
-  String _selectedFilter = "Todo";
-  final List<String> _filters = ["Todo", "Música", "Videos", "Deportes"];
-  
   String _selectedTopCategory = "Global";
   final List<String> _topCategories = ["Global", "México", "Virales", "Podcasts"];
 
   String _selectedTeam = "Pachuca";
   IconData _teamIcon = Icons.sports_soccer;
 
-  // --- MOTORES DE REPRODUCCIÓN ---
+  // Motores
   final YoutubeExplode _yt = YoutubeExplode();
   final AudioPlayer _audioPlayer = AudioPlayer();
   VideoPlayerController? _videoController;
@@ -54,10 +93,8 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
   final ValueNotifier<int> _uiUpdater = ValueNotifier(0);
   
   bool _globalVideoMode = true; 
-  
   List<Video> _searchResults = [];
   bool _isLoadingSearch = false;
-  
   List<Video> _topResults = [];
   bool _isLoadingTop = false;
 
@@ -65,8 +102,6 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
   bool _isPlaying = false;
   bool _isLoadingMedia = false; 
   bool _hasActiveMedia = false;
-  
-  // --- NUEVO: ESTADOS DE CONTROL ---
   bool _isRepeating = false;
   
   Duration _duration = Duration.zero;
@@ -77,18 +112,38 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
     super.initState();
     _tabController = TabController(length: 4, vsync: this);
     
+    // 3. CONECTAMOS LOS BOTONES DE LA PANTALLA DE BLOQUEO A NUESTRA APP
+    globalAudioHandler.onPlayCommand = _togglePlayPause;
+    globalAudioHandler.onPauseCommand = _togglePlayPause;
+    globalAudioHandler.onRewindCommand = () => _seekRelative(-10);
+    globalAudioHandler.onFastForwardCommand = () => _seekRelative(10);
+    globalAudioHandler.onSeekCommand = (pos) {
+      setState(() => _position = pos);
+      if (_globalVideoMode && _videoController != null) {
+        _videoController!.seekTo(pos);
+      } else {
+        _audioPlayer.seek(pos);
+      }
+      _syncSystemState();
+      _uiUpdater.value++;
+    };
+    
     // Sensores de Audio
     _audioPlayer.onDurationChanged.listen((d) { 
-      if (mounted) { setState(() => _duration = d); _uiUpdater.value++; } 
+      if (mounted) { 
+        setState(() => _duration = d); 
+        _syncSystemState(); // Avisa a la pantalla de bloqueo cuánto dura
+        _uiUpdater.value++; 
+      } 
     });
     _audioPlayer.onPositionChanged.listen((p) { 
       if (mounted) { setState(() => _position = p); _uiUpdater.value++; } 
     });
     _audioPlayer.onPlayerComplete.listen((event) {
       if (mounted) { 
-        // Si no está en repetición, apaga el play
         if (!_isRepeating) {
           setState(() { _isPlaying = false; _position = Duration.zero; }); 
+          _syncSystemState();
         }
         _uiUpdater.value++; 
       }
@@ -106,6 +161,32 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
     _videoController?.dispose();
     _uiUpdater.dispose();
     super.dispose();
+  }
+
+  // 4. ESTA FUNCIÓN DIBUJA LA NOTIFICACIÓN EN LA PANTALLA DE BLOQUEO
+  void _syncSystemState() {
+    if (_currentMedia == null) return;
+    
+    // Muestra Título, Autor e Imagen en la notificación
+    globalAudioHandler.mediaItem.add(MediaItem(
+      id: _currentMedia!.id.value,
+      title: _currentMedia!.title,
+      artist: _currentMedia!.author,
+      artUri: Uri.parse(_currentMedia!.thumbnails.highResUrl),
+      duration: _duration,
+    ));
+
+    // Muestra los botones de Play/Pausa/Adelantar
+    globalAudioHandler.playbackState.add(PlaybackState(
+      controls: [
+        MediaControl.rewind,
+        _isPlaying ? MediaControl.pause : MediaControl.play,
+        MediaControl.fastForward,
+      ],
+      systemActions: const { MediaAction.seek, MediaAction.seekForward, MediaAction.seekBackward },
+      playing: _isPlaying,
+      updatePosition: _position,
+    ));
   }
 
   Future<void> _loadTopContent(String category) async {
@@ -164,12 +245,11 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
         _videoController = VideoPlayerController.networkUrl(Uri.parse(streamInfo.url.toString()));
         
         await _videoController!.initialize();
-        
-        // Aplicamos el bucle si está activo
         _videoController!.setLooping(_isRepeating);
         
         if (mounted) {
-          setState(() { _isLoadingMedia = false; });
+          setState(() { _isLoadingMedia = false; _isPlaying = true; });
+          _syncSystemState(); // Activamos la pantalla de bloqueo
           _uiUpdater.value++; 
         }
         
@@ -177,8 +257,11 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
           if (mounted && _videoController != null) {
             setState(() {
               _position = _videoController!.value.position;
-              _duration = _videoController!.value.duration;
-              _isPlaying = _videoController!.value.isPlaying;
+              // Sincronizar solo si cambia drásticamente para no saturar
+              if (_duration != _videoController!.value.duration) {
+                _duration = _videoController!.value.duration;
+                _syncSystemState();
+              }
             });
             _uiUpdater.value++; 
           }
@@ -187,13 +270,12 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
         await _videoController!.play();
       } else {
         var streamInfo = manifest.muxed.isNotEmpty ? manifest.muxed.first : manifest.audioOnly.first;
-        
-        // Aplicamos el bucle en audio si está activo
         await _audioPlayer.setReleaseMode(_isRepeating ? ReleaseMode.loop : ReleaseMode.release);
-        
         await _audioPlayer.play(UrlSource(streamInfo.url.toString()));
+        
         if (mounted) {
           setState(() { _isPlaying = true; _isLoadingMedia = false; });
+          _syncSystemState(); // Activamos la pantalla de bloqueo
           _uiUpdater.value++;
         }
       }
@@ -207,15 +289,11 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
     }
   }
 
-  // --- CONTROLES MEJORADOS ---
-
-  // Play/Pausa instantáneo (Optimistic UI)
   void _togglePlayPause() {
-    // 1. Cambiamos el estado visual de inmediato sin esperar a la red
     setState(() => _isPlaying = !_isPlaying);
+    _syncSystemState(); // Actualiza el botón en la barra de notificaciones
     _uiUpdater.value++; 
 
-    // 2. Mandamos la orden real al motor
     if (_globalVideoMode && _videoController != null) {
       _isPlaying ? _videoController!.play() : _videoController!.pause();
     } else {
@@ -223,18 +301,15 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
     }
   }
 
-  // Adelantar / Retrasar 10 segundos
   void _seekRelative(int seconds) {
     if (_duration == Duration.zero) return;
     
     Duration newPosition = _position + Duration(seconds: seconds);
-    
-    // Límites para no salirnos del rango
     if (newPosition < Duration.zero) newPosition = Duration.zero;
     if (newPosition > _duration) newPosition = _duration;
 
-    // Actualizamos visualmente al instante
     setState(() => _position = newPosition);
+    _syncSystemState(); // Refresca la barra en la pantalla de bloqueo
     _uiUpdater.value++;
 
     if (_globalVideoMode && _videoController != null) {
@@ -244,20 +319,15 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
     }
   }
 
-  // Activar/Desactivar Repetición
   void _toggleRepeat() {
     setState(() => _isRepeating = !_isRepeating);
-    
     if (_globalVideoMode && _videoController != null) {
       _videoController!.setLooping(_isRepeating);
     } else {
       _audioPlayer.setReleaseMode(_isRepeating ? ReleaseMode.loop : ReleaseMode.release);
     }
-    
     _uiUpdater.value++;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(_isRepeating ? 'Repetir activado 🔁' : 'Repetir desactivado'), duration: const Duration(seconds: 1))
-    );
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(_isRepeating ? 'Repetir activado 🔁' : 'Repetir desactivado'), duration: const Duration(seconds: 1)));
   }
 
   String _formatDuration(Duration d) {
@@ -266,8 +336,7 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
     return '$minutes:$seconds';
   }
 
-  // --- MENÚS EMERGENTES ---
-  
+  // --- MENÚS ---
   void _showVideoOptions(BuildContext context, Video video) {
     showModalBottomSheet(
       context: context,
@@ -276,21 +345,16 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            ListTile(
-              leading: ClipRRect(borderRadius: BorderRadius.circular(4), child: Image.network(video.thumbnails.lowResUrl, width: 50, height: 40, fit: BoxFit.cover)),
-              title: Text(video.title, maxLines: 1, overflow: TextOverflow.ellipsis),
-            ),
+            ListTile(leading: ClipRRect(borderRadius: BorderRadius.circular(4), child: Image.network(video.thumbnails.lowResUrl, width: 50, height: 40, fit: BoxFit.cover)), title: Text(video.title, maxLines: 1, overflow: TextOverflow.ellipsis)),
             const Divider(),
-            ListTile(leading: const Icon(Icons.favorite_border), title: const Text('Agregar a Favoritos'), onTap: () { Navigator.pop(context); }),
-            ListTile(leading: const Icon(Icons.download), title: const Text('Descargar'), onTap: () { Navigator.pop(context); }),
-            ListTile(leading: const Icon(Icons.share), title: const Text('Compartir'), onTap: () { Navigator.pop(context); }),
+            ListTile(leading: const Icon(Icons.favorite_border), title: const Text('Agregar a Favoritos'), onTap: () => Navigator.pop(context)),
+            ListTile(leading: const Icon(Icons.download), title: const Text('Descargar'), onTap: () => Navigator.pop(context)),
           ],
         ),
       ),
     );
   }
 
-  // El menú que se abre con el engrane
   void _showSettingsMenu(BuildContext context) {
     showModalBottomSheet(
       context: context,
@@ -299,23 +363,9 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const ListTile(
-              title: Text("Configuración de Reproducción", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.purpleAccent)),
-              trailing: Icon(Icons.settings, color: Colors.purpleAccent),
-            ),
+            const ListTile(title: Text("Configuración", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.purpleAccent)), trailing: Icon(Icons.settings, color: Colors.purpleAccent)),
             const Divider(),
-            ListTile(
-              leading: const Icon(Icons.high_quality), 
-              title: const Text('Calidad de Video'),
-              trailing: const Text('Automático >', style: TextStyle(color: Colors.grey)),
-              onTap: () { Navigator.pop(context); },
-            ),
-            ListTile(
-              leading: const Icon(Icons.speed), 
-              title: const Text('Velocidad de Reproducción'),
-              trailing: const Text('Normal (1x) >', style: TextStyle(color: Colors.grey)),
-              onTap: () { Navigator.pop(context); },
-            ),
+            ListTile(leading: const Icon(Icons.high_quality), title: const Text('Calidad de Video'), trailing: const Text('Auto >', style: TextStyle(color: Colors.grey)), onTap: () => Navigator.pop(context)),
           ],
         ),
       ),
@@ -331,27 +381,23 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
           padding: EdgeInsets.zero,
           children: [
             UserAccountsDrawerHeader(
-              accountName: const Text("Usuario"),
-              accountEmail: Text("Equipo: $_selectedTeam"),
+              accountName: const Text("Usuario"), accountEmail: Text("Equipo: $_selectedTeam"),
               decoration: BoxDecoration(color: Colors.purpleAccent.withOpacity(0.3)),
               currentAccountPicture: const CircleAvatar(backgroundColor: Colors.black26, child: Icon(Icons.sports_soccer, size: 35, color: Colors.white)),
             ),
-            
             SwitchListTile(
               title: const Text("Modo Video", style: TextStyle(fontWeight: FontWeight.bold)),
-              subtitle: Text(_globalVideoMode ? "Reproduciendo video y audio" : "Ahorro de datos (Solo Audio)", style: const TextStyle(fontSize: 12, color: Colors.grey)),
+              subtitle: Text(_globalVideoMode ? "Reproduciendo video y audio" : "Solo Audio (Fondo)", style: const TextStyle(fontSize: 12, color: Colors.grey)),
               secondary: Icon(_globalVideoMode ? Icons.videocam : Icons.audiotrack, color: Colors.purpleAccent),
               activeColor: Colors.purpleAccent,
               value: _globalVideoMode,
               onChanged: (val) {
                 setState(() => _globalVideoMode = val);
                 Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(val ? 'Modo de Reproducción: Video' : 'Modo de Reproducción: Solo Audio')));
               },
             ),
             const Divider(color: Colors.grey),
             ListTile(leading: const Icon(Icons.favorite, color: Colors.redAccent), title: const Text("Favoritos"), onTap: () => Navigator.pop(context)),
-            ListTile(leading: const Icon(Icons.download, color: Colors.blueAccent), title: const Text("Gestor de Descargas"), onTap: () => Navigator.pop(context)),
           ],
         ),
       ),
@@ -360,20 +406,12 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
         actions: [
           IconButton(
             icon: Icon(_isSearching ? Icons.close : Icons.search),
-            onPressed: () => setState(() {
-              _isSearching = !_isSearching;
-              if (!_isSearching) _searchResults.clear();
-            }),
+            onPressed: () => setState(() { _isSearching = !_isSearching; if (!_isSearching) _searchResults.clear(); }),
           )
         ],
         bottom: TabBar(
           controller: _tabController,
-          tabs: const [
-            Tab(icon: Icon(Icons.home), text: "Inicio"),
-            Tab(icon: Icon(Icons.search), text: "Búsqueda"),
-            Tab(icon: Icon(Icons.trending_up), text: "Top"),
-            Tab(icon: Icon(Icons.sports_soccer), text: "Deportes"),
-          ],
+          tabs: const [ Tab(icon: Icon(Icons.home), text: "Inicio"), Tab(icon: Icon(Icons.search), text: "Búsqueda"), Tab(icon: Icon(Icons.trending_up), text: "Top"), Tab(icon: Icon(Icons.sports_soccer), text: "Deportes") ],
         ),
       ),
       body: Stack(
@@ -382,18 +420,10 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
             children: [
               if (_isSearching)
                 Container(
-                  padding: const EdgeInsets.all(12),
-                  color: const Color(0xFF1E1E1E),
+                  padding: const EdgeInsets.all(12), color: const Color(0xFF1E1E1E),
                   child: TextField(
-                    controller: _searchController,
-                    textInputAction: TextInputAction.search,
-                    decoration: InputDecoration(
-                      hintText: "Buscar música o videos...",
-                      border: const OutlineInputBorder(),
-                      isDense: true,
-                      prefixIcon: const Icon(Icons.search),
-                      suffixIcon: IconButton(icon: const Icon(Icons.send, color: Colors.purpleAccent), onPressed: () => _performRealSearch(_searchController.text)),
-                    ),
+                    controller: _searchController, textInputAction: TextInputAction.search,
+                    decoration: InputDecoration(hintText: "Buscar música o videos...", border: const OutlineInputBorder(), isDense: true, prefixIcon: const Icon(Icons.search), suffixIcon: IconButton(icon: const Icon(Icons.send, color: Colors.purpleAccent), onPressed: () => _performRealSearch(_searchController.text))),
                     onSubmitted: (value) => _performRealSearch(value),
                   ),
                 ),
@@ -416,10 +446,7 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
                                     title: Text(video.title, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 14)),
                                     subtitle: Text(video.author, style: const TextStyle(fontSize: 12, color: Colors.grey)),
                                     onTap: () => _playMedia(video),
-                                    trailing: IconButton(
-                                      icon: const Icon(Icons.more_vert, color: Colors.grey),
-                                      onPressed: () => _showVideoOptions(context, video),
-                                    ),
+                                    trailing: IconButton(icon: const Icon(Icons.more_vert, color: Colors.grey), onPressed: () => _showVideoOptions(context, video)),
                                   );
                                 },
                               ),
@@ -445,8 +472,7 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
                       const SizedBox(width: 12),
                       Expanded(
                         child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min,
                           children: [
                             Text(_currentMedia!.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
                             Text(_currentMedia!.author, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.grey, fontSize: 11)),
@@ -461,9 +487,8 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
                       IconButton(
                         icon: const Icon(Icons.close, color: Colors.grey),
                         onPressed: () {
-                          _audioPlayer.stop();
-                          _videoController?.dispose();
-                          _videoController = null;
+                          _audioPlayer.stop(); _videoController?.dispose(); _videoController = null;
+                          globalAudioHandler.stop(); // Quita la notificación de la pantalla
                           setState(() => _hasActiveMedia = false);
                         },
                       ),
@@ -481,9 +506,7 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
     if (_currentMedia == null) return;
     
     showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: const Color(0xFF181818),
+      context: context, isScrollControlled: true, backgroundColor: const Color(0xFF181818),
       builder: (context) {
         return StreamBuilder<Duration>(
           stream: Stream.periodic(const Duration(milliseconds: 500), (_) => _position),
@@ -502,28 +525,17 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
                         children: [
                           IconButton(icon: const Icon(Icons.keyboard_arrow_down, size: 32), onPressed: () => Navigator.pop(context)),
                           const Text("Reproduciendo Ahora", style: TextStyle(fontSize: 14, color: Colors.grey)),
-                          IconButton(
-                            icon: const Icon(Icons.settings), 
-                            onPressed: () => _showSettingsMenu(context), // <--- ENGRANE ACTIVADO
-                          ),
+                          IconButton(icon: const Icon(Icons.settings), onPressed: () => _showSettingsMenu(context)),
                         ],
                       ),
                       const SizedBox(height: 15),
                       
                       Container(
-                        height: 250,
-                        width: double.infinity,
-                        decoration: BoxDecoration(color: Colors.black, borderRadius: BorderRadius.circular(16)),
+                        height: 250, width: double.infinity, decoration: BoxDecoration(color: Colors.black, borderRadius: BorderRadius.circular(16)),
                         child: ClipRRect(
                           borderRadius: BorderRadius.circular(16),
                           child: _isLoadingMedia 
-                              ? Stack(
-                                  alignment: Alignment.center,
-                                  children: [
-                                    Image.network(_currentMedia!.thumbnails.highResUrl, fit: BoxFit.cover, width: double.infinity, color: Colors.black45, colorBlendMode: BlendMode.darken),
-                                    const CircularProgressIndicator(color: Colors.purpleAccent),
-                                  ],
-                                )
+                              ? Stack(alignment: Alignment.center, children: [ Image.network(_currentMedia!.thumbnails.highResUrl, fit: BoxFit.cover, width: double.infinity, color: Colors.black45, colorBlendMode: BlendMode.darken), const CircularProgressIndicator(color: Colors.purpleAccent) ])
                               : (_globalVideoMode && _videoController != null && _videoController!.value.isInitialized
                                   ? Center(child: AspectRatio(aspectRatio: _videoController!.value.aspectRatio, child: VideoPlayer(_videoController!)))
                                   : Image.network(_currentMedia!.thumbnails.highResUrl, fit: BoxFit.cover)),
@@ -536,11 +548,7 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
                           Expanded(
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(_currentMedia!.title, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-                                const SizedBox(height: 4),
-                                Text(_currentMedia!.author, style: const TextStyle(color: Colors.grey, fontSize: 16)),
-                              ],
+                              children: [ Text(_currentMedia!.title, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)), const SizedBox(height: 4), Text(_currentMedia!.author, style: const TextStyle(color: Colors.grey, fontSize: 16)) ],
                             ),
                           ),
                           IconButton(icon: const Icon(Icons.thumb_up_alt_outlined), onPressed: () {}),
@@ -550,40 +558,22 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
                       
                       Column(
                         children: [
-                          // El Slider permite ahora arrastrar la barrita
                           SliderTheme(
-                            data: SliderThemeData(
-                              trackHeight: 4,
-                              thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
-                              overlayShape: const RoundSliderOverlayShape(overlayRadius: 14),
-                              activeTrackColor: Colors.purpleAccent,
-                              inactiveTrackColor: Colors.grey[800],
-                              thumbColor: Colors.purpleAccent,
-                            ),
+                            data: SliderThemeData(trackHeight: 4, thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6), overlayShape: const RoundSliderOverlayShape(overlayRadius: 14), activeTrackColor: Colors.purpleAccent, inactiveTrackColor: Colors.grey[800], thumbColor: Colors.purpleAccent),
                             child: Slider(
                               value: _duration.inSeconds > 0 ? _position.inSeconds.toDouble() : 0.0,
-                              min: 0.0,
-                              max: _duration.inSeconds > 0 ? _duration.inSeconds.toDouble() : 1.0,
+                              min: 0.0, max: _duration.inSeconds > 0 ? _duration.inSeconds.toDouble() : 1.0,
                               onChanged: (val) {
-                                final newPosition = Duration(seconds: val.toInt());
-                                setState(() => _position = newPosition);
-                                if (_globalVideoMode && _videoController != null) {
-                                  _videoController!.seekTo(newPosition);
-                                } else {
-                                  _audioPlayer.seek(newPosition);
-                                }
+                                final newPos = Duration(seconds: val.toInt());
+                                setState(() => _position = newPos);
+                                if (_globalVideoMode && _videoController != null) { _videoController!.seekTo(newPos); } else { _audioPlayer.seek(newPos); }
+                                _syncSystemState();
                               },
                             ),
                           ),
                           Padding(
                             padding: const EdgeInsets.symmetric(horizontal: 16),
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Text(_formatDuration(_position), style: const TextStyle(fontSize: 12, color: Colors.grey)),
-                                Text(_formatDuration(_duration), style: const TextStyle(fontSize: 12, color: Colors.grey)),
-                              ],
-                            ),
+                            child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [ Text(_formatDuration(_position), style: const TextStyle(fontSize: 12, color: Colors.grey)), Text(_formatDuration(_duration), style: const TextStyle(fontSize: 12, color: Colors.grey)) ]),
                           ),
                         ],
                       ),
@@ -592,37 +582,11 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                         children: [
-                          // Botón de Shuffle (Solo informativo por ahora)
-                          IconButton(
-                            icon: const Icon(Icons.shuffle, size: 28), 
-                            color: Colors.grey,
-                            onPressed: () {
-                              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Modo Aleatorio: Requiere una lista de reproducción'), duration: Duration(seconds: 1)));
-                            }
-                          ),
-                          // Botón Retrasar 10s
+                          IconButton(icon: const Icon(Icons.shuffle, size: 28), color: Colors.grey, onPressed: () {}),
                           IconButton(icon: const Icon(Icons.replay_10, size: 36), onPressed: () => _seekRelative(-10)),
-                          
-                          CircleAvatar(
-                            radius: 35,
-                            backgroundColor: Colors.purpleAccent,
-                            child: _isLoadingMedia 
-                              ? const CircularProgressIndicator(color: Colors.white)
-                              : IconButton(
-                                  icon: Icon(_isPlaying ? Icons.pause : Icons.play_arrow, color: Colors.white, size: 35),
-                                  onPressed: () => _togglePlayPause(),
-                                ),
-                          ),
-                          
-                          // Botón Adelantar 10s
+                          CircleAvatar(radius: 35, backgroundColor: Colors.purpleAccent, child: _isLoadingMedia ? const CircularProgressIndicator(color: Colors.white) : IconButton(icon: Icon(_isPlaying ? Icons.pause : Icons.play_arrow, color: Colors.white, size: 35), onPressed: () => _togglePlayPause())),
                           IconButton(icon: const Icon(Icons.forward_10, size: 36), onPressed: () => _seekRelative(10)),
-                          
-                          // Botón Repetir (Bucle)
-                          IconButton(
-                            icon: Icon(Icons.repeat, size: 28), 
-                            color: _isRepeating ? Colors.purpleAccent : Colors.grey,
-                            onPressed: () => _toggleRepeat(),
-                          ),
+                          IconButton(icon: Icon(Icons.repeat, size: 28), color: _isRepeating ? Colors.purpleAccent : Colors.grey, onPressed: () => _toggleRepeat()),
                         ],
                       ),
                       const SizedBox(height: 10),
@@ -638,64 +602,14 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
   }
 
   Widget _buildTopMulticategoryView() {
-    return Column(
-      children: [
-        Container(
-          padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12), color: const Color(0xFF181818),
-          child: SizedBox(
-            height: 40,
-            child: ListView(
-              scrollDirection: Axis.horizontal,
-              children: _topCategories.map((cat) => Padding(
-                padding: const EdgeInsets.only(right: 8),
-                child: ChoiceChip(label: Text(cat), selected: _selectedTopCategory == cat, onSelected: (s) => _loadTopContent(cat)),
-              )).toList(),
-            ),
-          ),
-        ),
-        Expanded(
-          child: _isLoadingTop 
-            ? const Center(child: CircularProgressIndicator(color: Colors.purpleAccent))
-            : ListView.builder(
-                itemCount: _topResults.length,
-                itemBuilder: (context, index) {
-                  final video = _topResults[index];
-                  return ListTile(
-                    leading: ClipRRect(borderRadius: BorderRadius.circular(4), child: Image.network(video.thumbnails.lowResUrl, width: 60, height: 45, fit: BoxFit.cover)),
-                    title: Text(video.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 14)),
-                    subtitle: Text(video.author, style: const TextStyle(fontSize: 12, color: Colors.grey)),
-                    onTap: () => _playMedia(video),
-                    trailing: IconButton(
-                      icon: const Icon(Icons.more_vert, color: Colors.grey),
-                      onPressed: () => _showVideoOptions(context, video),
-                    ),
-                  );
-                },
-              ),
-        ),
-      ],
-    );
+    return Column(children: [Container(padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12), color: const Color(0xFF181818), child: SizedBox(height: 40, child: ListView(scrollDirection: Axis.horizontal, children: _topCategories.map((cat) => Padding(padding: const EdgeInsets.only(right: 8), child: ChoiceChip(label: Text(cat), selected: _selectedTopCategory == cat, onSelected: (s) => _loadTopContent(cat)))).toList()))), Expanded(child: _isLoadingTop ? const Center(child: CircularProgressIndicator(color: Colors.purpleAccent)) : ListView.builder(itemCount: _topResults.length, itemBuilder: (context, index) { final video = _topResults[index]; return ListTile(leading: ClipRRect(borderRadius: BorderRadius.circular(4), child: Image.network(video.thumbnails.lowResUrl, width: 60, height: 45, fit: BoxFit.cover)), title: Text(video.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 14)), subtitle: Text(video.author, style: const TextStyle(fontSize: 12, color: Colors.grey)), onTap: () => _playMedia(video)); }))]);
   }
 
   Widget _buildSportsView() {
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        const Text("Portal Deportivo", style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-        const SizedBox(height: 10),
-        Card(color: Colors.purpleAccent.withOpacity(0.1), child: ListTile(leading: Icon(_teamIcon, color: Colors.purpleAccent), title: Text(_selectedTeam, style: const TextStyle(fontWeight: FontWeight.bold)), subtitle: const Text("Posición: 1er Lugar - Liga MX"))),
-      ],
-    );
+    return ListView(padding: const EdgeInsets.all(16), children: [const Text("Portal Deportivo", style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)), const SizedBox(height: 10), Card(color: Colors.purpleAccent.withOpacity(0.1), child: ListTile(leading: Icon(_teamIcon, color: Colors.purpleAccent), title: Text(_selectedTeam, style: const TextStyle(fontWeight: FontWeight.bold)), subtitle: const Text("Posición: 1er Lugar - Liga MX")))]);
   }
 
   Widget _buildCustomHomeFeed() {
-    return ListView(
-      padding: const EdgeInsets.all(16.0),
-      children: [
-        const Text("Favoritos", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-        const SizedBox(height: 10),
-        SizedBox(height: 110, child: ListView.builder(scrollDirection: Axis.horizontal, itemCount: 4, itemBuilder: (context, index) => Container(width: 100, margin: const EdgeInsets.only(right: 12), color: Colors.grey[800], child: const Icon(Icons.favorite, color: Colors.redAccent)))),
-      ],
-    );
+    return ListView(padding: const EdgeInsets.all(16.0), children: [const Text("Favoritos", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)), const SizedBox(height: 10), SizedBox(height: 110, child: ListView.builder(scrollDirection: Axis.horizontal, itemCount: 4, itemBuilder: (context, index) => Container(width: 100, margin: const EdgeInsets.only(right: 12), color: Colors.grey[800], child: const Icon(Icons.favorite, color: Colors.redAccent))))]);
   }
 }
