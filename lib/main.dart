@@ -51,7 +51,10 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
   final AudioPlayer _audioPlayer = AudioPlayer();
   VideoPlayerController? _videoController;
   
-  // --- CONFIGURACIÓN GLOBAL (Controlado desde el Drawer) ---
+  // --- COMUNICADOR EN VIVO PARA EL REPRODUCTOR GIGANTE ---
+  // Esto fuerza a la pantalla superior a actualizarse sin tener que presionar botones
+  final ValueNotifier<int> _uiUpdater = ValueNotifier(0);
+  
   bool _globalVideoMode = true; 
   
   List<Video> _searchResults = [];
@@ -62,6 +65,7 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
 
   Video? _currentMedia;
   bool _isPlaying = false;
+  bool _isLoadingMedia = false; 
   bool _hasActiveMedia = false;
   
   Duration _duration = Duration.zero;
@@ -72,11 +76,15 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
     super.initState();
     _tabController = TabController(length: 4, vsync: this);
     
-    // Sensores del motor de audio
-    _audioPlayer.onDurationChanged.listen((d) { if (mounted) setState(() => _duration = d); });
-    _audioPlayer.onPositionChanged.listen((p) { if (mounted) setState(() => _position = p); });
+    // Sensores del motor de audio (avisando también a la UI)
+    _audioPlayer.onDurationChanged.listen((d) { 
+      if (mounted) { setState(() => _duration = d); _uiUpdater.value++; } 
+    });
+    _audioPlayer.onPositionChanged.listen((p) { 
+      if (mounted) { setState(() => _position = p); _uiUpdater.value++; } 
+    });
     _audioPlayer.onPlayerComplete.listen((event) {
-      if (mounted) setState(() { _isPlaying = false; _position = Duration.zero; });
+      if (mounted) { setState(() { _isPlaying = false; _position = Duration.zero; }); _uiUpdater.value++; }
     });
 
     _loadTopContent("Global");
@@ -89,14 +97,8 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
     _yt.close();
     _audioPlayer.dispose();
     _videoController?.dispose();
+    _uiUpdater.dispose();
     super.dispose();
-  }
-
-  Stream<Duration> get _progressStream async* {
-    while (true) {
-      await Future.delayed(const Duration(milliseconds: 500));
-      yield _position;
-    }
   }
 
   Future<void> _loadTopContent(String category) async {
@@ -135,9 +137,11 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
       _currentMedia = video;
       _hasActiveMedia = true;
       _isPlaying = false;
+      _isLoadingMedia = true; 
       _position = Duration.zero;
       _duration = Duration.zero;
     });
+    _uiUpdater.value++; // Avisamos que empezó a cargar
 
     try {
       await _audioPlayer.stop(); 
@@ -154,6 +158,13 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
         _videoController = VideoPlayerController.networkUrl(Uri.parse(streamInfo.url.toString()));
         
         await _videoController!.initialize();
+        
+        // El video ya cargó, quitamos la pantalla de carga y avisamos a la UI instantáneamente
+        if (mounted) {
+          setState(() { _isLoadingMedia = false; });
+          _uiUpdater.value++; 
+        }
+        
         _videoController!.addListener(() {
           if (mounted && _videoController != null) {
             setState(() {
@@ -161,20 +172,27 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
               _duration = _videoController!.value.duration;
               _isPlaying = _videoController!.value.isPlaying;
             });
+            _uiUpdater.value++; // Refresca barra de progreso del video
           }
         });
         
         await _videoController!.play();
       } else {
-        // --- MODO SOLO AUDIO BLINDADO ---
-        // Volvemos a usar "muxed.first" para engañar a Android y que no tire el error "al extraer formato"
+        // --- MODO SOLO AUDIO ---
         var streamInfo = manifest.muxed.isNotEmpty ? manifest.muxed.first : manifest.audioOnly.first;
         await _audioPlayer.play(UrlSource(streamInfo.url.toString()));
-        if (mounted) setState(() => _isPlaying = true);
+        if (mounted) {
+          setState(() { _isPlaying = true; _isLoadingMedia = false; });
+          _uiUpdater.value++;
+        }
       }
       
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Error al procesar el archivo multimedia.')));
+      if (mounted) {
+        setState(() => _isLoadingMedia = false);
+        _uiUpdater.value++;
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Error al procesar el archivo multimedia.')));
+      }
     }
   }
 
@@ -185,6 +203,7 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
       _isPlaying ? _audioPlayer.pause() : _audioPlayer.resume();
       setState(() => _isPlaying = !_isPlaying);
     }
+    _uiUpdater.value++; // Refrescar botón de play/pausa al instante
   }
 
   String _formatDuration(Duration d) {
@@ -193,7 +212,6 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
     return '$minutes:$seconds';
   }
 
-  // --- MENÚ INFERIOR DE 3 PUNTITOS PARA LAS LISTAS ---
   void _showVideoOptions(BuildContext context, Video video) {
     showModalBottomSheet(
       context: context,
@@ -231,7 +249,6 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
               currentAccountPicture: const CircleAvatar(backgroundColor: Colors.black26, child: Icon(Icons.sports_soccer, size: 35, color: Colors.white)),
             ),
             
-            // --- NUEVO: TOGGLE DE AUDIO/VIDEO EN EL MENÚ ---
             SwitchListTile(
               title: const Text("Modo Video", style: TextStyle(fontWeight: FontWeight.bold)),
               subtitle: Text(_globalVideoMode ? "Reproduciendo video y audio" : "Ahorro de datos (Solo Audio)", style: const TextStyle(fontSize: 12, color: Colors.grey)),
@@ -311,7 +328,6 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
                                     title: Text(video.title, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 14)),
                                     subtitle: Text(video.author, style: const TextStyle(fontSize: 12, color: Colors.grey)),
                                     onTap: () => _playMedia(video),
-                                    // --- RESTAURADOS LOS 3 PUNTITOS EN CADA RESULTADO ---
                                     trailing: IconButton(
                                       icon: const Icon(Icons.more_vert, color: Colors.grey),
                                       onPressed: () => _showVideoOptions(context, video),
@@ -349,7 +365,11 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
                           ],
                         ),
                       ),
-                      IconButton(icon: Icon(_isPlaying ? Icons.pause : Icons.play_arrow, color: Colors.white), onPressed: _togglePlayPause),
+                      if (_isLoadingMedia)
+                        const Padding(padding: EdgeInsets.all(12.0), child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.purpleAccent)))
+                      else
+                        IconButton(icon: Icon(_isPlaying ? Icons.pause : Icons.play_arrow, color: Colors.white), onPressed: _togglePlayPause),
+                      
                       IconButton(
                         icon: const Icon(Icons.close, color: Colors.grey),
                         onPressed: () {
@@ -376,106 +396,117 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
       context: context,
       isScrollControlled: true,
       backgroundColor: const Color(0xFF181818),
-      builder: (context) => StatefulBuilder(
-        builder: (context, setModalState) {
-          return Container(
-            height: MediaQuery.of(context).size.height * 0.90, 
-            padding: const EdgeInsets.only(top: 40, left: 20, right: 20, bottom: 20),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    IconButton(icon: const Icon(Icons.keyboard_arrow_down, size: 32), onPressed: () => Navigator.pop(context)),
-                    const Text("Reproduciendo Ahora", style: TextStyle(fontSize: 14, color: Colors.grey)),
-                    // --- RESTAURADO EL ÍCONO DE CALIDADES EN EL REPRODUCTOR ---
-                    IconButton(
-                      icon: const Icon(Icons.settings), 
-                      onPressed: () {
-                        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Selector de Calidad / Velocidad')));
-                      }
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 15),
-                
-                // --- RENDERIZADO DEL VIDEO O LA PORTADA ---
-                Container(
-                  height: 250,
-                  width: double.infinity,
-                  decoration: BoxDecoration(color: Colors.black, borderRadius: BorderRadius.circular(16)),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(16),
-                    child: _globalVideoMode && _videoController != null && _videoController!.value.isInitialized
-                        ? Center(child: AspectRatio(aspectRatio: _videoController!.value.aspectRatio, child: VideoPlayer(_videoController!)))
-                        : Image.network(_currentMedia!.thumbnails.highResUrl, fit: BoxFit.cover),
-                  ),
-                ),
-                const SizedBox(height: 20),
-                
-                Row(
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(_currentMedia!.title, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-                          const SizedBox(height: 4),
-                          Text(_currentMedia!.author, style: const TextStyle(color: Colors.grey, fontSize: 16)),
-                        ],
+      builder: (context) {
+        // --- USAMOS EL COMUNICADOR EN VIVO AQUÍ ---
+        return ValueListenableBuilder<int>(
+          valueListenable: _uiUpdater,
+          builder: (context, value, child) {
+            return Container(
+              height: MediaQuery.of(context).size.height * 0.90, 
+              padding: const EdgeInsets.only(top: 40, left: 20, right: 20, bottom: 20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      IconButton(icon: const Icon(Icons.keyboard_arrow_down, size: 32), onPressed: () => Navigator.pop(context)),
+                      const Text("Reproduciendo Ahora", style: TextStyle(fontSize: 14, color: Colors.grey)),
+                      IconButton(
+                        icon: const Icon(Icons.settings), 
+                        onPressed: () {
+                          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Selector de Calidad / Velocidad')));
+                        }
                       ),
+                    ],
+                  ),
+                  const SizedBox(height: 15),
+                  
+                  // --- ÁREA DE VIDEO / PORTADA ---
+                  Container(
+                    height: 250,
+                    width: double.infinity,
+                    decoration: BoxDecoration(color: Colors.black, borderRadius: BorderRadius.circular(16)),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(16),
+                      child: _isLoadingMedia 
+                          ? Stack(
+                              alignment: Alignment.center,
+                              children: [
+                                Image.network(_currentMedia!.thumbnails.highResUrl, fit: BoxFit.cover, width: double.infinity, color: Colors.black45, colorBlendMode: BlendMode.darken),
+                                const CircularProgressIndicator(color: Colors.purpleAccent),
+                              ],
+                            )
+                          : (_globalVideoMode && _videoController != null && _videoController!.value.isInitialized
+                              ? Center(child: AspectRatio(aspectRatio: _videoController!.value.aspectRatio, child: VideoPlayer(_videoController!)))
+                              : Image.network(_currentMedia!.thumbnails.highResUrl, fit: BoxFit.cover)),
                     ),
-                    IconButton(icon: const Icon(Icons.thumb_up_alt_outlined), onPressed: () {}),
-                  ],
-                ),
-                const Spacer(),
-                
-                // --- BARRA DE PROGRESO UNIVERSAL EN VIVO ---
-                StreamBuilder<Duration>(
-                  stream: _progressStream,
-                  builder: (context, snapshot) {
-                    final progress = _duration.inSeconds > 0 ? _position.inSeconds / _duration.inSeconds : 0.0;
-                    return Column(
-                      children: [
-                        LinearProgressIndicator(value: progress.clamp(0.0, 1.0), backgroundColor: Colors.grey[800], color: Colors.purpleAccent),
-                        const SizedBox(height: 8),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  ),
+                  const SizedBox(height: 20),
+                  
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(_formatDuration(_position), style: const TextStyle(fontSize: 12, color: Colors.grey)),
-                            Text(_formatDuration(_duration), style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                            Text(_currentMedia!.title, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+                            const SizedBox(height: 4),
+                            Text(_currentMedia!.author, style: const TextStyle(color: Colors.grey, fontSize: 16)),
                           ],
                         ),
-                      ],
-                    );
-                  }
-                ),
-                
-                const SizedBox(height: 20),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                  children: [
-                    IconButton(icon: const Icon(Icons.shuffle, size: 28), onPressed: () {}),
-                    IconButton(icon: const Icon(Icons.skip_previous, size: 36), onPressed: () {}),
-                    CircleAvatar(
-                      radius: 35,
-                      backgroundColor: Colors.purpleAccent,
-                      child: IconButton(
-                        icon: Icon(_isPlaying ? Icons.pause : Icons.play_arrow, color: Colors.white, size: 35),
-                        onPressed: () { _togglePlayPause(); setModalState(() {}); },
                       ),
-                    ),
-                    IconButton(icon: const Icon(Icons.skip_next, size: 36), onPressed: () {}),
-                    IconButton(icon: const Icon(Icons.repeat, size: 28), onPressed: () {}),
-                  ],
-                ),
-                const SizedBox(height: 10),
-              ],
-            ),
-          );
-        }
-      ),
+                      IconButton(icon: const Icon(Icons.thumb_up_alt_outlined), onPressed: () {}),
+                    ],
+                  ),
+                  const Spacer(),
+                  
+                  // --- BARRA DE PROGRESO Y TIEMPO (AHORA FLUIDA) ---
+                  Column(
+                    children: [
+                      LinearProgressIndicator(
+                        value: _duration.inSeconds > 0 ? (_position.inSeconds / _duration.inSeconds).clamp(0.0, 1.0) : 0.0, 
+                        backgroundColor: Colors.grey[800], 
+                        color: Colors.purpleAccent
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(_formatDuration(_position), style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                          Text(_formatDuration(_duration), style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                        ],
+                      ),
+                    ],
+                  ),
+                  
+                  const SizedBox(height: 20),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                    children: [
+                      IconButton(icon: const Icon(Icons.shuffle, size: 28), onPressed: () {}),
+                      IconButton(icon: const Icon(Icons.skip_previous, size: 36), onPressed: () {}),
+                      CircleAvatar(
+                        radius: 35,
+                        backgroundColor: Colors.purpleAccent,
+                        child: _isLoadingMedia 
+                          ? const CircularProgressIndicator(color: Colors.white)
+                          : IconButton(
+                              icon: Icon(_isPlaying ? Icons.pause : Icons.play_arrow, color: Colors.white, size: 35),
+                              onPressed: () => _togglePlayPause(),
+                            ),
+                      ),
+                      IconButton(icon: const Icon(Icons.skip_next, size: 36), onPressed: () {}),
+                      IconButton(icon: const Icon(Icons.repeat, size: 28), onPressed: () {}),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                ],
+              ),
+            );
+          }
+        );
+      }
     );
   }
 
@@ -507,7 +538,6 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
                     title: Text(video.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 14)),
                     subtitle: Text(video.author, style: const TextStyle(fontSize: 12, color: Colors.grey)),
                     onTap: () => _playMedia(video),
-                    // --- RESTAURADOS LOS 3 PUNTITOS EN LA LISTA TOP ---
                     trailing: IconButton(
                       icon: const Icon(Icons.more_vert, color: Colors.grey),
                       onPressed: () => _showVideoOptions(context, video),
