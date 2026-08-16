@@ -12,6 +12,8 @@ dependencies:
   youtube_explode_dart: ^2.2.0
   audioplayers: ^5.2.1
   video_player: ^2.8.2
+  audio_service: ^0.18.12
+  rxdart: ^0.27.7
 
 dev_dependencies:
   flutter_test:
