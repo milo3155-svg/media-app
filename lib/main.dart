@@ -99,7 +99,6 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
     super.initState();
     _tabController = TabController(length: 4, vsync: this);
     
-    // Iniciar permisos y servicio
     _initAppServices();
     
     _audioPlayer.onDurationChanged.listen((d) { 
@@ -119,10 +118,8 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
   }
 
   Future<void> _initAppServices() async {
-    // 1. Pedimos permiso al usuario para mostrar notificaciones de música
     await Permission.notification.request();
 
-    // 2. Iniciamos el servicio
     try {
       globalAudioHandler = await AudioService.init(
         builder: () => SimpleAudioHandler(),
@@ -237,10 +234,10 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
       }
 
       var manifest = await _yt.videos.streamsClient.getManifest(video.id);
-
-      // --- FILTRO BLINDADO: FORZAR SIEMPRE FORMATO MP4 ---
-      var mp4Streams = manifest.muxed.where((s) => s.container == Container.mp4);
-      var streamInfo = mp4Streams.isNotEmpty ? mp4Streams.withHighestBitrate() : manifest.muxed.withHighestBitrate();
+      
+      // Filtro simplificado y seguro: Extraemos siempre el mejor stream MUXED (Audio+Video)
+      // Esto evita los errores de "Container" y le deja al reproductor hacer su trabajo.
+      var streamInfo = manifest.muxed.withHighestBitrate();
 
       if (_globalVideoMode) {
         _videoController = VideoPlayerController.networkUrl(Uri.parse(streamInfo.url.toString()));
@@ -268,6 +265,7 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
         
         await _videoController!.play();
       } else {
+        // En modo Solo Audio también usamos el muxed pero el audioPlayer solo leerá el audio.
         await _audioPlayer.setReleaseMode(_isRepeating ? ReleaseMode.loop : ReleaseMode.release);
         await _audioPlayer.play(UrlSource(streamInfo.url.toString()));
         
@@ -282,7 +280,7 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
       if (mounted) {
         setState(() => _isLoadingMedia = false);
         _uiUpdater.value++;
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Formato protegido por YouTube. Intenta otro.')));
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Error al extraer archivo de YouTube.')));
       }
     }
   }
