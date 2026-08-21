@@ -249,13 +249,13 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
       _hasActiveMedia = true;
       _isPlaying = false;
       _isLoadingMedia = true; 
+      _position = Duration.zero; // Reiniciamos reloj
+      _duration = Duration.zero; // Reiniciamos reloj
     });
     _syncSystemState(); 
     _uiUpdater.value++; 
 
     try {
-      // FIX: Aseguramos que el reproductor de audio se limpie por completo
-      // antes de intentar reproducir algo nuevo, evitando errores de memoria.
       await _audioPlayer.stop(); 
       await _audioPlayer.release(); 
       
@@ -265,21 +265,11 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
       }
 
       var manifest = await _yt.videos.streamsClient.getManifest(video.id);
-      StreamInfo? streamInfo;
-
-      if (_globalVideoMode) {
-        if (manifest.muxed.isNotEmpty) {
-          streamInfo = manifest.muxed.withHighestBitrate();
-        } else {
-          streamInfo = manifest.audioOnly.withHighestBitrate();
-        }
-      } else {
-        if (manifest.audioOnly.isNotEmpty) {
-          streamInfo = manifest.audioOnly.withHighestBitrate();
-        } else {
-          streamInfo = manifest.muxed.withHighestBitrate();
-        }
-      }
+      
+      // EL TRUCO DEFINITIVO: Usamos SIEMPRE el stream MUXED (MP4).
+      // Es el formato más estable para Android. En modo audio, 
+      // el motor simplemente leerá la pista de música y funcionará perfecto.
+      var streamInfo = manifest.muxed.withHighestBitrate();
 
       if (_globalVideoMode) {
         _videoController = VideoPlayerController.networkUrl(Uri.parse(streamInfo.url.toString()));
@@ -322,7 +312,7 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
         setState(() { _isLoadingMedia = false; _isPlaying = false; });
         _syncSystemState();
         _uiUpdater.value++;
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Formato protegido. Intenta otro video.')));
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Error de formato. Intenta otro video.')));
       }
     }
   }
