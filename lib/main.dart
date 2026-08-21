@@ -93,6 +93,8 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
   
   Duration _duration = Duration.zero;
   Duration _position = Duration.zero;
+  
+  MediaItem? _lastMediaItem;
 
   @override
   void initState() {
@@ -176,15 +178,19 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
   void _syncSystemState() {
     if (_currentMedia == null || globalAudioHandler == null) return;
     
-    globalAudioHandler!.mediaItem.add(MediaItem(
-      id: _currentMedia!.id.value,
-      title: _currentMedia!.title,
-      artist: _currentMedia!.author,
-      artUri: Uri.parse(_currentMedia!.thumbnails.highResUrl),
-      duration: _duration,
-    ));
+    final currentId = _currentMedia!.id.value;
 
-    // FIX: Añadimos 'speed: 1.0' y controles obligatorios para Android 14
+    if (_lastMediaItem?.id != currentId || _lastMediaItem?.duration != _duration) {
+      _lastMediaItem = MediaItem(
+        id: currentId,
+        title: _currentMedia!.title,
+        artist: _currentMedia!.author,
+        artUri: Uri.parse(_currentMedia!.thumbnails.highResUrl),
+        duration: _duration,
+      );
+      globalAudioHandler!.mediaItem.add(_lastMediaItem!);
+    }
+
     globalAudioHandler!.playbackState.add(PlaybackState(
       processingState: _isLoadingMedia ? AudioProcessingState.buffering : AudioProcessingState.ready,
       controls: [
@@ -202,7 +208,7 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
       },
       playing: _isPlaying,
       updatePosition: _position,
-      speed: 1.0, // ESTO EVITA QUE ANDROID ESCONDA LOS BOTONES
+      speed: 1.0, 
     ));
   }
 
@@ -243,14 +249,16 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
       _hasActiveMedia = true;
       _isPlaying = false;
       _isLoadingMedia = true; 
-      _position = Duration.zero;
-      _duration = Duration.zero;
     });
     _syncSystemState(); 
     _uiUpdater.value++; 
 
     try {
+      // FIX: Aseguramos que el reproductor de audio se limpie por completo
+      // antes de intentar reproducir algo nuevo, evitando errores de memoria.
       await _audioPlayer.stop(); 
+      await _audioPlayer.release(); 
+      
       if (_videoController != null) {
         await _videoController!.dispose();
         _videoController = null;
@@ -259,7 +267,6 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
       var manifest = await _yt.videos.streamsClient.getManifest(video.id);
       StreamInfo? streamInfo;
 
-      // FIX: Plan B para extracción. Si no hay un formato, usa el otro sin causar error.
       if (_globalVideoMode) {
         if (manifest.muxed.isNotEmpty) {
           streamInfo = manifest.muxed.withHighestBitrate();
@@ -311,7 +318,6 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
       }
       
     } catch (e) {
-      // FIX: Reseteamos los botones si falla para que no se queden congelados
       if (mounted) {
         setState(() { _isLoadingMedia = false; _isPlaying = false; });
         _syncSystemState();
@@ -326,10 +332,14 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
     _syncSystemState(); 
     _uiUpdater.value++; 
 
-    if (_globalVideoMode && _videoController != null) {
-      _isPlaying ? _videoController!.play() : _videoController!.pause();
-    } else {
-      _isPlaying ? _audioPlayer.resume() : _audioPlayer.pause();
+    try {
+      if (_globalVideoMode && _videoController != null) {
+        _isPlaying ? _videoController!.play() : _videoController!.pause();
+      } else {
+        _isPlaying ? _audioPlayer.resume() : _audioPlayer.pause();
+      }
+    } catch (e) {
+      debugPrint("Error al pausar/reproducir: $e");
     }
   }
 
@@ -414,6 +424,10 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
               onChanged: (val) {
                 setState(() => _globalVideoMode = val);
                 Navigator.pop(context);
+                
+                if (_hasActiveMedia && _currentMedia != null) {
+                  _playMedia(_currentMedia!);
+                }
               },
             ),
             const Divider(color: Colors.grey),
