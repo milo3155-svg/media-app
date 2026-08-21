@@ -139,7 +139,7 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
           androidNotificationChannelName: 'Reproductor Multimedia',
           androidNotificationOngoing: true,
           androidStopForegroundOnPause: true,
-          androidShowNotificationBadge: true, // Ayuda a forzar la notificación
+          androidShowNotificationBadge: true,
         ),
       );
       
@@ -184,6 +184,7 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
       duration: _duration,
     ));
 
+    // FIX: Añadimos 'speed: 1.0' y controles obligatorios para Android 14
     globalAudioHandler!.playbackState.add(PlaybackState(
       processingState: _isLoadingMedia ? AudioProcessingState.buffering : AudioProcessingState.ready,
       controls: [
@@ -191,17 +192,17 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
         _isPlaying ? MediaControl.pause : MediaControl.play,
         MediaControl.fastForward,
       ],
-      // EL FIX ESTÁ AQUÍ: Ahora Android sabe que puede Pausar y Dar Play desde la pantalla de bloqueo
       systemActions: const { 
         MediaAction.seek, 
         MediaAction.seekForward, 
         MediaAction.seekBackward,
-        MediaAction.play,    // <-- Faltaba esto
-        MediaAction.pause,   // <-- Faltaba esto
+        MediaAction.play,
+        MediaAction.pause,
         MediaAction.playPause
       },
       playing: _isPlaying,
       updatePosition: _position,
+      speed: 1.0, // ESTO EVITA QUE ANDROID ESCONDA LOS BOTONES
     ));
   }
 
@@ -256,7 +257,22 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
       }
 
       var manifest = await _yt.videos.streamsClient.getManifest(video.id);
-      var streamInfo = manifest.muxed.withHighestBitrate();
+      StreamInfo? streamInfo;
+
+      // FIX: Plan B para extracción. Si no hay un formato, usa el otro sin causar error.
+      if (_globalVideoMode) {
+        if (manifest.muxed.isNotEmpty) {
+          streamInfo = manifest.muxed.withHighestBitrate();
+        } else {
+          streamInfo = manifest.audioOnly.withHighestBitrate();
+        }
+      } else {
+        if (manifest.audioOnly.isNotEmpty) {
+          streamInfo = manifest.audioOnly.withHighestBitrate();
+        } else {
+          streamInfo = manifest.muxed.withHighestBitrate();
+        }
+      }
 
       if (_globalVideoMode) {
         _videoController = VideoPlayerController.networkUrl(Uri.parse(streamInfo.url.toString()));
@@ -295,11 +311,12 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
       }
       
     } catch (e) {
+      // FIX: Reseteamos los botones si falla para que no se queden congelados
       if (mounted) {
-        setState(() => _isLoadingMedia = false);
+        setState(() { _isLoadingMedia = false; _isPlaying = false; });
         _syncSystemState();
         _uiUpdater.value++;
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Error al extraer archivo de YouTube.')));
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Formato protegido. Intenta otro video.')));
       }
     }
   }
