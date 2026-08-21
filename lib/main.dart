@@ -99,6 +99,17 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
     super.initState();
     _tabController = TabController(length: 4, vsync: this);
     
+    final audioContext = AudioContext(
+      android: const AudioContextAndroid(
+        isSpeakerphoneOn: false,
+        stayAwake: true, 
+        contentType: AndroidContentType.music,
+        usageType: AndroidUsageType.media,
+        audioFocus: AndroidAudioFocus.gain,
+      ),
+    );
+    _audioPlayer.setAudioContext(audioContext);
+    
     _initAppServices();
     
     _audioPlayer.onDurationChanged.listen((d) { 
@@ -128,6 +139,7 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
           androidNotificationChannelName: 'Reproductor Multimedia',
           androidNotificationOngoing: true,
           androidStopForegroundOnPause: true,
+          androidShowNotificationBadge: true, // Ayuda a forzar la notificación
         ),
       );
       
@@ -173,12 +185,21 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
     ));
 
     globalAudioHandler!.playbackState.add(PlaybackState(
+      processingState: _isLoadingMedia ? AudioProcessingState.buffering : AudioProcessingState.ready,
       controls: [
         MediaControl.rewind,
         _isPlaying ? MediaControl.pause : MediaControl.play,
         MediaControl.fastForward,
       ],
-      systemActions: const { MediaAction.seek, MediaAction.seekForward, MediaAction.seekBackward },
+      // EL FIX ESTÁ AQUÍ: Ahora Android sabe que puede Pausar y Dar Play desde la pantalla de bloqueo
+      systemActions: const { 
+        MediaAction.seek, 
+        MediaAction.seekForward, 
+        MediaAction.seekBackward,
+        MediaAction.play,    // <-- Faltaba esto
+        MediaAction.pause,   // <-- Faltaba esto
+        MediaAction.playPause
+      },
       playing: _isPlaying,
       updatePosition: _position,
     ));
@@ -224,6 +245,7 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
       _position = Duration.zero;
       _duration = Duration.zero;
     });
+    _syncSystemState(); 
     _uiUpdater.value++; 
 
     try {
@@ -275,6 +297,7 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
     } catch (e) {
       if (mounted) {
         setState(() => _isLoadingMedia = false);
+        _syncSystemState();
         _uiUpdater.value++;
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Error al extraer archivo de YouTube.')));
       }
@@ -327,7 +350,6 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
     return '$m:$s';
   }
 
-  // --- NUEVA FUNCIÓN: PANTALLA COMPLETA ---
   void _openFullScreenVideo(BuildContext context) {
     if (_videoController == null || !_videoController!.value.isInitialized) return;
     
