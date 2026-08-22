@@ -16,19 +16,29 @@ class SimpleAudioHandler extends BaseAudioHandler {
   Function()? onFastForwardCommand;
 
   @override
-  Future<void> play() async => onPlayCommand?.call();
+  Future<void> play() async {
+    onPlayCommand?.call();
+  }
 
   @override
-  Future<void> pause() async => onPauseCommand?.call();
+  Future<void> pause() async {
+    onPauseCommand?.call();
+  }
 
   @override
-  Future<void> seek(Duration position) async => onSeekCommand?.call(position);
+  Future<void> seek(Duration position) async {
+    onSeekCommand?.call(position);
+  }
 
   @override
-  Future<void> rewind() async => onRewindCommand?.call();
+  Future<void> rewind() async {
+    onRewindCommand?.call();
+  }
 
   @override
-  Future<void> fastForward() async => onFastForwardCommand?.call();
+  Future<void> fastForward() async {
+    onFastForwardCommand?.call();
+  }
 }
 
 SimpleAudioHandler? globalAudioHandler;
@@ -101,6 +111,7 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
     super.initState();
     _tabController = TabController(length: 4, vsync: this);
     
+    // Forzamos al motor de audio a mantenerse activo
     final audioContext = AudioContext(
       android: const AudioContextAndroid(
         isSpeakerphoneOn: false,
@@ -115,14 +126,28 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
     _initAppServices();
     
     _audioPlayer.onDurationChanged.listen((d) { 
-      if (mounted) { setState(() => _duration = d); _syncSystemState(); _uiUpdater.value++; } 
+      if (mounted) { 
+        setState(() => _duration = d); 
+        _syncSystemState(); 
+        _uiUpdater.value++; 
+      } 
     });
+    
     _audioPlayer.onPositionChanged.listen((p) { 
-      if (mounted) { setState(() => _position = p); _uiUpdater.value++; } 
+      if (mounted) { 
+        setState(() => _position = p); 
+        // Solo sincronizamos cada segundo para no saturar
+        if (p.inSeconds % 2 == 0) _syncSystemState();
+        _uiUpdater.value++; 
+      } 
     });
+    
     _audioPlayer.onPlayerComplete.listen((event) {
       if (mounted) { 
-        if (!_isRepeating) { setState(() { _isPlaying = false; _position = Duration.zero; }); _syncSystemState(); }
+        if (!_isRepeating) { 
+          setState(() { _isPlaying = false; _position = Duration.zero; }); 
+          _syncSystemState(); 
+        }
         _uiUpdater.value++; 
       }
     });
@@ -141,7 +166,8 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
           androidNotificationChannelName: 'Reproductor Multimedia',
           androidNotificationOngoing: true,
           androidStopForegroundOnPause: true,
-          androidShowNotificationBadge: true,
+          // CLAVE PARA ANDROID 14: Definir icono y color
+          androidNotificationIcon: 'mipmap/ic_launcher',
         ),
       );
       
@@ -160,7 +186,7 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
         _uiUpdater.value++;
       };
     } catch (e) {
-      debugPrint("Error servicio audio: $e");
+      debugPrint("Error inicializando audio_service: $e");
     }
   }
 
@@ -191,6 +217,7 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
       globalAudioHandler!.mediaItem.add(_lastMediaItem!);
     }
 
+    // Aseguramos que los controles de reproducción estén activos en la notificación
     globalAudioHandler!.playbackState.add(PlaybackState(
       processingState: _isLoadingMedia ? AudioProcessingState.buffering : AudioProcessingState.ready,
       controls: [
@@ -200,8 +227,6 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
       ],
       systemActions: const { 
         MediaAction.seek, 
-        MediaAction.seekForward, 
-        MediaAction.seekBackward,
         MediaAction.play,
         MediaAction.pause,
         MediaAction.playPause
@@ -249,15 +274,14 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
       _hasActiveMedia = true;
       _isPlaying = false;
       _isLoadingMedia = true; 
-      _position = Duration.zero; // Reiniciamos reloj
-      _duration = Duration.zero; // Reiniciamos reloj
+      _position = Duration.zero; 
+      _duration = Duration.zero; 
     });
     _syncSystemState(); 
     _uiUpdater.value++; 
 
     try {
       await _audioPlayer.stop(); 
-      await _audioPlayer.release(); 
       
       if (_videoController != null) {
         await _videoController!.dispose();
@@ -265,11 +289,21 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
       }
 
       var manifest = await _yt.videos.streamsClient.getManifest(video.id);
-      
-      // EL TRUCO DEFINITIVO: Usamos SIEMPRE el stream MUXED (MP4).
-      // Es el formato más estable para Android. En modo audio, 
-      // el motor simplemente leerá la pista de música y funcionará perfecto.
-      var streamInfo = manifest.muxed.withHighestBitrate();
+      StreamInfo? streamInfo;
+
+      // Volvemos a pedir el stream adecuado según el modo
+      if (_globalVideoMode) {
+        if (manifest.muxed.isNotEmpty) {
+          streamInfo = manifest.muxed.withHighestBitrate();
+        } 
+      } else {
+        if (manifest.audioOnly.isNotEmpty) {
+          streamInfo = manifest.audioOnly.withHighestBitrate();
+        } 
+      }
+
+      // Si falló en encontrar el stream que queríamos, usamos un respaldo seguro
+      streamInfo ??= manifest.muxed.first;
 
       if (_globalVideoMode) {
         _videoController = VideoPlayerController.networkUrl(Uri.parse(streamInfo.url.toString()));
@@ -308,11 +342,12 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
       }
       
     } catch (e) {
+      debugPrint("Error al reproducir: $e");
       if (mounted) {
         setState(() { _isLoadingMedia = false; _isPlaying = false; });
         _syncSystemState();
         _uiUpdater.value++;
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Error de formato. Intenta otro video.')));
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Video no disponible o protegido.')));
       }
     }
   }
@@ -407,7 +442,7 @@ class _MainNavigationState extends State<MainNavigation> with SingleTickerProvid
             UserAccountsDrawerHeader(accountName: const Text("Usuario"), accountEmail: Text("Equipo: $_selectedTeam"), decoration: BoxDecoration(color: Colors.purpleAccent.withOpacity(0.3)), currentAccountPicture: const CircleAvatar(backgroundColor: Colors.black26, child: Icon(Icons.sports_soccer, size: 35, color: Colors.white))),
             SwitchListTile(
               title: const Text("Modo Video", style: TextStyle(fontWeight: FontWeight.bold)),
-              subtitle: Text(_globalVideoMode ? "Reproduciendo video y audio" : "Solo Audio (Segundo plano ideal)", style: const TextStyle(fontSize: 12, color: Colors.grey)),
+              subtitle: Text(_globalVideoMode ? "Reproduciendo video y audio" : "Solo Audio (Segundo plano)", style: const TextStyle(fontSize: 12, color: Colors.grey)),
               secondary: Icon(_globalVideoMode ? Icons.videocam : Icons.audiotrack, color: Colors.purpleAccent),
               activeColor: Colors.purpleAccent,
               value: _globalVideoMode,
