@@ -1,26 +1,13 @@
 import 'package:flutter/material.dart';
-import 'package:audio_service/audio_service.dart';
 import 'screens/home_screen.dart';
-import 'services/audio_handler.dart';
 
-// Variable global para controlar el audio desde cualquier pantalla
-late AudioHandler audioHandler;
-
-Future<void> main() async {
-  // Aseguramos que Flutter esté listo antes de arrancar servicios nativos
+void main() {
+  // Aseguramos que Flutter esté listo
   WidgetsFlutterBinding.ensureInitialized();
   
-  // Inicializamos el servicio de audio en segundo plano
-  audioHandler = await AudioService.init(
-    builder: () => MyAudioHandler(),
-    config: const AudioServiceConfig(
-      androidNotificationChannelId: 'com.milo.media_app.channel.audio',
-      androidNotificationChannelName: 'Reproducción de Audio',
-      androidNotificationOngoing: true,
-      androidStopForegroundOnPause: true,
-    ),
-  );
-
+  // (El servicio de audio está pausado temporalmente para no buscar el ícono)
+  
+  // Arrancamos la interfaz gráfica
   runApp(const MediaApp());
 }
 
