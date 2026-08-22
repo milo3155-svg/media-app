@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
-import 'player_screen.dart'; // <-- Conectamos con tu reproductor maximizado
+import 'package:provider/provider.dart';
+import '../providers/music_provider.dart';
+import 'player_screen.dart'; 
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -10,11 +12,13 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   int _selectedIndex = 0;
-
   final List<String> _categories = ['Música', 'Podcasts', 'Mixes', 'En Vivo'];
 
   @override
   Widget build(BuildContext context) {
+    // Conectamos esta pantalla al cerebro global
+    final musicProvider = context.watch<MusicProvider>();
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Inicio'),
@@ -87,11 +91,8 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ],
       ),
-      // --- AQUÍ ESTÁ LA MAGIA ---
-      // Envolvemos el contenedor en un detector de gestos
       bottomSheet: GestureDetector(
         onTap: () {
-          // Al tocar, navegamos a la pantalla completa del reproductor
           Navigator.push(
             context,
             MaterialPageRoute(builder: (context) => const PlayerScreen()),
@@ -106,12 +107,17 @@ class _HomeScreenState extends State<HomeScreen> {
                 padding: EdgeInsets.symmetric(horizontal: 16.0),
                 child: Icon(Icons.music_note, color: Colors.white),
               ),
-              const Expanded(
-                child: Text('Pista simulada - Artista', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+              Expanded(
+                // El texto ahora viene del gestor global
+                child: Text(musicProvider.currentTrack, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
               ),
               IconButton(
-                icon: const Icon(Icons.play_arrow, color: Colors.white, size: 30),
-                onPressed: () {},
+                // El ícono reacciona al estado global
+                icon: Icon(musicProvider.isPlaying ? Icons.pause : Icons.play_arrow, color: Colors.white, size: 30),
+                onPressed: () {
+                  // Mandamos la orden de cambiar el estado al tocarlo
+                  context.read<MusicProvider>().togglePlay();
+                },
               ),
             ],
           ),
