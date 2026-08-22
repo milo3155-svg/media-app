@@ -1,7 +1,7 @@
 name: media_app
-description: Aplicación multimedia multiplataforma
-version: 1.0.0+1
+description: Aplicacion privada de reproduccion multimedia.
 publish_to: 'none'
+version: 1.0.0+1
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
@@ -9,27 +9,11 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  cupertino_icons: ^1.0.6
-  
-  # Motor de Audio y Segundo Plano
-  just_audio: ^0.9.36
-  audio_service: ^0.18.12
-  
-  # Estado global y Arquitectura
+  cupertino_icons: ^1.0.8
   provider: ^6.1.2
-  
-  # Almacenamiento Local (Bóveda y Favoritos)
-  shared_preferences: ^2.2.3
-  
-  # Gestor de Descargas y Rutas
-  dio: ^5.4.3
-  path_provider: ^2.1.3
-  
-  # Red y APIs (Búsqueda y Deportes)
+  audio_service: ^0.18.12
+  just_audio: ^0.9.36
   http: ^1.2.0
-  
-  # UI Nativa (Compartir)
-  share_plus: ^9.0.0
 
 dev_dependencies:
   flutter_test:
