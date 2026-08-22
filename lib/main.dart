@@ -1,117 +1,186 @@
 import 'package:flutter/material.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 import 'package:audioplayers/audioplayers.dart';
-import 'package:video_player/video_player.dart';
-import 'package:audio_service/audio_service.dart';
-import 'package:permission_handler/permission_handler.dart';
-
-class SimpleAudioHandler extends BaseAudioHandler {
-  Function()? onPlayCommand, onPauseCommand, onRewindCommand, onFastForwardCommand;
-  Function(Duration)? onSeekCommand;
-
-  @override
-  Future<void> play() async => onPlayCommand?.call();
-  @override
-  Future<void> pause() async => onPauseCommand?.call();
-  @override
-  Future<void> seek(Duration position) async => onSeekCommand?.call(position);
-  @override
-  Future<void> rewind() async => onRewindCommand?.call();
-  @override
-  Future<void> fastForward() async => onFastForwardCommand?.call();
-}
-
-SimpleAudioHandler? globalAudioHandler;
 
 void main() {
-  WidgetsFlutterBinding.ensureInitialized();
+  // Configuración para pedirle al sistema que respete la sesión de audio
+  AudioPlayer.global.setAudioContext(AudioContextConfig(
+    route: AudioContextConfigRoute.system,
+    respectSilence: false,
+    duckAudio: false,
+    focus: AudioContextConfigFocus.gain,
+  ).build());
+
   runApp(const MediaApp());
 }
 
 class MediaApp extends StatelessWidget {
   const MediaApp({super.key});
+
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      debugShowCheckedModeBanner: false,
-      theme: ThemeData.dark().copyWith(scaffoldBackgroundColor: const Color(0xFF121212), primaryColor: Colors.purpleAccent),
-      home: const MainNavigation(),
+      title: 'Media App',
+      theme: ThemeData(
+        brightness: Brightness.dark,
+        primaryColor: Colors.deepPurple,
+        scaffoldBackgroundColor: const Color(0xFF121212),
+      ),
+      home: const MainScreen(),
     );
   }
 }
 
-class MainNavigation extends StatefulWidget {
-  const MainNavigation({super.key});
+class MainScreen extends StatefulWidget {
+  const MainScreen({super.key});
+
   @override
-  State<MainNavigation> createState() => _MainNavigationState();
+  State<MainScreen> createState() => _MainScreenState();
 }
 
-class _MainNavigationState extends State<MainNavigation> with SingleTickerProviderStateMixin {
-  late TabController _tabController;
+class _MainScreenState extends State<MainScreen> {
   final YoutubeExplode _yt = YoutubeExplode();
   final AudioPlayer _audioPlayer = AudioPlayer();
-  VideoPlayerController? _videoController;
-  bool _isPlaying = false, _globalVideoMode = true;
-  List<Video> _topResults = [];
+  final TextEditingController _searchController = TextEditingController();
+
+  List<Video> _searchResults = [];
+  bool _isLoading = false;
+  String _currentTitle = "Esperando búsqueda...";
+
+  void _search(String query) async {
+    if (query.trim().isEmpty) return;
+    
+    // Ocultar el teclado en móviles al buscar
+    FocusScope.of(context).unfocus();
+
+    setState(() {
+      _isLoading = true;
+      _searchResults.clear();
+    });
+
+    try {
+      var results = await _yt.search.search(query);
+      setState(() {
+        _searchResults = results.toList();
+        _isLoading = false;
+      });
+    } catch (e) {
+      setState(() {
+        _isLoading = false;
+        _currentTitle = "Error en la búsqueda";
+      });
+    }
+  }
+
+  void _playAudio(Video video) async {
+    setState(() {
+      _currentTitle = "Cargando: ${video.title}";
+    });
+
+    try {
+      var manifest = await _yt.videos.streamsClient.getManifest(video.id);
+      var audioStream = manifest.audioOnly.withHighestBitrate();
+
+      await _audioPlayer.setSourceUrl(audioStream.url.toString());
+      await _audioPlayer.resume();
+
+      setState(() {
+        _currentTitle = "🎵 Reproduciendo: ${video.title}";
+      });
+    } catch (e) {
+      setState(() {
+        _currentTitle = "Error al reproducir video protegido";
+      });
+    }
+  }
 
   @override
-  void initState() {
-    super.initState();
-    _tabController = TabController(length: 4, vsync: this);
-    _initServices();
-    _loadTopContent("Global");
-  }
-
-  Future<void> _initServices() async {
-    await Permission.notification.request();
-    globalAudioHandler = await AudioService.init(
-      builder: () => SimpleAudioHandler(),
-      config: const AudioServiceConfig(androidNotificationChannelId: 'com.media.app', androidNotificationChannelName: 'Reproductor', androidNotificationIcon: 'mipmap/ic_launcher'),
-    );
-  }
-
-  Future<void> _loadTopContent(String category) async {
-    try {
-      var list = await _yt.search.search("Top musica $category");
-      if (mounted) setState(() => _topResults = list.take(10).toList());
-    } catch (e) { debugPrint(e.toString()); }
-  }
-
-  Future<void> _playMedia(Video video) async {
-    try {
-      await _audioPlayer.stop();
-      var manifest = await _yt.videos.streamsClient.getManifest(video.id);
-      var stream = manifest.muxed.withHighestBitrate();
-      if (_globalVideoMode) {
-        _videoController = VideoPlayerController.networkUrl(Uri.parse(stream.url.toString()));
-        await _videoController!.initialize();
-        await _videoController!.play();
-      } else {
-        await _audioPlayer.play(UrlSource(stream.url.toString()));
-      }
-      setState(() => _isPlaying = true);
-    } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Error de formato')));
-    }
+  void dispose() {
+    _yt.close();
+    _audioPlayer.dispose();
+    _searchController.dispose();
+    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text("Media App")),
-      body: ListView.builder(
-        itemCount: _topResults.length,
-        itemBuilder: (context, i) => ListTile(title: Text(_topResults[i].title), onTap: () => _playMedia(_topResults[i])),
+      appBar: AppBar(
+        title: const Text('Media App Search'),
+        backgroundColor: Colors.deepPurple,
       ),
-      floatingActionButton: FloatingActionButton(onPressed: () => _togglePlayPause(), child: Icon(_isPlaying ? Icons.pause : Icons.play_arrow)),
+      body: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(12.0),
+            child: Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _searchController,
+                    decoration: InputDecoration(
+                      hintText: 'Buscar canción o video...',
+                      filled: true,
+                      fillColor: Colors.grey[900],
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8.0),
+                        borderSide: BorderSide.none,
+                      ),
+                    ),
+                    onSubmitted: _search,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                CircleAvatar(
+                  backgroundColor: Colors.deepPurple,
+                  child: IconButton(
+                    icon: const Icon(Icons.search, color: Colors.white),
+                    onPressed: () => _search(_searchController.text),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 8.0),
+            child: Text(
+              _currentTitle,
+              style: const TextStyle(color: Colors.greenAccent, fontSize: 16, fontWeight: FontWeight.bold),
+              textAlign: TextAlign.center,
+            ),
+          ),
+          Expanded(
+            child: _isLoading
+                ? const Center(child: CircularProgressIndicator(color: Colors.deepPurple))
+                : ListView.builder(
+                    itemCount: _searchResults.length,
+                    itemBuilder: (context, index) {
+                      var video = _searchResults[index];
+                      return ListTile(
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                        leading: ClipRRect(
+                          borderRadius: BorderRadius.circular(8),
+                          child: Image.network(video.thumbnails.lowResUrl, width: 80, fit: BoxFit.cover),
+                        ),
+                        title: Text(video.title, maxLines: 2, overflow: TextOverflow.ellipsis),
+                        subtitle: Text(video.author, style: TextStyle(color: Colors.grey[400])),
+                        onTap: () => _playAudio(video),
+                      );
+                    },
+                  ),
+          ),
+        ],
+      ),
+      floatingActionButton: FloatingActionButton(
+        backgroundColor: Colors.deepPurple,
+        child: const Icon(Icons.stop),
+        onPressed: () {
+          _audioPlayer.stop();
+          setState(() {
+            _currentTitle = "Detenido";
+          });
+        },
+      ),
     );
   }
-
-  void _togglePlayPause() {
-    setState(() => _isPlaying = !_isPlaying);
-    _globalVideoMode ? (_isPlaying ? _videoController?.play() : _videoController?.pause()) : (_isPlaying ? _audioPlayer.resume() : _audioPlayer.pause());
-  }
-
-  @override
-  void dispose() { _yt.close(); _audioPlayer.dispose(); _videoController?.dispose(); super.dispose(); }
 }
