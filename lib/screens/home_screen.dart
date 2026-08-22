@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/music_provider.dart';
 import 'player_screen.dart'; 
+import 'search_delegate.dart'; // <-- Importamos tu nuevo buscador
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -16,7 +17,6 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // Conectamos esta pantalla al cerebro global
     final musicProvider = context.watch<MusicProvider>();
 
     return Scaffold(
@@ -26,7 +26,13 @@ class _HomeScreenState extends State<HomeScreen> {
         actions: [
           IconButton(
             icon: const Icon(Icons.search),
-            onPressed: () {},
+            onPressed: () {
+              // <-- AQUÍ CONECTAMOS LA LUPA CON LA PANTALLA DE BÚSQUEDA
+              showSearch(
+                context: context,
+                delegate: VideoSearchDelegate(),
+              );
+            },
           ),
         ],
       ),
@@ -108,14 +114,11 @@ class _HomeScreenState extends State<HomeScreen> {
                 child: Icon(Icons.music_note, color: Colors.white),
               ),
               Expanded(
-                // El texto ahora viene del gestor global
                 child: Text(musicProvider.currentTrack, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
               ),
               IconButton(
-                // El ícono reacciona al estado global
                 icon: Icon(musicProvider.isPlaying ? Icons.pause : Icons.play_arrow, color: Colors.white, size: 30),
                 onPressed: () {
-                  // Mandamos la orden de cambiar el estado al tocarlo
                   context.read<MusicProvider>().togglePlay();
                 },
               ),
