@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import '../providers/music_provider.dart';
 
 class PlayerScreen extends StatefulWidget {
   const PlayerScreen({super.key});
@@ -8,14 +10,16 @@ class PlayerScreen extends StatefulWidget {
 }
 
 class _PlayerScreenState extends State<PlayerScreen> {
-  // Variables de estado para animar los botones al tocarlos
-  bool _isPlaying = false;
+  // Solo conservamos los estados visuales que son exclusivos de esta pantalla
   bool _isFavorite = false;
   bool _isAudioOnly = false;
   bool _ccEnabled = false;
 
   @override
   Widget build(BuildContext context) {
+    // Conectamos esta pantalla al gestor global
+    final musicProvider = context.watch<MusicProvider>();
+
     return Scaffold(
       backgroundColor: const Color(0xFF121212),
       appBar: AppBar(
@@ -23,11 +27,11 @@ class _PlayerScreenState extends State<PlayerScreen> {
         elevation: 0,
         leading: IconButton(
           icon: const Icon(Icons.keyboard_arrow_down, size: 32),
-          onPressed: () => Navigator.pop(context), // Botón para minimizar
+          onPressed: () => Navigator.pop(context),
         ),
         actions: [
           IconButton(icon: const Icon(Icons.download), onPressed: () {}),
-          IconButton(icon: const Icon(Icons.hd), onPressed: () {}), // Calidades
+          IconButton(icon: const Icon(Icons.hd), onPressed: () {}),
           Row(
             children: [
               const Text('Solo Audio', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
@@ -43,17 +47,14 @@ class _PlayerScreenState extends State<PlayerScreen> {
       ),
       body: Column(
         children: [
-          // Área del reproductor (Video o Carátula)
           Container(
             width: double.infinity,
             height: MediaQuery.of(context).size.height * 0.35,
-            color: Colors.black, // Aquí irá el video o la imagen limpia
+            color: Colors.black,
             child: const Center(
               child: Icon(Icons.play_circle_outline, size: 64, color: Colors.grey),
             ),
           ),
-          
-          // Fila debajo del video: Subtítulos y Maximizar
           Row(
             mainAxisAlignment: MainAxisAlignment.end,
             children: [
@@ -67,10 +68,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
               ),
             ],
           ),
-          
           const Spacer(),
-          
-          // Información de la pista
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 24.0),
             child: Row(
@@ -79,21 +77,21 @@ class _PlayerScreenState extends State<PlayerScreen> {
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
-                    children: const [
+                    children: [
+                      // El título ahora se lee desde el cerebro global
                       Text(
-                        'Título de la pista (Simulada)',
-                        style: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold),
+                        musicProvider.currentTrack,
+                        style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold),
                         maxLines: 1, overflow: TextOverflow.ellipsis,
                       ),
-                      SizedBox(height: 4),
-                      Text(
+                      const SizedBox(height: 4),
+                      const Text(
                         'Nombre del Canal / Artista',
                         style: TextStyle(color: Colors.grey, fontSize: 16),
                       ),
                     ],
                   ),
                 ),
-                // Botón de Favoritos (Pulgar Arriba)
                 IconButton(
                   icon: Icon(
                     _isFavorite ? Icons.thumb_up : Icons.thumb_up_alt_outlined,
@@ -104,30 +102,28 @@ class _PlayerScreenState extends State<PlayerScreen> {
               ],
             ),
           ),
-          
           const SizedBox(height: 32),
-          
-          // Controles Centrales de Reproducción
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
             children: [
               IconButton(icon: const Icon(Icons.skip_previous, size: 36, color: Colors.white), onPressed: () {}),
-              IconButton(icon: const Icon(Icons.replay_10, size: 32, color: Colors.white), onPressed: () {}), // Atrás 10s
+              IconButton(icon: const Icon(Icons.replay_10, size: 32, color: Colors.white), onPressed: () {}),
               Container(
                 decoration: const BoxDecoration(shape: BoxShape.circle, color: Colors.deepPurple),
                 child: IconButton(
-                  icon: Icon(_isPlaying ? Icons.pause : Icons.play_arrow, size: 48, color: Colors.white),
-                  onPressed: () => setState(() => _isPlaying = !_isPlaying),
+                  // El botón reacciona al estado global en tiempo real
+                  icon: Icon(musicProvider.isPlaying ? Icons.pause : Icons.play_arrow, size: 48, color: Colors.white),
+                  onPressed: () {
+                    // Envía la orden global de Play/Pausa
+                    context.read<MusicProvider>().togglePlay();
+                  },
                 ),
               ),
-              IconButton(icon: const Icon(Icons.forward_10, size: 32, color: Colors.white), onPressed: () {}), // Adelante 10s
+              IconButton(icon: const Icon(Icons.forward_10, size: 32, color: Colors.white), onPressed: () {}),
               IconButton(icon: const Icon(Icons.skip_next, size: 36, color: Colors.white), onPressed: () {}),
             ],
           ),
-          
           const Spacer(),
-          
-          // Pie de Pantalla (Cola de reproducción)
           Padding(
             padding: const EdgeInsets.all(16.0),
             child: Row(
@@ -136,7 +132,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                 const Text('Reproduciendo 1 de 20', style: TextStyle(color: Colors.grey)),
                 IconButton(
                   icon: const Icon(Icons.keyboard_arrow_up, color: Colors.white),
-                  onPressed: () {}, // Aquí levantaremos la lista de reproducción (Up Next)
+                  onPressed: () {},
                 ),
               ],
             ),
