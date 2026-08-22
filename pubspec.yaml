@@ -15,6 +15,11 @@ dependencies:
   audio_service: ^0.18.12
   rxdart: ^0.27.7
   permission_handler: ^11.3.1
+  # LIBRERÍAS FALTANTES AÑADIDAS:
+  provider: ^6.1.2
+  share_plus: ^9.0.0
+  chewie: ^1.8.1
+  just_audio: ^0.9.36
 
 dev_dependencies:
   flutter_test:
