@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'player_screen.dart'; // <-- Conectamos con tu reproductor maximizado
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -10,7 +11,6 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   int _selectedIndex = 0;
 
-  // Los filtros tipo "píldora" que pediste
   final List<String> _categories = ['Música', 'Podcasts', 'Mixes', 'En Vivo'];
 
   @override
@@ -22,13 +22,10 @@ class _HomeScreenState extends State<HomeScreen> {
         actions: [
           IconButton(
             icon: const Icon(Icons.search),
-            onPressed: () {
-              // Futura acción de búsqueda
-            },
+            onPressed: () {},
           ),
         ],
       ),
-      // Menú de 3 líneas (Drawer)
       drawer: Drawer(
         backgroundColor: const Color(0xFF1E1E1E),
         child: ListView(
@@ -63,7 +60,6 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
       body: Column(
         children: [
-          // Fila de Chips (Filtros horizontales)
           SingleChildScrollView(
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 8.0),
@@ -80,7 +76,6 @@ class _HomeScreenState extends State<HomeScreen> {
               }).toList(),
             ),
           ),
-          // Feed Principal Simulado
           Expanded(
             child: Center(
               child: Text(
@@ -92,27 +87,36 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ],
       ),
-      // Mini Reproductor (Fijo arriba de los botones de navegación)
-      bottomSheet: Container(
-        height: 60,
-        color: Colors.deepPurple.shade900,
-        child: Row(
-          children: [
-            const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 16.0),
-              child: Icon(Icons.music_note, color: Colors.white),
-            ),
-            const Expanded(
-              child: Text('Pista simulada - Artista', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-            ),
-            IconButton(
-              icon: const Icon(Icons.play_arrow, color: Colors.white, size: 30),
-              onPressed: () {},
-            ),
-          ],
+      // --- AQUÍ ESTÁ LA MAGIA ---
+      // Envolvemos el contenedor en un detector de gestos
+      bottomSheet: GestureDetector(
+        onTap: () {
+          // Al tocar, navegamos a la pantalla completa del reproductor
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (context) => const PlayerScreen()),
+          );
+        },
+        child: Container(
+          height: 60,
+          color: Colors.deepPurple.shade900,
+          child: Row(
+            children: [
+              const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 16.0),
+                child: Icon(Icons.music_note, color: Colors.white),
+              ),
+              const Expanded(
+                child: Text('Pista simulada - Artista', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+              ),
+              IconButton(
+                icon: const Icon(Icons.play_arrow, color: Colors.white, size: 30),
+                onPressed: () {},
+              ),
+            ],
+          ),
         ),
       ),
-      // Navegación Inferior
       bottomNavigationBar: BottomNavigationBar(
         type: BottomNavigationBarType.fixed,
         currentIndex: _selectedIndex,
