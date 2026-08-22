@@ -1,5 +1,4 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="com.milo.media_app">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <!-- Permisos para sobrevivir bloqueos e internet -->
     <uses-permission android:name="android.permission.INTERNET" />
