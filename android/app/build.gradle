@@ -5,9 +5,9 @@ plugins {
 }
 
 android {
-    // AQUÍ ESTÁ LA MAGIA: Tu verdadero namespace
     namespace "com.milo.media_app" 
-    compileSdkVersion 35
+    compileSdkVersion 36
+    ndkVersion "28.2.13676358"
 
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_1_8
@@ -19,10 +19,9 @@ android {
     }
 
     defaultConfig {
-        // Y AQUÍ TAMBIÉN: Tu verdadero applicationId
         applicationId "com.milo.media_app" 
         minSdkVersion 21
-        targetSdkVersion 35
+        targetSdkVersion 36
         versionCode 1
         versionName "1.0"
     }
