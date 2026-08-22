@@ -3,12 +3,11 @@ import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 import 'package:audioplayers/audioplayers.dart';
 
 void main() {
-  // Configuración para pedirle al sistema que respete la sesión de audio
+  // Configuración de audio sin el parámetro 'focus'
   AudioPlayer.global.setAudioContext(AudioContextConfig(
     route: AudioContextConfigRoute.system,
     respectSilence: false,
     duckAudio: false,
-    focus: AudioContextConfigFocus.gain,
   ).build());
 
   runApp(const MediaApp());
