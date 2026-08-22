@@ -1,14 +1,20 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart'; // Importamos la librería
 import 'screens/home_screen.dart';
+import 'providers/music_provider.dart'; // Importamos tu nuevo gestor
 
 void main() {
-  // Aseguramos que Flutter esté listo
   WidgetsFlutterBinding.ensureInitialized();
   
-  // (El servicio de audio está pausado temporalmente para no buscar el ícono)
-  
-  // Arrancamos la interfaz gráfica
-  runApp(const MediaApp());
+  runApp(
+    // Envolvemos la app para inyectar el estado global
+    MultiProvider(
+      providers: [
+        ChangeNotifierProvider(create: (_) => MusicProvider()),
+      ],
+      child: const MediaApp(),
+    ),
+  );
 }
 
 class MediaApp extends StatelessWidget {
