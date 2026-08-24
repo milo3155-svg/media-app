@@ -9,7 +9,6 @@
         android:label="media_app"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
-        android:roundIcon="@mipmap/ic_launcher_round"
         android:allowBackup="true"
         android:usesCleartextTraffic="true"
         android:theme="@style/LaunchTheme">
@@ -35,7 +34,6 @@
             </intent-filter>
         </activity>
         
-        <!-- AQUÍ ESTABA EL ERROR, YA ESTÁ CORREGIDO -->
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
