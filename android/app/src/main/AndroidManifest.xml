@@ -35,9 +35,10 @@
             </intent-filter>
         </activity>
         
+        <!-- AQUÍ ESTABA EL ERROR, YA ESTÁ CORREGIDO -->
         <meta-data
             android:name="flutterEmbedding"
-            value="2" />
+            android:value="2" />
     </application>
     
     <queries>
