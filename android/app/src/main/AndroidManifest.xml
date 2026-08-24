@@ -1,12 +1,11 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- Permiso obligatorio para que el buscador salga a internet -->
     <uses-permission android:name="android.permission.INTERNET" />
 
     <application
         android:label="media_app"
         android:name="${applicationName}"
-        android:icon="@mipmap/ic_launcher"
+        android:icon="@android:drawable/sym_def_app_icon"
         android:allowBackup="true"
         android:theme="@style/LaunchTheme">
         
@@ -33,7 +32,7 @@
         
         <meta-data
             android:name="flutterEmbedding"
-            android:value="2" />
+            value="2" />
     </application>
     
     <queries>
