@@ -2,7 +2,6 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 class ApiService {
-  // Lista de servidores Invidious de respaldo (Tu app saltará de uno a otro si fallan)
   static const List<String> _instances = [
     'https://invidious.nerdvpn.de/api/v1',
     'https://inv.nadeko.net/api/v1',
@@ -13,31 +12,33 @@ class ApiService {
   static Future<List<dynamic>> search(String query) async {
     if (query.isEmpty) return [];
     
-    // Intentamos buscar en cada servidor de la lista uno por uno
     for (String baseUrl in _instances) {
       try {
-        final response = await http.get(Uri.parse('$baseUrl/search?q=$query'));
+        // Le ponemos un "disfraz" a la petición para que crean que somos Google Chrome
+        final response = await http.get(
+          Uri.parse('$baseUrl/search?q=$query'),
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'application/json',
+          },
+        ).timeout(const Duration(seconds: 5)); // Si tarda más de 5 segundos, pasamos al siguiente servidor
         
         if (response.statusCode == 200) {
           final data = json.decode(response.body);
-          // Si el servidor contestó con datos reales, los enviamos a la pantalla
           if (data is List && data.isNotEmpty) {
              return data;
           }
         }
       } catch (e) {
-        // Si este servidor está caído, ignoramos el error y pasamos al siguiente
-        continue;
+        continue; // Si falla o se tarda, salta al siguiente servidor silenciosamente
       }
     }
     
-    // Si TODOS los servidores fallan (o si tu teléfono bloqueó el internet), 
-    // mostraremos esto en pantalla para saber qué pasó.
     return [
       {
         'type': 'video',
         'title': 'Error: Todos los servidores están bloqueados o sin internet',
-        'author': 'Revisa tu conexión o permisos',
+        'author': 'Intenta de nuevo o revisa tu conexión',
         'videoThumbnails': []
       }
     ];
