@@ -2,28 +2,30 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 class ApiService {
+  // Instancias altamente estables y probadas
   static const List<String> _instances = [
-    'https://invidious.nerdvpn.de/api/v1',
-    'https://inv.nadeko.net/api/v1',
-    'https://invidious.fdn.fr/api/v1',
+    'https://invidious.privacyredirect.com/api/v1',
+    'https://inv.us.projectsegfault.net/api/v1',
+    'https://invidious.perennialverse.net/api/v1',
     'https://vid.puffyan.us/api/v1'
   ];
 
   static Future<List<dynamic>> search(String query) async {
-    if (query.isEmpty) return [];
+    if (query.trim().isEmpty) return [];
     
-    // Aquí guardaremos el chisme de qué falló exactamente
     String ultimoError = "Error desconocido";
 
     for (String baseUrl in _instances) {
       try {
+        final url = Uri.parse('$baseUrl/search?q=${Uri.encodeComponent(query)}');
+        
         final response = await http.get(
-          Uri.parse('$baseUrl/search?q=$query'),
+          url,
           headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'User-Agent': 'Mozilla/5.0 (Android; Mobile; rv:109.0) Gecko/120.0 Firefox/120.0',
             'Accept': 'application/json',
           },
-        ).timeout(const Duration(seconds: 15)); // Le damos 15 segundos para contestar
+        ).timeout(const Duration(seconds: 10));
         
         if (response.statusCode == 200) {
           final data = json.decode(response.body);
@@ -31,22 +33,19 @@ class ApiService {
              return data;
           }
         } else {
-          // Si el servidor responde pero con un bloqueo (ej. error 403 o 500)
-          ultimoError = "Servidor rechazó la conexión: Código ${response.statusCode}";
+          ultimoError = "HTTP ${response.statusCode} en $baseUrl";
         }
       } catch (e) {
-        // Si hay error de internet o timeout, guardamos el mensaje nativo de Android
         ultimoError = e.toString();
         continue; 
       }
     }
     
-    // Si todos fallaron, mostramos el error técnico en la pantalla
     return [
       {
         'type': 'video',
-        'title': 'Fallo técnico detectado:',
-        'author': ultimoError, // <- ESTO NOS DIRÁ LA VERDAD
+        'title': 'Error de red capturado:',
+        'author': ultimoError,
         'videoThumbnails': []
       }
     ];
