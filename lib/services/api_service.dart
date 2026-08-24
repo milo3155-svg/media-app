@@ -2,18 +2,18 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 class ApiService {
-  // Instancias altamente estables y probadas
+  // Lista actualizada de instancias públicas activas de Invidious
   static const List<String> _instances = [
-    'https://invidious.privacyredirect.com/api/v1',
-    'https://inv.us.projectsegfault.net/api/v1',
-    'https://invidious.perennialverse.net/api/v1',
-    'https://vid.puffyan.us/api/v1'
+    'https://inv.nadeko.net/api/v1',
+    'https://invidious.nerdvpn.de/api/v1',
+    'https://invidious.tiekoetter.com/api/v1',
+    'https://yt.chocolatemoo53.com/api/v1'
   ];
 
   static Future<List<dynamic>> search(String query) async {
     if (query.trim().isEmpty) return [];
     
-    String ultimoError = "Error desconocido";
+    String ultimoError = "Ninguna instancia respondió";
 
     for (String baseUrl in _instances) {
       try {
@@ -22,10 +22,10 @@ class ApiService {
         final response = await http.get(
           url,
           headers: {
-            'User-Agent': 'Mozilla/5.0 (Android; Mobile; rv:109.0) Gecko/120.0 Firefox/120.0',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
             'Accept': 'application/json',
           },
-        ).timeout(const Duration(seconds: 10));
+        ).timeout(const Duration(seconds: 8));
         
         if (response.statusCode == 200) {
           final data = json.decode(response.body);
@@ -44,7 +44,7 @@ class ApiService {
     return [
       {
         'type': 'video',
-        'title': 'Error de red capturado:',
+        'title': 'Error de conexión con servidores:',
         'author': ultimoError,
         'videoThumbnails': []
       }
