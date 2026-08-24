@@ -2,12 +2,12 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 class ApiService {
-  // Lista actualizada de instancias públicas activas de Invidious
+  // Instancias públicas alternativas para evitar bloqueos 403
   static const List<String> _instances = [
+    'https://yewtu.be/api/v1',
+    'https://invidious.privacyredirect.com/api/v1',
     'https://inv.nadeko.net/api/v1',
-    'https://invidious.nerdvpn.de/api/v1',
-    'https://invidious.tiekoetter.com/api/v1',
-    'https://yt.chocolatemoo53.com/api/v1'
+    'https://invidious.nerdvpn.de/api/v1'
   ];
 
   static Future<List<dynamic>> search(String query) async {
@@ -22,8 +22,9 @@ class ApiService {
         final response = await http.get(
           url,
           headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-            'Accept': 'application/json',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:123.0) Gecko/20100101 Firefox/123.0',
+            'Accept': 'application/json, text/plain, */*',
+            'Accept-Language': 'en-US,en;q=0.5',
           },
         ).timeout(const Duration(seconds: 8));
         
