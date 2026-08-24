@@ -1,6 +1,8 @@
 name: media_app
-description: Aplicacion privada de reproduccion multimedia.
+description: Aplicación de reproducción multimedia.
+
 publish_to: 'none'
+
 version: 1.0.0+1
 
 environment:
@@ -9,11 +11,9 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  cupertino_icons: ^1.0.8
-  provider: ^6.1.2
-  audio_service: ^0.18.12
-  just_audio: ^0.9.36
+  cupertino_icons: ^1.0.6
   http: ^1.2.0
+  youtube_explode_dart: ^3.1.0
 
 dev_dependencies:
   flutter_test:
