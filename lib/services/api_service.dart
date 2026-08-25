@@ -19,19 +19,16 @@ class ApiService {
       }
       return formattedResults.isNotEmpty ? formattedResults : [{'title': 'Sin resultados', 'author': ''}];
     } catch (e) {
-      return [{'title': 'Error interno', 'author': e.toString()}];
+      return [{'title': 'Error de búsqueda', 'author': e.toString()}];
     }
   }
 
+  // ¡Atención aquí! Quitamos el try-catch. 
+  // Si YouTube rechaza la conexión, el error explotará y viajará
+  // directo a tu MusicProvider para pintarse en la pantalla.
   static Future<String?> getAudioUrl(String videoId) async {
-    try {
-      var manifest = await _yt.videos.streamsClient.getManifest(videoId);
-      // Tomamos el audio de mayor calidad sin discriminar formato (.webm o .mp4)
-      var streamInfo = manifest.audioOnly.withHighestBitrate();
-      return streamInfo.url.toString();
-    } catch (e) {
-      print("Error extrayendo URL: $e");
-      return null;
-    }
+    var manifest = await _yt.videos.streamsClient.getManifest(videoId);
+    var streamInfo = manifest.audioOnly.withHighestBitrate();
+    return streamInfo.url.toString();
   }
 }
