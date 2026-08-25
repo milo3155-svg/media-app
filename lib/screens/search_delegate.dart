@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../services/api_service.dart';
+import '../providers/music_provider.dart';
 
 class VideoSearchDelegate extends SearchDelegate<String> {
   @override
-  List<Widget> buildActions(BuildContext context) {
+  List<Widget>? buildActions(BuildContext context) {
     return [
       IconButton(
         icon: const Icon(Icons.clear),
@@ -15,7 +17,7 @@ class VideoSearchDelegate extends SearchDelegate<String> {
   }
 
   @override
-  Widget buildLeading(BuildContext context) {
+  Widget? buildLeading(BuildContext context) {
     return IconButton(
       icon: const Icon(Icons.arrow_back),
       onPressed: () {
@@ -42,7 +44,7 @@ class VideoSearchDelegate extends SearchDelegate<String> {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(child: CircularProgressIndicator());
         }
-        
+
         if (snapshot.hasError || !snapshot.hasData || snapshot.data!.isEmpty) {
           return const Center(
             child: Text(
@@ -53,11 +55,12 @@ class VideoSearchDelegate extends SearchDelegate<String> {
         }
 
         final results = snapshot.data!;
-        
+
         return ListView.builder(
           itemCount: results.length,
           itemBuilder: (context, index) {
             final video = results[index];
+            
             return ListTile(
               title: Text(
                 video['title'] ?? 'Sin título',
@@ -68,25 +71,25 @@ class VideoSearchDelegate extends SearchDelegate<String> {
                 style: const TextStyle(color: Colors.grey),
               ),
               onTap: () {
-                // Aquí manejaremos la reproducción más adelante
+                // 1. Le pasamos el ID y el título a nuestro motor de audio
+                context.read<MusicProvider>().playVideo(
+                  video['id'] ?? '', 
+                  video['title'] ?? 'Desconocido'
+                );
+                
+                // 2. Cerramos el buscador y regresamos a la pantalla principal
                 close(context, video['title']);
               },
             );
           },
         );
-      },
+      }
     );
   }
 
-  // Esto se muestra mientras escribes (evitamos saturar la red haciendo búsquedas aquí)
   @override
   Widget buildSuggestions(BuildContext context) {
-    return const Center(
-      child: Text(
-        'Escribe y presiona la lupa o enter en tu teclado para buscar',
-        style: TextStyle(color: Colors.grey),
-        textAlign: TextAlign.center,
-      ),
-    );
+    // Pantalla limpia mientras el usuario escribe
+    return Container(); 
   }
 }
