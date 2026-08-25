@@ -1,43 +1,40 @@
-import 'package:youtube_explode_dart/youtube_explode_dart.dart';
+import 'dart:convert';
+import 'package:http/http.dart' as http;
 
 class ApiService {
-  static final _yt = YoutubeExplode();
+  // Tu backend privado en Render
+  static const String _backendUrl = 'https://mi-media-proxy.onrender.com';
 
   static Future<List<dynamic>> search(String query) async {
     if (query.trim().isEmpty) return [];
     
     try {
-      var videos = await _yt.search.getVideos(query);
-      List<dynamic> formattedResults = [];
+      final uri = Uri.parse('$_backendUrl/api/search?q=${Uri.encodeComponent(query)}');
+      final response = await http.get(uri).timeout(const Duration(seconds: 15));
       
-      for (var video in videos.take(15)) {
-        formattedResults.add({
-          'id': video.id.value,
-          'title': video.title,
-          'author': video.author,
-        });
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        return data is List ? data : [];
       }
-      return formattedResults.isNotEmpty ? formattedResults : [{'title': 'Sin resultados', 'author': ''}];
+      return [{'title': 'Error del servidor', 'author': 'Código ${response.statusCode}'}];
     } catch (e) {
-      return [{'title': 'Error de búsqueda', 'author': e.toString()}];
+      // Mensaje de alerta en caso de que Render esté dormido
+      return [{'title': 'El proxy está despertando...', 'author': 'Reintenta en 1 minuto'}];
     }
   }
 
   static Future<String?> getAudioUrl(String videoId) async {
     try {
-      var manifest = await _yt.videos.streamsClient.getManifest(videoId);
+      final uri = Uri.parse('$_backendUrl/api/stream?id=$videoId');
+      final response = await http.get(uri).timeout(const Duration(seconds: 15));
       
-      // EL TRUCO VITAL: Forzar el contenedor mp4 para evitar el colapso de ExoPlayer en Android
-      var audioStreams = manifest.audioOnly.where((stream) => stream.container.name == 'mp4');
-      
-      if (audioStreams.isNotEmpty) {
-        return audioStreams.withHighestBitrate().url.toString();
-      } else {
-        // Si por algún milagro no hay mp4, tomamos lo que haya
-        return manifest.audioOnly.withHighestBitrate().url.toString();
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        return data['url'] ?? data['audioUrl']; 
       }
+      return null;
     } catch (e) {
-      throw Exception("Fallo nativo: $e");
+      throw Exception("El proxy en Render falló o está dormido: $e");
     }
   }
 }
