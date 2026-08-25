@@ -3,11 +3,10 @@ import 'package:just_audio/just_audio.dart';
 import '../services/api_service.dart';
 
 class MusicProvider extends ChangeNotifier {
-  // 1. Inicializamos el motor de audio
   final AudioPlayer _audioPlayer = AudioPlayer();
 
   bool _isPlaying = false;
-  bool _isLoading = false; // Útil para mostrar un "cargando..." en la UI
+  bool _isLoading = false; 
   String _currentTrack = 'Ninguna pista seleccionada';
 
   bool get isPlaying => _isPlaying;
@@ -15,27 +14,32 @@ class MusicProvider extends ChangeNotifier {
   String get currentTrack => _currentTrack;
 
   MusicProvider() {
-    // 2. Escuchamos automáticamente los cambios del reproductor
-    // Así la UI se actualiza sola si la canción termina o se pausa
+    // Escuchamos el estado del reproductor para actualizar la UI automáticamente
     _audioPlayer.playerStateStream.listen((state) {
       _isPlaying = state.playing;
       notifyListeners();
     });
   }
 
-  // 3. ¡La función estrella! Carga y reproduce el audio
   Future<void> playVideo(String videoId, String trackName) async {
     _isLoading = true;
     _currentTrack = trackName;
     notifyListeners();
 
     try {
-      // Pedimos la URL directa del MP3 a nuestro servicio
+      // Obtenemos la URL del MP4 desde nuestro ApiService
       String? audioUrl = await ApiService.getAudioUrl(videoId);
       
       if (audioUrl != null) {
-        // Cargamos la URL en el motor y le damos play
-        await _audioPlayer.setUrl(audioUrl);
+        // ¡LA MAGIA! Disfrazamos la petición como si fuera un navegador Firefox de PC
+        await _audioPlayer.setAudioSource(
+          AudioSource.uri(
+            Uri.parse(audioUrl),
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:122.0) Gecko/20100101 Firefox/122.0'
+            },
+          ),
+        );
         _audioPlayer.play();
       } else {
         _currentTrack = 'Error al extraer el audio';
@@ -48,7 +52,6 @@ class MusicProvider extends ChangeNotifier {
     }
   }
 
-  // 4. El botón de Play/Pausa ahora controla el audio real
   void togglePlay() {
     if (_audioPlayer.playing) {
       _audioPlayer.pause();
@@ -57,7 +60,6 @@ class MusicProvider extends ChangeNotifier {
     }
   }
 
-  // Buena práctica: liberar memoria cuando la app se cierre
   @override
   void dispose() {
     _audioPlayer.dispose();
