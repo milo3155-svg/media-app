@@ -1,55 +1,49 @@
-import 'package:audio_service/audio_service.dart';
-import 'package:just_audio/just_audio.dart';
+import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 
-// Esta clase es el puente entre tu app y el sistema operativo de Android/iOS
-class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
-  final _player = AudioPlayer();
+class ApiService {
+  static final _yt = YoutubeExplode();
 
-  MyAudioHandler() {
-    // Le avisamos al sistema qué botones mostrar en la pantalla de bloqueo
-    _player.playbackEventStream.listen((PlaybackEvent event) {
-      final playing = _player.playing;
-      playbackState.add(playbackState.value.copyWith(
-        controls: [
-          MediaControl.skipToPrevious,
-          if (playing) MediaControl.pause else MediaControl.play,
-          MediaControl.stop,
-          MediaControl.skipToNext,
-        ],
-        systemActions: const {
-          MediaAction.seek,
-          MediaAction.seekForward,
-          MediaAction.seekBackward,
-        },
-        androidCompactActionIndices: const [0, 1, 3],
-        processingState: const {
-          ProcessingState.idle: AudioProcessingState.idle,
-          ProcessingState.loading: AudioProcessingState.loading,
-          ProcessingState.buffering: AudioProcessingState.buffering,
-          ProcessingState.ready: AudioProcessingState.ready,
-          ProcessingState.completed: AudioProcessingState.completed,
-        }[_player.processingState]!,
-        playing: playing,
-        updatePosition: _player.position,
-        bufferedPosition: _player.bufferedPosition,
-        speed: _player.speed,
-        queueIndex: event.currentIndex,
-      ));
-    });
+  static Future<List<dynamic>> search(String query) async {
+    if (query.trim().isEmpty) return [];
+    
+    try {
+      var videos = await _yt.search.getVideos(query);
+      List<dynamic> formattedResults = [];
+      
+      for (var video in videos.take(15)) {
+        formattedResults.add({
+          'id': video.id.value,
+          'title': video.title,
+          'author': video.author,
+        });
+      }
+      
+      if (formattedResults.isNotEmpty) {
+        return formattedResults;
+      }
+      return [{'title': 'Sin resultados', 'author': 'Intenta otra búsqueda'}];
+    } catch (e) {
+      return [{'title': 'Error interno', 'author': e.toString()}];
+    }
   }
 
-  @override
-  Future<void> play() => _player.play();
-
-  @override
-  Future<void> pause() => _player.pause();
-
-  @override
-  Future<void> seek(Duration position) => _player.seek(position);
-
-  @override
-  Future<void> stop() async {
-    await _player.stop();
-    return super.stop();
+  static Future<String?> getAudioUrl(String videoId) async {
+    try {
+      var manifest = await _yt.videos.streamsClient.getManifest(videoId);
+      
+      // ¡EL TRUCO! Filtramos específicamente por el contenedor mp4/m4a
+      // Android maneja esto nativamente y evita errores de decodificación.
+      var audioStreams = manifest.audioOnly.where((stream) => stream.container.name == 'mp4');
+      
+      if (audioStreams.isEmpty) {
+        audioStreams = manifest.audioOnly; // Respaldo de emergencia
+      }
+      
+      var streamInfo = audioStreams.withHighestBitrate();
+      return streamInfo.url.toString();
+    } catch (e) {
+      print("Error al extraer audio: $e");
+      return null;
+    }
   }
 }
