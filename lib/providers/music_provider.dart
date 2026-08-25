@@ -14,7 +14,6 @@ class MusicProvider extends ChangeNotifier {
   String get currentTrack => _currentTrack;
 
   MusicProvider() {
-    // Escuchamos el estado del reproductor para actualizar la UI automáticamente
     _audioPlayer.playerStateStream.listen((state) {
       _isPlaying = state.playing;
       notifyListeners();
@@ -27,16 +26,16 @@ class MusicProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      // Obtenemos la URL del MP4 desde nuestro ApiService
       String? audioUrl = await ApiService.getAudioUrl(videoId);
       
       if (audioUrl != null) {
-        // ¡LA MAGIA! Disfrazamos la petición como si fuera un navegador Firefox de PC
+        // Disfraz completo: User-Agent actualizado + Referer de YouTube
         await _audioPlayer.setAudioSource(
           AudioSource.uri(
             Uri.parse(audioUrl),
             headers: {
-              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:122.0) Gecko/20100101 Firefox/122.0'
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+              'Referer': 'https://www.youtube.com/',
             },
           ),
         );
