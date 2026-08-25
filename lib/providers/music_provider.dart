@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:just_audio/just_audio.dart';
+import 'package:just_audio_background/just_audio_background.dart';
 import '../services/api_service.dart';
 
 class MusicProvider extends ChangeNotifier {
@@ -20,7 +21,8 @@ class MusicProvider extends ChangeNotifier {
     });
   }
 
-  Future<void> playVideo(String videoId, String trackName) async {
+  // Agregamos author y artUri opcionales para la carátula y el artista en la notificación
+  Future<void> playVideo(String videoId, String trackName, {String? author, String? artUri}) async {
     _isLoading = true;
     _currentTrack = trackName;
     notifyListeners();
@@ -32,12 +34,18 @@ class MusicProvider extends ChangeNotifier {
         await _audioPlayer.setAudioSource(
           AudioSource.uri(
             Uri.parse(audioUrl),
-            headers: { 'User-Agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36' },
+            tag: MediaItem(
+              id: videoId,
+              album: "Media App",
+              title: trackName,
+              artist: author ?? "Desconocido",
+              artUri: artUri != null ? Uri.parse(artUri) : null,
+            ),
           ),
         );
         _audioPlayer.play();
       } else {
-        _currentTrack = 'Error: Sin URL de audio';
+        _currentTrack = 'Error: El proxy no devolvió enlace de audio';
       }
     } catch (e) {
       _currentTrack = 'Fallo: $e';
