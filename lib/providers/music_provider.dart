@@ -29,14 +29,14 @@ class MusicProvider extends ChangeNotifier {
       String? audioUrl = await ApiService.getAudioUrl(videoId);
       
       if (audioUrl != null) {
-        // Reproducción directa y limpia, sin disfraces
+        // Tu código de oro de la línea 86 de main.dart (carga directa y segura)
         await _audioPlayer.setUrl(audioUrl);
         _audioPlayer.play();
       } else {
-        _currentTrack = 'Error al extraer el audio';
+        _currentTrack = 'Error: No se encontró stream de audio';
       }
     } catch (e) {
-      _currentTrack = 'Fallo de red: $e';
+      _currentTrack = 'Fallo: $e';
     } finally {
       _isLoading = false;
       notifyListeners();
