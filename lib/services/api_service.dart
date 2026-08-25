@@ -3,7 +3,6 @@ import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 class ApiService {
   static final _yt = YoutubeExplode();
 
-  // 1. Buscador (ahora captura el ID del video)
   static Future<List<dynamic>> search(String query) async {
     if (query.trim().isEmpty) return [];
     
@@ -13,7 +12,7 @@ class ApiService {
       
       for (var video in videos.take(15)) {
         formattedResults.add({
-          'id': video.id.value, // ¡NUEVO! Vital para poder reproducirlo
+          'id': video.id.value,
           'title': video.title,
           'author': video.author,
         });
@@ -28,16 +27,19 @@ class ApiService {
     }
   }
 
-  // 2. ¡NUEVO MÉTODO! Extrae la URL directa del audio
   static Future<String?> getAudioUrl(String videoId) async {
     try {
-      // Obtenemos todos los streams disponibles para este video
       var manifest = await _yt.videos.streamsClient.getManifest(videoId);
       
-      // Filtramos para quedarnos SOLO con el audio de mayor calidad
-      var streamInfo = manifest.audioOnly.withHighestBitrate();
+      // ¡EL TRUCO! Filtramos específicamente por el contenedor mp4/m4a
+      // Android maneja esto nativamente y evita errores de decodificación.
+      var audioStreams = manifest.audioOnly.where((stream) => stream.container.name == 'mp4');
       
-      // Devolvemos la URL pura para que el reproductor la consuma
+      if (audioStreams.isEmpty) {
+        audioStreams = manifest.audioOnly; // Respaldo de emergencia
+      }
+      
+      var streamInfo = audioStreams.withHighestBitrate();
       return streamInfo.url.toString();
     } catch (e) {
       print("Error al extraer audio: $e");
