@@ -8,22 +8,23 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"/>
     <uses-permission android:name="android.permission.INTERNET"/>
 
+    <!-- SIN android:icon para evitar el error de recurso no encontrado -->
     <application
         android:label="Media App"
         android:name="${applicationName}"
-        android:icon="@mipmap/ic_launcher"
         android:usesCleartextTraffic="true">
         
-        <!-- Etiqueta V2 de Flutter -->
+        <!-- Etiqueta V2 de Flutter (vital) -->
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
 
+        <!-- Tema nativo genérico de Android para no depender de tus archivos locales -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
             android:launchMode="singleTop"
-            android:theme="@style/LaunchTheme"
+            android:theme="@android:style/Theme.Black.NoTitleBar"
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
             android:hardwareAccelerated="true"
             android:windowSoftInputMode="adjustResize">
