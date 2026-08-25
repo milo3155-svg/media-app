@@ -1,5 +1,3 @@
-import 'dart:convert';
-import 'package:http/http.dart' as http;
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 
 class ApiService {
@@ -26,21 +24,17 @@ class ApiService {
   }
 
   static Future<String?> getAudioUrl(String videoId) async {
-    final url = Uri.parse('https://pipedapi.syncpundit.io/streams/$videoId');
-    
-    final response = await http.get(url);
-    
-    if (response.statusCode == 200) {
-      final data = json.decode(response.body);
-      final audioStreams = data['audioStreams'] as List;
+    try {
+      // Tu código de oro de la línea 76 de main.dart
+      final manifest = await _yt.videos.streamsClient.getManifest(videoId);
+      final audioStreams = manifest.audioOnly;
       
       if (audioStreams.isNotEmpty) {
-        return audioStreams[0]['url'];
-      } else {
-        throw Exception("El servidor no encontró pistas de audio");
+        return audioStreams.withHighestBitrate().url.toString();
       }
-    } else {
-      throw Exception("El servidor rechazó la conexión (Error ${response.statusCode})");
+      return null;
+    } catch (e) {
+      throw Exception("Fallo en YoutubeExplode: $e");
     }
   }
 }
