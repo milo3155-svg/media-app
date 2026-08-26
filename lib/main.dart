@@ -2,12 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:just_audio_background/just_audio_background.dart';
 
-// Importamos solo el provider que SÍ existe en tu captura
+// Importamos solo el provider que SÍ existe
 import 'providers/music_provider.dart';
 
-// Asumimos que tu interfaz principal está aquí. 
-// (Ojo: asegúrate de que sí exista la carpeta 'screens' y este archivo)
-import 'screens/main_screen.dart';      
+// Importamos la pantalla que SÍ existe en tu captura
+import 'screens/home_screen.dart';      
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -33,7 +32,6 @@ class MediaApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MultiProvider(
       providers: [
-        // Dejamos únicamente el MusicProvider activo
         ChangeNotifierProvider(create: (_) => MusicProvider()),
       ],
       child: MaterialApp(
@@ -47,8 +45,8 @@ class MediaApp extends StatelessWidget {
             secondary: Colors.purpleAccent,
           ),
         ),
-        // Aquí cargamos tu interfaz
-        home: const MainScreen(),
+        // ¡Aquí llamamos a la pantalla correcta!
+        home: const HomeScreen(),
       ),
     );
   }
