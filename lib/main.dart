@@ -1,16 +1,19 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:just_audio_background/just_audio_background.dart';
+
+// Importamos tus providers
 import 'providers/music_provider.dart';
-// TODO: Descomenta e importa tus otras pantallas y providers aquí
-// import 'screens/main_screen.dart'; 
-// import 'providers/home_provider.dart';
-// import 'providers/vault_provider.dart';
+import 'providers/home_provider.dart';  // Asegúrate de que este archivo exista en tu carpeta providers
+import 'providers/vault_provider.dart'; // Asegúrate de que este archivo exista en tu carpeta providers
+
+// Importamos tu pantalla principal
+import 'screens/main_screen.dart';      // Asegúrate de que la ruta coincida con tu carpeta de pantallas
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Inicialización crítica para que la música no muera con la pantalla apagada
+  // Motor de segundo plano de Android
   try {
     await JustAudioBackground.init(
       androidNotificationChannelId: 'com.milo.media_app.channel.audio',
@@ -31,10 +34,9 @@ class MediaApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MultiProvider(
       providers: [
+        ChangeNotifierProvider(create: (_) => HomeProvider()),
+        ChangeNotifierProvider(create: (_) => VaultProvider()),
         ChangeNotifierProvider(create: (_) => MusicProvider()),
-        // TODO: Agrega aquí tus otros providers si los tienes separados
-        // ChangeNotifierProvider(create: (_) => HomeProvider()),
-        // ChangeNotifierProvider(create: (_) => VaultProvider()),
       ],
       child: MaterialApp(
         title: 'Media App',
@@ -47,10 +49,8 @@ class MediaApp extends StatelessWidget {
             secondary: Colors.purpleAccent,
           ),
         ),
-        // TODO: Cambia este Scaffold por la llamada a tu pantalla de inicio real (ej. MainScreen())
-        home: const Scaffold(
-          body: Center(child: Text("Cargando interfaz...")),
-        ),
+        // ¡Aquí regresa tu interfaz real!
+        home: const MainScreen(),
       ),
     );
   }
