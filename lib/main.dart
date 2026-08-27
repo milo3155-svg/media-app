@@ -1,28 +1,21 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:just_audio_background/just_audio_background.dart';
-import 'package:audio_service/audio_service.dart';
 import 'providers/music_provider.dart';
 import 'screens/home_screen.dart';
-
-// Instancia global segura para el manejador de audio
-late AudioHandler audioHandler;
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Inicialización obligatoria para evitar el LateInitializationError
+  // Inicialización de segundo plano requerida por just_audio_background
   try {
-    audioHandler = await AudioService.init(
-      builder: () => AudioPlayerHandler(), // Asegúrate de que esta clase gestione tu reproductor
-      config: const AudioServiceConfig(
-        androidNotificationChannelId: 'com.milo.media_app.channel.audio',
-        androidNotificationChannelName: 'Reproducción de Música',
-        androidNotificationOngoing: true,
-      ),
+    await JustAudioBackground.init(
+      androidNotificationChannelId: 'com.milo.media_app.channel.audio',
+      androidNotificationChannelName: 'Reproducción de Música',
+      androidNotificationOngoing: true,
     );
   } catch (e) {
-    debugPrint('Error al inicializar AudioService: $e');
+    debugPrint('Error inicializando notificaciones: $e');
   }
 
   runApp(const MediaApp());
