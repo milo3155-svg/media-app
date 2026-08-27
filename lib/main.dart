@@ -1,25 +1,28 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:just_audio_background/just_audio_background.dart';
-
-// Importamos solo el provider que SÍ existe
+import 'package:audio_service/audio_service.dart';
 import 'providers/music_provider.dart';
+import 'screens/home_screen.dart';
 
-// Importamos la pantalla que SÍ existe en tu captura
-import 'screens/home_screen.dart';      
+// Instancia global segura para el manejador de audio
+late AudioHandler audioHandler;
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Motor de segundo plano de Android
+  // Inicialización obligatoria para evitar el LateInitializationError
   try {
-    await JustAudioBackground.init(
-      androidNotificationChannelId: 'com.milo.media_app.channel.audio',
-      androidNotificationChannelName: 'Reproducción de Música',
-      androidNotificationOngoing: true,
+    audioHandler = await AudioService.init(
+      builder: () => AudioPlayerHandler(), // Asegúrate de que esta clase gestione tu reproductor
+      config: const AudioServiceConfig(
+        androidNotificationChannelId: 'com.milo.media_app.channel.audio',
+        androidNotificationChannelName: 'Reproducción de Música',
+        androidNotificationOngoing: true,
+      ),
     );
   } catch (e) {
-    debugPrint("Error inicializando notificación: $e");
+    debugPrint('Error al inicializar AudioService: $e');
   }
 
   runApp(const MediaApp());
@@ -45,7 +48,6 @@ class MediaApp extends StatelessWidget {
             secondary: Colors.purpleAccent,
           ),
         ),
-        // ¡Aquí llamamos a la pantalla correcta!
         home: const HomeScreen(),
       ),
     );
