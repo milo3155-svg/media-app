@@ -21,8 +21,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Inicio'),
-        backgroundColor: Colors.deepPurple,
+        title: const Text('Inicio v2 - PROXY'),
+        backgroundColor: Colors.red,
         actions: [
           IconButton(
             icon: const Icon(Icons.search),
