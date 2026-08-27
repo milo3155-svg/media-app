@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:just_audio_background/just_audio_background.dart';
-import 'http' as http; // Asegúrate de tener http importado o usa tu ApiService actualizado
+import 'package:http/http.dart' as http;
 import 'dart:convert';
 
 class MusicProvider extends ChangeNotifier {
@@ -28,7 +28,7 @@ class MusicProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      // 🚀 APUNTAMOS DIRECTAMENTE A TU PROXY EN RENDER
+      // 🚀 APUNTA A TU URL REAL DE RENDER
       final proxyUrl = 'https://TU-APP-EN-RENDER.onrender.com/api/stream?id=$videoId';
       final response = await http.get(Uri.parse(proxyUrl));
 
@@ -72,7 +72,7 @@ class MusicProvider extends ChangeNotifier {
     }
   }
 
-  @dispose
+  @override
   void dispose() {
     _audioPlayer.dispose();
     super.dispose();
