@@ -29,7 +29,7 @@ class MusicProvider extends ChangeNotifier {
 
     try {
       // 🚀 Reemplaza 'media-proxy.onrender.com' con tu dominio exacto de Render si es diferente
-      final proxyUrl = 'https://media-proxy.onrender.com/api/stream?id=$videoId';
+      final proxyUrl = 'https://dia-proxy.onrender.com/api/stream?id=$videoId';
       final response = await http.get(Uri.parse(proxyUrl));
 
       if (response.statusCode == 200) {
