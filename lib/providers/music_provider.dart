@@ -31,7 +31,11 @@ class MusicProvider extends ChangeNotifier {
       final proxyUrl = 'https://dia-proxy.onrender.com/api/stream?id=$videoId';
       print('Intentando conectar con el proxy: $proxyUrl');
       
-      final response = await http.get(Uri.parse(proxyUrl));
+      // Petición HTTP con timeout extendido de 45 segundos
+      final response = await http.get(
+        Uri.parse(proxyUrl),
+      ).timeout(const Duration(seconds: 45));
+
       print('Código de respuesta del servidor: ${response.statusCode}');
       print('Cuerpo de respuesta: ${response.body}');
 
