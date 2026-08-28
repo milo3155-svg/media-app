@@ -24,44 +24,69 @@ class MusicProvider extends ChangeNotifier {
 
   Future<void> playVideo(String videoId, String trackName, {String? author, String? artUri}) async {
     _isloading = true;
-    _currentTrack = 'Cargando stream...';
+    _currentTrack = 'Buscando enlace...';
     notifyListeners();
 
     try {
+      // 1. Primero consultamos el stream directo usando el ID que ya tenemos
       final streamUrl = 'https://dia-proxy.onrender.com/api/stream?id=$videoId';
       print('Consultando stream: $streamUrl');
 
-      final response = await http.get(Uri.parse(streamUrl)).timeout(const Duration(seconds: 25));
+      var response = await http.get(Uri.parse(streamUrl)).timeout(const Duration(seconds: 20));
 
-      print('Código HTTP: ${response.statusCode}');
-      print('Respuesta: ${response.body}');
+      String? audioUrl;
 
       if (response.statusCode == 200) {
         final decoded = jsonDecode(response.body);
-        final audioUrl = decoded['url'];
-
-        if (audioUrl != null && audioUrl.isNotEmpty) {
-          _currentTrack = trackName;
-          notifyListeners();
-
-          await _audioPlayer.setAudioSource(
-            AudioSource.uri(
-              Uri.parse(audioUrl),
-              tag: MediaItem(
-                id: videoId,
-                album: "Media App",
-                title: trackName,
-                artist: author ?? "Desconocido",
-                artUri: artUri != null ? Uri.parse(artUri) : null,
-              ),
-            ),
-          );
-          _audioPlayer.play();
-          return;
+        if (decoded is Map) {
+          audioUrl = decoded['url'] ?? decoded['streamUrl'];
         }
       }
 
-      throw Exception('El servidor no devolvió una URL válida');
+      // 2. PLAN B: Si el stream directo falló, usamos el endpoint de búsqueda que vimos en tu captura
+      if (audioUrl == null || audioUrl.isEmpty) {
+        final searchUrl = 'https://dia-proxy.onrender.com/api/search?q=${Uri.encodeComponent(trackName)}';
+        print('Intentando plan B con búsqueda: $searchUrl');
+        
+        response = await http.get(Uri.parse(searchUrl)).timeout(const Duration(seconds: 20));
+        if (response.statusCode == 200) {
+          final decoded = jsonDecode(response.body);
+          if (decoded is List && decoded.isNotEmpty) {
+            // Tomamos el ID del primer resultado de la búsqueda
+            final realId = decoded[0]['id'];
+            if (realId != null) {
+              final secondAttemptUrl = 'https://dia-proxy.onrender.com/api/stream?id=$realId';
+              final streamRes = await http.get(Uri.parse(secondAttemptUrl));
+              if (streamRes.statusCode == 200) {
+                final streamDecoded = jsonDecode(streamRes.body);
+                audioUrl = streamDecoded['url'] ?? streamDecoded['streamUrl'];
+              }
+            }
+          }
+        }
+      }
+
+      if (audioUrl != null && audioUrl.isNotEmpty) {
+        _currentTrack = trackName;
+        notifyListeners();
+
+        await _audioPlayer.setAudioSource(
+          AudioSource.uri(
+            Uri.parse(audioUrl),
+            tag: MediaItem(
+              id: videoId,
+              album: "Media App",
+              title: trackName,
+              artist: author ?? "Desconocido",
+              artUri: artUri != null ? Uri.parse(artUri) : null,
+            ),
+          ),
+        );
+        _audioPlayer.play();
+        return;
+      }
+
+      throw Exception('No se pudo obtener una ruta de audio válida');
 
     } catch (e) {
       print('Error al reproducir: $e');
