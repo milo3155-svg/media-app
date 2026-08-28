@@ -43,7 +43,7 @@ class MusicProvider extends ChangeNotifier {
         } else if (decoded is Map) {
           audioUrl = decoded['url'] ?? decoded['streamUrl'] ?? decoded['audio'];
         }
-
+         print('URL extraída para reproducir: $audioUrl');
         if (audioUrl != null && audioUrl.isNotEmpty) {
           _currentTrack = trackName;
           notifyListeners();
