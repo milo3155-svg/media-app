@@ -26,10 +26,9 @@ class MusicProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      // Detenemos cualquier estado previo para liberar memoria y buffers
       await _audioPlayer.stop();
 
-      // Construimos la URL apuntando a tu backend proxy en Render usando el videoId real
+      // URL corregida con el parámetro id exacto para tu proxy en Render
       final proxyAudioUrl = 'https://dia-proxy.onrender.com/stream?id=$videoId';
 
       await _audioPlayer.setAudioSource(
@@ -45,11 +44,10 @@ class MusicProvider extends ChangeNotifier {
         ),
       );
 
-      // Lanzamos la reproducción
       await _audioPlayer.play();
       print('Reproducción iniciada exitosamente para: $trackName');
     } catch (e) {
-      print('Error crítico en el reproducir: $e');
+      print('Error crítico al reproducir: $e');
       _currentTrack = 'Error al reproducir audio';
     } finally {
       _isloading = false;
