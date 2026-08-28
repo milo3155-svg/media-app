@@ -28,9 +28,12 @@ class MusicProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      // 🚀 Reemplaza 'media-proxy.onrender.com' con tu dominio exacto de Render si es diferente
       final proxyUrl = 'https://dia-proxy.onrender.com/api/stream?id=$videoId';
+      print('Intentando conectar con el proxy: $proxyUrl');
+      
       final response = await http.get(Uri.parse(proxyUrl));
+      print('Código de respuesta del servidor: ${response.statusCode}');
+      print('Cuerpo de respuesta: ${response.body}');
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
@@ -57,6 +60,7 @@ class MusicProvider extends ChangeNotifier {
         _currentTrack = 'Error: Fallo de comunicación con el servidor';
       }
     } catch (e) {
+      print('ERROR DETALLADO DE RED: $e');
       _currentTrack = 'Fallo: $e';
     } finally {
       _isloading = false;
