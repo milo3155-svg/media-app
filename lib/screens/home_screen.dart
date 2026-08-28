@@ -1,157 +1,58 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
-import '../providers/music_provider.dart';
-import 'player_screen.dart';
-import 'search_delegate.dart';
+import 'package:just_audio/just_audio.dart';
 
-class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key});
+class MusicProvider extends ChangeNotifier {
+  final AudioPlayer _audioPlayer = AudioPlayer();
+
+  bool _isPlaying = false;
+  bool _isloading = false;
+  String _currentTrack = 'Ninguna pista seleccionada';
+
+  bool get isPlaying => _isPlaying;
+  bool get isloading => _isloading;
+  String get currentTrack => _currentTrack;
+
+  MusicProvider() {
+    _audioPlayer.playerStateStream.listen((state) {
+      _isPlaying = state.playing;
+      notifyListeners();
+    });
+  }
+
+  Future<void> playVideo(String videoId, String trackName, {String? author, String? artUri}) async {
+    _isloading = true;
+    _currentTrack = trackName;
+    notifyListeners();
+
+    try {
+      await _audioPlayer.stop();
+
+      // Usamos directamente un enlace MP3 estable y directo para validar el arranque inmediato
+      const directAudioUrl = 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3';
+
+      await _audioPlayer.setUrl(directAudioUrl);
+      await _audioPlayer.play();
+      print('Reproducción nativa iniciada con éxito');
+    } catch (e) {
+      print('Error al reproducir audio: $e');
+      _currentTrack = 'Error al reproducir audio';
+    } finally {
+      _isloading = false;
+      notifyListeners();
+    }
+  }
+
+  void togglePlay() {
+    if (_isPlaying) {
+      _audioPlayer.pause();
+    } else {
+      _audioPlayer.play();
+    }
+  }
 
   @override
-  State<HomeScreen> createState() => _HomeScreenState();
-}
-
-class _HomeScreenState extends State<HomeScreen> {
-  int _selectedIndex = 0;
-  final List<String> _categories = ['Música', 'Podcasts', 'Mixes', 'En Vivo'];
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Inicio v2 - PROXY'),
-        backgroundColor: Colors.red,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.search),
-            onPressed: () {
-              showSearch(
-                context: context,
-                delegate: VideoSearchDelegate(),
-              );
-            },
-          ),
-        ],
-      ),
-      drawer: Drawer(
-        backgroundColor: const Color(0xFF1E1E1E),
-        child: ListView(
-          padding: EdgeInsets.zero,
-          children: [
-            const DrawerHeader(
-              decoration: BoxDecoration(color: Colors.deepPurple),
-              child: Text('Media App', style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold)),
-            ),
-            ListTile(
-              leading: const Icon(Icons.download, color: Colors.white),
-              title: const Text('Gestor de descargas', style: TextStyle(color: Colors.white)),
-              onTap: () {},
-            ),
-            ListTile(
-              leading: const Icon(Icons.library_music, color: Colors.white),
-              title: const Text('Biblioteca', style: TextStyle(color: Colors.white)),
-              onTap: () {},
-            ),
-            ListTile(
-              leading: const Icon(Icons.thumb_up, color: Colors.white),
-              title: const Text('Favoritos', style: TextStyle(color: Colors.white)),
-              onTap: () {},
-            ),
-            ListTile(
-              leading: const Icon(Icons.settings, color: Colors.white),
-              title: const Text('Ajustes', style: TextStyle(color: Colors.white)),
-              onTap: () {},
-            ),
-          ],
-        ),
-      ),
-      body: Column(
-        children: [
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 8.0),
-            child: Row(
-              children: _categories.map((category) {
-                return Padding(
-                  padding: const EdgeInsets.only(right: 8.0),
-                  child: Chip(
-                    label: Text(category),
-                    backgroundColor: Colors.grey[800],
-                    side: BorderSide.none,
-                  ),
-                );
-              }).toList(),
-            ),
-          ),
-          Expanded(
-            child: Center(
-              child: Text(
-                'Contenido de la pestaña $_selectedIndex\n(Aquí irán los carruseles)',
-                textAlign: TextAlign.center,
-                style: const TextStyle(color: Colors.grey, fontSize: 16),
-              ),
-            ),
-          ),
-        ],
-      ),
-      bottomSheet: Consumer<MusicProvider>(
-        builder: (context, musicProvider, child) {
-          return GestureDetector(
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => const PlayerScreen()),
-              );
-            },
-            child: Container(
-              height: 60,
-              color: Colors.deepPurple.shade900,
-              child: Row(
-                children: [
-                  const Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 16.0),
-                    child: Icon(Icons.music_note, color: Colors.white),
-                  ),
-                  Expanded(
-                    child: Text(
-                      musicProvider.currentTrack,
-                      style: const TextStyle(color: Colors.white),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                  IconButton(
-                    icon: Icon(
-                      musicProvider.isPlaying ? Icons.pause : Icons.play_arrow,
-                      color: Colors.white,
-                    ),
-                    onPressed: () {
-                      musicProvider.togglePlay();
-                    },
-                  ),
-                ],
-              ),
-            ),
-          );
-        },
-      ),
-      bottomNavigationBar: BottomNavigationBar(
-        type: BottomNavigationBarType.fixed,
-        currentIndex: _selectedIndex,
-        selectedItemColor: Colors.purpleAccent,
-        unselectedItemColor: Colors.grey,
-        backgroundColor: Colors.black,
-        onTap: (index) {
-          setState(() {
-            _selectedIndex = index;
-          });
-        },
-        items: const [
-          BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Inicio'),
-          BottomNavigationBarItem(icon: Icon(Icons.music_note), label: 'Recomendado'),
-          BottomNavigationBarItem(icon: Icon(Icons.trending_up), label: 'Top'),
-          BottomNavigationBarItem(icon: Icon(Icons.sports_soccer), label: 'Deportes'),
-        ],
-      ),
-    );
+  void dispose() {
+    _audioPlayer.dispose();
+    super.dispose();
   }
 }
