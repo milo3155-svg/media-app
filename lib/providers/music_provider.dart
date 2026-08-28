@@ -28,25 +28,24 @@ class MusicProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final searchUrl = 'https://dia-proxy.onrender.com/api/search?q=$videoId';
-      print('Consultando proxy: $searchUrl');
+      // Apuntamos directo al endpoint de stream con el ID
+      final streamUrl = 'https://dia-proxy.onrender.com/api/stream?id=$videoId';
+      print('Consultando stream: $streamUrl');
 
-      final response = await http.get(Uri.parse(searchUrl)).timeout(const Duration(seconds: 20));
+      final response = await http.get(Uri.parse(streamUrl)).timeout(const Duration(seconds: 20));
+
+      print('Código HTTP recibido: ${response.statusCode}');
+      print('Cuerpo de respuesta: ${response.body}');
 
       if (response.statusCode == 200) {
-        print('Cuerpo completo del servidor: ${response.body}'); 
         final decoded = jsonDecode(response.body);
         String? audioUrl;
 
-        if (decoded is List && decoded.isNotEmpty) {
-          print('Claves disponibles en el JSON: ${decoded[0].keys.toList()}');
-          audioUrl = decoded[0]['url'] ?? decoded[0]['streamUrl'] ?? decoded[0]['audio'] ?? decoded[0]['file'] ?? decoded[0]['link'] ?? decoded[0]['uri'];
-        } else if (decoded is Map) {
-          print('Claves disponibles en el mapa: ${decoded.keys.toList()}');
-          audioUrl = decoded['url'] ?? decoded['streamUrl'] ?? decoded['audio'] ?? decoded['file'] ?? decoded['link'] ?? decoded['uri'];
+        if (decoded is Map) {
+          audioUrl = decoded['url'] ?? decoded['streamUrl'] ?? decoded['audio'] ?? decoded['link'];
+        } else if (decoded is String) {
+          audioUrl = decoded;
         }
-
-        print('URL extraída para reproducir: $audioUrl');
 
         if (audioUrl != null && audioUrl.isNotEmpty) {
           _currentTrack = trackName;
@@ -69,11 +68,11 @@ class MusicProvider extends ChangeNotifier {
         }
       }
 
-      throw Exception('El servidor no retornó un enlace de audio válido.');
+      throw Exception('El servidor respondió con código ${response.statusCode}');
 
     } catch (e) {
-      print('Error en reproducción: $e');
-      _currentTrack = 'Error al reproducir audio';
+      print('Error crítico en reproducción: $e');
+      _currentTrack = 'Error: $e';
     } finally {
       _isloading = false;
       notifyListeners();
