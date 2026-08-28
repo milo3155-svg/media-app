@@ -27,7 +27,7 @@ class MusicProvider extends ChangeNotifier {
     _currentTrack = trackName;
     notifyListeners();
 
-    // Enlace de respaldo estable garantizado para evitar bloqueos de red
+    // Enlace de respaldo seguro garantizado
     String audioUrl = 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3';
 
     try {
@@ -46,12 +46,35 @@ class MusicProvider extends ChangeNotifier {
     } catch (_) {}
 
     try {
-      // Configuramos la fuente y dejamos que el reproductor maneje el inicio
-      await _audioPlayer.setUrl(audioUrl);
+      // Nos aseguramos de detener el reproductor de forma segura antes de cambiar de URL
+      await _audioPlayer.stop();
+      
+      // Asignamos la nueva fuente con la etiqueta de fondo
+      await _audioPlayer.setAudioSource(
+        AudioSource.uri(
+          Uri.parse(audioUrl),
+          tag: MediaItem(
+            id: videoId,
+            album: "Media App",
+            title: trackName,
+            artist: author ?? "Desconocido",
+            artUri: artUri != null ? Uri.parse(artUri) : null,
+          ),
+        ),
+      );
+
+      // Iniciamos reproducción
       await _audioPlayer.play();
     } catch (e) {
-      print('Error al reproducir: $e');
-      _currentTrack = 'Error al reproducir audio';
+      print('Aviso de reproductor: $e');
+      // Si ocurre cualquier detalle de buffer, intentamos un fallback limpio con setUrl directo
+      try {
+        await _audioPlayer.setUrl(audioUrl);
+        await _audioPlayer.play();
+      } catch (innerError) {
+        print('Error crítico al reproducir: $innerError');
+        _currentTrack = 'Error al reproducir audio';
+      }
     } finally {
       _isloading = false;
       notifyListeners();
