@@ -17,7 +17,6 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final musicProvider = context.watch<MusicProvider>();
 
     return Scaffold(
       appBar: AppBar(
