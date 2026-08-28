@@ -28,22 +28,26 @@ class MusicProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      // Consultamos directamente el endpoint de búsqueda que sabemos que tu Render responde con éxito
       final searchUrl = 'https://dia-proxy.onrender.com/api/search?q=$videoId';
       print('Consultando proxy: $searchUrl');
 
       final response = await http.get(Uri.parse(searchUrl)).timeout(const Duration(seconds: 20));
 
       if (response.statusCode == 200) {
+        print('Cuerpo completo del servidor: ${response.body}'); 
         final decoded = jsonDecode(response.body);
         String? audioUrl;
 
         if (decoded is List && decoded.isNotEmpty) {
-          audioUrl = decoded[0]['url'] ?? decoded[0]['streamUrl'] ?? decoded[0]['audio'];
+          print('Claves disponibles en el JSON: ${decoded[0].keys.toList()}');
+          audioUrl = decoded[0]['url'] ?? decoded[0]['streamUrl'] ?? decoded[0]['audio'] ?? decoded[0]['file'] ?? decoded[0]['link'] ?? decoded[0]['uri'];
         } else if (decoded is Map) {
-          audioUrl = decoded['url'] ?? decoded['streamUrl'] ?? decoded['audio'];
+          print('Claves disponibles en el mapa: ${decoded.keys.toList()}');
+          audioUrl = decoded['url'] ?? decoded['streamUrl'] ?? decoded['audio'] ?? decoded['file'] ?? decoded['link'] ?? decoded['uri'];
         }
-         print('URL extraída para reproducir: $audioUrl');
+
+        print('URL extraída para reproducir: $audioUrl');
+
         if (audioUrl != null && audioUrl.isNotEmpty) {
           _currentTrack = trackName;
           notifyListeners();
