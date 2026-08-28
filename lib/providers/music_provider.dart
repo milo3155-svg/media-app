@@ -28,7 +28,6 @@ class MusicProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      // Usamos el endpoint correcto /api/stream que vimos en tu server.js
       final streamUrl = 'https://dia-proxy.onrender.com/api/stream?id=$videoId';
       print('Consultando stream: $streamUrl');
 
