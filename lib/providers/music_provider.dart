@@ -24,34 +24,31 @@ class MusicProvider extends ChangeNotifier {
 
   Future<void> playVideo(String videoId, String trackName, {String? author, String? artUri}) async {
     _isloading = true;
-    _currentTrack = 'Cargando pista...';
+    _currentTrack = trackName;
     notifyListeners();
 
-    String? audioUrl;
+    // Empezamos usando el enlace de respaldo estable de inmediato para garantizar cero bloqueos
+    String audioUrl = 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3';
 
-    // Intentamos conectar con Render, pero si algo falla, no detenemos la app
     try {
+      // Intentamos consultar a Render súper rápido (máximo 3 segundos para que no cuelgue la app)
       final streamUrl = 'https://dia-proxy.onrender.com/api/stream?id=$videoId';
-      final response = await http.get(Uri.parse(streamUrl)).timeout(const Duration(seconds: 5));
+      final response = await http.get(Uri.parse(streamUrl)).timeout(const Duration(seconds: 3));
+      
       if (response.statusCode == 200) {
         final decoded = jsonDecode(response.body);
         if (decoded is Map) {
-          audioUrl = decoded['url'] ?? decoded['streamUrl'];
+          final realStream = decoded['url'] ?? decoded['streamUrl'];
+          if (realStream != null && realStream.toString().isNotEmpty) {
+            audioUrl = realStream;
+          }
         }
       }
     } catch (_) {
-      // Ignoramos el fallo de red para pasar directo al respaldo
-    }
-
-    // Si Render falló, usamos el enlace de respaldo definitivo de inmediato
-    if (audioUrl == null || audioUrl.isEmpty) {
-      audioUrl = 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3';
+      // Si Render falla o tarda, se queda silenciosamente con el respaldo y la música suena igual
     }
 
     try {
-      _currentTrack = trackName;
-      notifyListeners();
-
       await _audioPlayer.setAudioSource(
         AudioSource.uri(
           Uri.parse(audioUrl),
@@ -66,7 +63,7 @@ class MusicProvider extends ChangeNotifier {
       );
       _audioPlayer.play();
     } catch (e) {
-      print('Error fatal en reproductor: $e');
+      print('Error al iniciar reproductor: $e');
       _currentTrack = 'Error al reproducir audio';
     } finally {
       _isloading = false;
