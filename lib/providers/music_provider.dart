@@ -24,74 +24,52 @@ class MusicProvider extends ChangeNotifier {
 
   Future<void> playVideo(String videoId, String trackName, {String? author, String? artUri}) async {
     _isloading = true;
-    _currentTrack = 'Conectando con servidor...';
+    _currentTrack = 'Cargando pista...';
     notifyListeners();
 
     try {
-      // Intentamos primero con la ruta de stream de tu proxy
-      final proxyUrl = 'https://dia-proxy.onrender.com/api/stream?id=$videoId';
-      print('Intentando conectar a: $proxyUrl');
+      // Consultamos directamente el endpoint de búsqueda que sabemos que tu Render responde con éxito
+      final searchUrl = 'https://dia-proxy.onrender.com/api/search?q=$videoId';
+      print('Consultando proxy: $searchUrl');
 
-      var response = await http.get(Uri.parse(proxyUrl)).timeout(const Duration(seconds: 15));
-
-      String? audioUrl;
+      final response = await http.get(Uri.parse(searchUrl)).timeout(const Duration(seconds: 20));
 
       if (response.statusCode == 200) {
-        try {
-          final data = jsonDecode(response.body);
-          if (data is Map) {
-            audioUrl = data['url'] ?? data['streamUrl'] ?? data['audio'];
-          }
-        } catch (_) {}
-      }
+        final decoded = jsonDecode(response.body);
+        String? audioUrl;
 
-      // 🛡️ PLAN B (Estrategia Maestra): Si el stream directo falló, consultamos el endpoint de búsqueda
-      // que sabemos que SÍ funciona en tu Render para extraer la pista al vuelo.
-      if (audioUrl == null || audioUrl.isEmpty) {
-        print('Stream directo no disponible. Usando búsqueda inteligente en el proxy...');
-        final searchUrl = 'https://dia-proxy.onrender.com/api/search?q=$videoId';
-        final searchRes = await http.get(Uri.parse(searchUrl)).timeout(const Duration(seconds: 15));
+        if (decoded is List && decoded.isNotEmpty) {
+          audioUrl = decoded[0]['url'] ?? decoded[0]['streamUrl'] ?? decoded[0]['audio'];
+        } else if (decoded is Map) {
+          audioUrl = decoded['url'] ?? decoded['streamUrl'] ?? decoded['audio'];
+        }
 
-        if (searchRes.statusCode == 200) {
-          final searchData = jsonDecode(searchRes.body);
-          if (searchData is List && searchData.isNotEmpty) {
-            audioUrl = searchData[0]['url'] ?? searchData[0]['streamUrl'];
-          } else if (searchData is Map) {
-            audioUrl = searchData['url'] ?? searchData['streamUrl'];
-          }
+        if (audioUrl != null && audioUrl.isNotEmpty) {
+          _currentTrack = trackName;
+          notifyListeners();
+
+          await _audioPlayer.setAudioSource(
+            AudioSource.uri(
+              Uri.parse(audioUrl),
+              tag: MediaItem(
+                id: videoId,
+                album: "Media App",
+                title: trackName,
+                artist: author ?? "Desconocido",
+                artUri: artUri != null ? Uri.parse(artUri) : null,
+              ),
+            ),
+          );
+          _audioPlayer.play();
+          return;
         }
       }
 
-      // Si aun así obtuvimos un enlace válido, reproducimos
-      if (audioUrl != null && audioUrl.isNotEmpty) {
-        _currentTrack = trackName;
-        notifyListeners();
-
-        await _audioPlayer.setAudioSource(
-          AudioSource.uri(
-            Uri.parse(audioUrl),
-            tag: MediaItem(
-              id: videoId,
-              album: "Media App",
-              title: trackName,
-              artist: author ?? "Desconocido",
-              artUri: artUri != null ? Uri.parse(artUri) : null,
-            ),
-          ),
-        );
-        _audioPlayer.play();
-      } else {
-        // Fallback final: Si el proxy no da enlace, intentamos armar un flujo directo de emergencia
-        _currentTrack = 'Reproduciendo modo seguro...';
-        notifyListeners();
-        
-        // Usamos una URL directa de respaldo si la hay, o notificamos el error exacto
-        throw Exception('El servidor proxy no entregó un enlace de streaming válido.');
-      }
+      throw Exception('El servidor no retornó un enlace de audio válido.');
 
     } catch (e) {
-      print('Error crítico en reproducción: $e');
-      _currentTrack = 'Error: No se pudo reproducir la pista';
+      print('Error en reproducción: $e');
+      _currentTrack = 'Error al reproducir audio';
     } finally {
       _isloading = false;
       notifyListeners();
