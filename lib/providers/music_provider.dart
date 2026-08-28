@@ -27,11 +27,10 @@ class MusicProvider extends ChangeNotifier {
     _currentTrack = trackName;
     notifyListeners();
 
-    // Empezamos usando el enlace de respaldo estable de inmediato para garantizar cero bloqueos
+    // Usamos el enlace de respaldo estable directo para garantizar que el reproductor no dependa de caídas externas de Render
     String audioUrl = 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3';
 
     try {
-      // Intentamos consultar a Render súper rápido (máximo 3 segundos para que no cuelgue la app)
       final streamUrl = 'https://dia-proxy.onrender.com/api/stream?id=$videoId';
       final response = await http.get(Uri.parse(streamUrl)).timeout(const Duration(seconds: 3));
       
@@ -44,11 +43,12 @@ class MusicProvider extends ChangeNotifier {
           }
         }
       }
-    } catch (_) {
-      // Si Render falla o tarda, se queda silenciosamente con el respaldo y la música suena igual
-    }
+    } catch (_) {}
 
     try {
+      // Detenemos cualquier reproducción anterior para limpiar el buffer
+      await _audioPlayer.stop();
+
       await _audioPlayer.setAudioSource(
         AudioSource.uri(
           Uri.parse(audioUrl),
@@ -61,7 +61,9 @@ class MusicProvider extends ChangeNotifier {
           ),
         ),
       );
-      _audioPlayer.play();
+
+      // Forzamos el arranque inmediato de la reproducción
+      await _audioPlayer.play();
     } catch (e) {
       print('Error al iniciar reproductor: $e');
       _currentTrack = 'Error al reproducir audio';
