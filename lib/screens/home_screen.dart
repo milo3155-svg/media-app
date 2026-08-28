@@ -96,25 +96,47 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ],
       ),
-      bottomSheet: GestureDetector(
-        onTap: () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(builder: (context) => const PlayerScreen()),
+            bottomSheet: Consumer<MusicProvider>(
+        builder: (context, musicProvider, child) {
+          return GestureDetector(
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const PlayerScreen()),
+              );
+            },
+            child: Container(
+              height: 60,
+              color: Colors.deepPurple.shade900,
+              child: Row(
+                children: [
+                  const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 16.0),
+                    child: Icon(Icons.music_note, color: Colors.white),
+                  ),
+                  Expanded(
+                    child: Text(
+                      musicProvider.currentTrack,
+                      style: const TextStyle(color: Colors.white),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  IconButton(
+                    icon: Icon(
+                      musicProvider.isPlaying ? Icons.pause : Icons.play_arrow,
+                      color: Colors.white,
+                    ),
+                    onPressed: () {
+                      musicProvider.togglePlay();
+                    },
+                  ),
+                ],
+              ),
+            ),
           );
         },
-        child: Container(
-          height: 60,
-          color: Colors.deepPurple.shade900,
-          child: Row(
-            children: [
-              const Padding(
-                padding: EdgeInsets.symmetric(horizontal: 16.0),
-                child: Icon(Icons.music_note, color: Colors.white),
-              ),
-              Expanded(
-                child: Text(musicProvider.currentTrack, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-              ),
+      ),
+
               IconButton(
                 icon: Icon(musicProvider.isPlaying ? Icons.pause : Icons.play_arrow, color: Colors.white, size: 30),
                 onPressed: () {
