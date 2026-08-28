@@ -26,7 +26,6 @@ class VideoSearchDelegate extends SearchDelegate<String> {
     );
   }
 
-  // Esto se muestra cuando el usuario presiona "Buscar" en el teclado
   @override
   Widget buildResults(BuildContext context) {
     if (query.trim().isEmpty) {
@@ -60,7 +59,7 @@ class VideoSearchDelegate extends SearchDelegate<String> {
           itemCount: results.length,
           itemBuilder: (context, index) {
             final video = results[index];
-            
+
             return ListTile(
               title: Text(
                 video['title'] ?? 'Sin título',
@@ -71,25 +70,27 @@ class VideoSearchDelegate extends SearchDelegate<String> {
                 style: const TextStyle(color: Colors.grey),
               ),
               onTap: () {
-                // 1. Le pasamos el ID y el título a nuestro motor de audio
-                context.read<MusicProvider>().playVideo(
-                  video['id'] ?? '', 
-                  video['title'] ?? 'Desconocido'
-                );
-                
-                // 2. Cerramos el buscador y regresamos a la pantalla principal
-                close(context, video['title']);
+                final videoId = video['id'] ?? video['videoId'] ?? '';
+                final title = video['title'] ?? 'Sin título';
+                final author = video['author'] ?? 'Desconocido';
+
+                context.read<MusicProvider>().playVideo(videoId, title, author: author);
+                close(context, videoId);
               },
             );
           },
         );
-      }
+      },
     );
   }
 
   @override
   Widget buildSuggestions(BuildContext context) {
-    // Pantalla limpia mientras el usuario escribe
-    return Container(); 
+    return const Center(
+      child: Text(
+        'Busca tu música favorita',
+        style: TextStyle(color: Colors.grey),
+      ),
+    );
   }
 }
