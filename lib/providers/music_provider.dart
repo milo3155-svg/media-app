@@ -24,58 +24,29 @@ class MusicProvider extends ChangeNotifier {
 
   Future<void> playVideo(String videoId, String trackName, {String? author, String? artUri}) async {
     _isloading = true;
-    _currentTrack = 'Buscando pista...';
+    _currentTrack = 'Consultando proxy...';
     notifyListeners();
 
     try {
-      // Usamos el endpoint de búsqueda que SÍ existe en Render, pasando el nombre de la pista
       final query = Uri.encodeComponent(trackName);
       final searchUrl = 'https://dia-proxy.onrender.com/api/search?q=$query';
-      print('Consultando buscador del proxy: $searchUrl');
-
+      
       final response = await http.get(Uri.parse(searchUrl)).timeout(const Duration(seconds: 20));
 
-      print('Código HTTP de búsqueda: ${response.statusCode}');
-      print('Cuerpo de búsqueda: ${response.body}');
-
       if (response.statusCode == 200) {
-        final decoded = jsonDecode(response.body);
-        String? audioUrl;
-
-        if (decoded is List && decoded.isNotEmpty) {
-          // Buscamos la URL de audio dentro del primer resultado de la lista
-          final firstItem = decoded[0];
-          audioUrl = firstItem['url'] ?? firstItem['streamUrl'] ?? firstItem['audio'] ?? firstItem['link'];
-        } else if (decoded is Map) {
-          audioUrl = decoded['url'] ?? decoded['streamUrl'] ?? decoded['audio'] ?? decoded['link'];
-        }
-
-        if (audioUrl != null && audioUrl.isNotEmpty) {
-          _currentTrack = trackName;
-          notifyListeners();
-
-          await _audioPlayer.setAudioSource(
-            AudioSource.uri(
-              Uri.parse(audioUrl),
-              tag: MediaItem(
-                id: videoId,
-                album: "Media App",
-                title: trackName,
-                artist: author ?? "Desconocido",
-                artUri: artUri != null ? Uri.parse(artUri) : null,
-              ),
-            ),
-          );
-          _audioPlayer.play();
-          return;
-        }
+        // Mostramos literal lo que respondió el servidor en la barra de la app
+        _currentTrack = 'Resp: ${response.body.length > 50 ? response.body.substring(0, 50) : response.body}';
+        notifyListeners();
+        print('RESPUESTA JSON COMPLETA: ${response.body}');
+        return;
+      } else {
+        _currentTrack = 'Error HTTP: ${response.statusCode}';
+        notifyListeners();
       }
 
-      throw Exception('La búsqueda no devolvió un enlace de audio reproducible');
-
     } catch (e) {
-      print('Error crítico en reproducción: $e');
-      _currentTrack = 'Error: $e';
+      _currentTrack = 'Catch: $e';
+      notifyListeners();
     } finally {
       _isloading = false;
       notifyListeners();
