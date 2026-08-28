@@ -28,18 +28,22 @@ class MusicProvider extends ChangeNotifier {
     try {
       await _audioPlayer.stop();
 
-      // URL corregida con el parámetro id exacto para tu proxy en Render
       final proxyAudioUrl = 'https://dia-proxy.onrender.com/stream?id=$videoId';
+
+      Uri? parsedArtUri;
+      if (artUri != null && artUri.isNotEmpty) {
+        parsedArtUri = Uri.tryParse(artUri);
+      }
 
       await _audioPlayer.setAudioSource(
         AudioSource.uri(
           Uri.parse(proxyAudioUrl),
           tag: MediaItem(
-            id: videoId,
+            id: videoId.isNotEmpty ? videoId : 'default_id',
             album: 'Media App Pro',
             title: trackName,
             artist: author ?? 'Desconocido',
-            artUri: artUri != null ? Uri.parse(artUri) : null,
+            artUri: parsedArtUri,
           ),
         ),
       );
