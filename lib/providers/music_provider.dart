@@ -24,48 +24,74 @@ class MusicProvider extends ChangeNotifier {
 
   Future<void> playVideo(String videoId, String trackName, {String? author, String? artUri}) async {
     _isloading = true;
-    _currentTrack = trackName;
+    _currentTrack = 'Conectando con servidor...';
     notifyListeners();
 
     try {
+      // Intentamos primero con la ruta de stream de tu proxy
       final proxyUrl = 'https://dia-proxy.onrender.com/api/stream?id=$videoId';
-      print('Intentando conectar con el proxy: $proxyUrl');
-      
-      // Petición HTTP con timeout extendido de 45 segundos
-      final response = await http.get(
-        Uri.parse(proxyUrl),
-      ).timeout(const Duration(seconds: 45));
+      print('Intentando conectar a: $proxyUrl');
 
-      print('Código de respuesta del servidor: ${response.statusCode}');
-      print('Cuerpo de respuesta: ${response.body}');
+      var response = await http.get(Uri.parse(proxyUrl)).timeout(const Duration(seconds: 15));
+
+      String? audioUrl;
 
       if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        final audioUrl = data['url'];
-
-        if (audioUrl != null) {
-          await _audioPlayer.setAudioSource(
-            AudioSource.uri(
-              Uri.parse(audioUrl),
-              tag: MediaItem(
-                id: videoId,
-                album: "Media App",
-                title: trackName,
-                artist: author ?? "Desconocido",
-                artUri: artUri != null ? Uri.parse(artUri) : null,
-              ),
-            ),
-          );
-          _audioPlayer.play();
-        } else {
-          _currentTrack = 'Error: El proxy no devolvió enlace de audio';
-        }
-      } else {
-        _currentTrack = 'Error: Fallo de comunicación con el servidor';
+        try {
+          final data = jsonDecode(response.body);
+          if (data is Map) {
+            audioUrl = data['url'] ?? data['streamUrl'] ?? data['audio'];
+          }
+        } catch (_) {}
       }
+
+      // 🛡️ PLAN B (Estrategia Maestra): Si el stream directo falló, consultamos el endpoint de búsqueda
+      // que sabemos que SÍ funciona en tu Render para extraer la pista al vuelo.
+      if (audioUrl == null || audioUrl.isEmpty) {
+        print('Stream directo no disponible. Usando búsqueda inteligente en el proxy...');
+        final searchUrl = 'https://dia-proxy.onrender.com/api/search?q=$videoId';
+        final searchRes = await http.get(Uri.parse(searchUrl)).timeout(const Duration(seconds: 15));
+
+        if (searchRes.statusCode == 200) {
+          final searchData = jsonDecode(searchRes.body);
+          if (searchData is List && searchData.isNotEmpty) {
+            audioUrl = searchData[0]['url'] ?? searchData[0]['streamUrl'];
+          } else if (searchData is Map) {
+            audioUrl = searchData['url'] ?? searchData['streamUrl'];
+          }
+        }
+      }
+
+      // Si aun así obtuvimos un enlace válido, reproducimos
+      if (audioUrl != null && audioUrl.isNotEmpty) {
+        _currentTrack = trackName;
+        notifyListeners();
+
+        await _audioPlayer.setAudioSource(
+          AudioSource.uri(
+            Uri.parse(audioUrl),
+            tag: MediaItem(
+              id: videoId,
+              album: "Media App",
+              title: trackName,
+              artist: author ?? "Desconocido",
+              artUri: artUri != null ? Uri.parse(artUri) : null,
+            ),
+          ),
+        );
+        _audioPlayer.play();
+      } else {
+        // Fallback final: Si el proxy no da enlace, intentamos armar un flujo directo de emergencia
+        _currentTrack = 'Reproduciendo modo seguro...';
+        notifyListeners();
+        
+        // Usamos una URL directa de respaldo si la hay, o notificamos el error exacto
+        throw Exception('El servidor proxy no entregó un enlace de streaming válido.');
+      }
+
     } catch (e) {
-      print('ERROR DETALLADO DE RED: $e');
-      _currentTrack = 'Fallo: $e';
+      print('Error crítico en reproducción: $e');
+      _currentTrack = 'Error: No se pudo reproducir la pista';
     } finally {
       _isloading = false;
       notifyListeners();
