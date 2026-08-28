@@ -24,27 +24,30 @@ class MusicProvider extends ChangeNotifier {
 
   Future<void> playVideo(String videoId, String trackName, {String? author, String? artUri}) async {
     _isloading = true;
-    _currentTrack = 'Cargando pista...';
+    _currentTrack = 'Buscando pista...';
     notifyListeners();
 
     try {
-      // Apuntamos directo al endpoint de stream con el ID
-      final streamUrl = 'https://dia-proxy.onrender.com/api/stream?id=$videoId';
-      print('Consultando stream: $streamUrl');
+      // Usamos el endpoint de búsqueda que SÍ existe en Render, pasando el nombre de la pista
+      final query = Uri.encodeComponent(trackName);
+      final searchUrl = 'https://dia-proxy.onrender.com/api/search?q=$query';
+      print('Consultando buscador del proxy: $searchUrl');
 
-      final response = await http.get(Uri.parse(streamUrl)).timeout(const Duration(seconds: 20));
+      final response = await http.get(Uri.parse(searchUrl)).timeout(const Duration(seconds: 20));
 
-      print('Código HTTP recibido: ${response.statusCode}');
-      print('Cuerpo de respuesta: ${response.body}');
+      print('Código HTTP de búsqueda: ${response.statusCode}');
+      print('Cuerpo de búsqueda: ${response.body}');
 
       if (response.statusCode == 200) {
         final decoded = jsonDecode(response.body);
         String? audioUrl;
 
-        if (decoded is Map) {
+        if (decoded is List && decoded.isNotEmpty) {
+          // Buscamos la URL de audio dentro del primer resultado de la lista
+          final firstItem = decoded[0];
+          audioUrl = firstItem['url'] ?? firstItem['streamUrl'] ?? firstItem['audio'] ?? firstItem['link'];
+        } else if (decoded is Map) {
           audioUrl = decoded['url'] ?? decoded['streamUrl'] ?? decoded['audio'] ?? decoded['link'];
-        } else if (decoded is String) {
-          audioUrl = decoded;
         }
 
         if (audioUrl != null && audioUrl.isNotEmpty) {
@@ -68,7 +71,7 @@ class MusicProvider extends ChangeNotifier {
         }
       }
 
-      throw Exception('El servidor respondió con código ${response.statusCode}');
+      throw Exception('La búsqueda no devolvió un enlace de audio reproducible');
 
     } catch (e) {
       print('Error crítico en reproducción: $e');
