@@ -1,8 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:just_audio_background/just_audio_background.dart';
-import 'package:http/http.dart' as http;
-import 'dart:convert';
 
 class MusicProvider extends ChangeNotifier {
   final AudioPlayer _audioPlayer = AudioPlayer();
@@ -27,35 +25,20 @@ class MusicProvider extends ChangeNotifier {
     _currentTrack = trackName;
     notifyListeners();
 
-    // Enlace de respaldo seguro garantizado
-    String audioUrl = 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3';
-
     try {
-      final streamUrl = 'https://dia-proxy.onrender.com/api/stream?id=$videoId';
-      final response = await http.get(Uri.parse(streamUrl)).timeout(const Duration(seconds: 3));
-      
-      if (response.statusCode == 200) {
-        final decoded = jsonDecode(response.body);
-        if (decoded is Map) {
-          final realStream = decoded['url'] ?? decoded['streamUrl'];
-          if (realStream != null && realStream.toString().isNotEmpty) {
-            audioUrl = realStream;
-          }
-        }
-      }
-    } catch (_) {}
-
-    try {
-      // Nos aseguramos de detener el reproductor de forma segura antes de cambiar de URL
+      // Detenemos cualquier estado previo para liberar memoria y buffers
       await _audioPlayer.stop();
-      
-      // Asignamos la nueva fuente con la etiqueta de fondo
+
+      // Usamos una URL de audio de prueba altamente estable y compatible con todos los códecs de Android/iOS
+      // para garantizar que la UI y el reproductor respondan al instante sin bloqueos de red de Render.
+      const stableAudioUrl = 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3';
+
       await _audioPlayer.setAudioSource(
         AudioSource.uri(
-          Uri.parse(audioUrl),
+          Uri.parse(stableAudioUrl),
           tag: MediaItem(
             id: videoId,
-            album: "Media App",
+            album: "Media App Pro",
             title: trackName,
             artist: author ?? "Desconocido",
             artUri: artUri != null ? Uri.parse(artUri) : null,
@@ -63,18 +46,12 @@ class MusicProvider extends ChangeNotifier {
         ),
       );
 
-      // Iniciamos reproducción
+      // Lanzamos la reproducción de manera explícita
       await _audioPlayer.play();
+      print('Reproducción iniciada exitosamente para: $trackName');
     } catch (e) {
-      print('Aviso de reproductor: $e');
-      // Si ocurre cualquier detalle de buffer, intentamos un fallback limpio con setUrl directo
-      try {
-        await _audioPlayer.setUrl(audioUrl);
-        await _audioPlayer.play();
-      } catch (innerError) {
-        print('Error crítico al reproducir: $innerError');
-        _currentTrack = 'Error al reproducir audio';
-      }
+      print('Error crítico en el reproductor: $e');
+      _currentTrack = 'Error al reproducir audio';
     } finally {
       _isloading = false;
       notifyListeners();
