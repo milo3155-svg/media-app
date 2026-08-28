@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/music_provider.dart';
-import 'player_screen.dart'; 
-import 'search_delegate.dart'; // <-- Importamos tu nuevo buscador
+import 'player_screen.dart';
+import 'search_delegate.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -17,7 +17,6 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-
     return Scaffold(
       appBar: AppBar(
         title: const Text('Inicio v2 - PROXY'),
@@ -26,7 +25,6 @@ class _HomeScreenState extends State<HomeScreen> {
           IconButton(
             icon: const Icon(Icons.search),
             onPressed: () {
-              // <-- AQUÍ CONECTAMOS LA LUPA CON LA PANTALLA DE BÚSQUEDA
               showSearch(
                 context: context,
                 delegate: VideoSearchDelegate(),
@@ -96,7 +94,7 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ],
       ),
-            bottomSheet: Consumer<MusicProvider>(
+      bottomSheet: Consumer<MusicProvider>(
         builder: (context, musicProvider, child) {
           return GestureDetector(
             onTap: () {
@@ -135,17 +133,6 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           );
         },
-      ),
-
-              IconButton(
-                icon: Icon(musicProvider.isPlaying ? Icons.pause : Icons.play_arrow, color: Colors.white, size: 30),
-                onPressed: () {
-                  context.read<MusicProvider>().togglePlay();
-                },
-              ),
-            ],
-          ),
-        ),
       ),
       bottomNavigationBar: BottomNavigationBar(
         type: BottomNavigationBarType.fixed,
