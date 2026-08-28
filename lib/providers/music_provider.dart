@@ -29,28 +29,27 @@ class MusicProvider extends ChangeNotifier {
       // Detenemos cualquier estado previo para liberar memoria y buffers
       await _audioPlayer.stop();
 
-      // Usamos una URL de audio de prueba altamente estable y compatible con todos los códecs de Android/iOS
-      // para garantizar que la UI y el reproductor respondan al instante sin bloqueos de red de Render.
-      const stableAudioUrl = 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3';
+      // Construimos la URL apuntando a tu backend proxy en Render usando el videoId real
+      final proxyAudioUrl = 'https://dia-proxy.onrender.com/stream?id=$videoId';
 
       await _audioPlayer.setAudioSource(
         AudioSource.uri(
-          Uri.parse(stableAudioUrl),
+          Uri.parse(proxyAudioUrl),
           tag: MediaItem(
             id: videoId,
-            album: "Media App Pro",
+            album: 'Media App Pro',
             title: trackName,
-            artist: author ?? "Desconocido",
+            artist: author ?? 'Desconocido',
             artUri: artUri != null ? Uri.parse(artUri) : null,
           ),
         ),
       );
 
-      // Lanzamos la reproducción de manera explícita
+      // Lanzamos la reproducción
       await _audioPlayer.play();
       print('Reproducción iniciada exitosamente para: $trackName');
     } catch (e) {
-      print('Error crítico en el reproductor: $e');
+      print('Error crítico en el reproducir: $e');
       _currentTrack = 'Error al reproducir audio';
     } finally {
       _isloading = false;
