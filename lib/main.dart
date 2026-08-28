@@ -22,12 +22,12 @@ class MediaApp extends StatelessWidget {
         debugShowCheckedModeBanner: false,
         theme: ThemeData.dark().copyWith(
           scaffoldBackgroundColor: const Color(0xFF121212),
-          colorScheme: ColorScheme.dark(
+          colorScheme: const ColorScheme.dark(
             primary: Colors.purpleAccent,
             secondary: Colors.purpleAccent,
           ),
         ),
-        home: const HomeScreen(),
+        home: HomeScreen(),
       ),
     );
   }
