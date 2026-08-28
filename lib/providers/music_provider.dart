@@ -24,29 +24,49 @@ class MusicProvider extends ChangeNotifier {
 
   Future<void> playVideo(String videoId, String trackName, {String? author, String? artUri}) async {
     _isloading = true;
-    _currentTrack = 'Consultando proxy...';
+    _currentTrack = 'Cargando stream...';
     notifyListeners();
 
     try {
-      final query = Uri.encodeComponent(trackName);
-      final searchUrl = 'https://dia-proxy.onrender.com/api/search?q=$query';
-      
-      final response = await http.get(Uri.parse(searchUrl)).timeout(const Duration(seconds: 20));
+      // Usamos el endpoint correcto /api/stream que vimos en tu server.js
+      final streamUrl = 'https://dia-proxy.onrender.com/api/stream?id=$videoId';
+      print('Consultando stream: $streamUrl');
+
+      final response = await http.get(Uri.parse(streamUrl)).timeout(const Duration(seconds: 25));
+
+      print('Código HTTP: ${response.statusCode}');
+      print('Respuesta: ${response.body}');
 
       if (response.statusCode == 200) {
-        // Mostramos literal lo que respondió el servidor en la barra de la app
-        _currentTrack = 'Resp: ${response.body.length > 50 ? response.body.substring(0, 50) : response.body}';
-        notifyListeners();
-        print('RESPUESTA JSON COMPLETA: ${response.body}');
-        return;
-      } else {
-        _currentTrack = 'Error HTTP: ${response.statusCode}';
-        notifyListeners();
+        final decoded = jsonDecode(response.body);
+        final audioUrl = decoded['url'];
+
+        if (audioUrl != null && audioUrl.isNotEmpty) {
+          _currentTrack = trackName;
+          notifyListeners();
+
+          await _audioPlayer.setAudioSource(
+            AudioSource.uri(
+              Uri.parse(audioUrl),
+              tag: MediaItem(
+                id: videoId,
+                album: "Media App",
+                title: trackName,
+                artist: author ?? "Desconocido",
+                artUri: artUri != null ? Uri.parse(artUri) : null,
+              ),
+            ),
+          );
+          _audioPlayer.play();
+          return;
+        }
       }
 
+      throw Exception('El servidor no devolvió una URL válida');
+
     } catch (e) {
-      _currentTrack = 'Catch: $e';
-      notifyListeners();
+      print('Error al reproducir: $e');
+      _currentTrack = 'Error al reproducir audio';
     } finally {
       _isloading = false;
       notifyListeners();
