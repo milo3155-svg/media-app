@@ -1,48 +1,19 @@
-import 'package:youtube_explode_dart/youtube_explode_dart.dart';
+import 'dart:convert';
+import 'package:http/http.dart' as http;
 
-class ApiService {
-  static final _yt = YoutubeExplode();
-
-  static Future<List<dynamic>> search(String query) async {
-    if (query.trim().isEmpty) return [];
-    
-    try {
-      var videos = await _yt.search.getVideos(query);
-      List<dynamic> formattedResults = [];
-      
-      for (var video in videos.take(15)) {
-        formattedResults.add({
-          'id': video.id.value,
-          'title': video.title,
-          'author': video.author,
-        });
-      }
-      
-      if (formattedResults.isNotEmpty) {
-        return formattedResults;
-      }
-      return [{'title': 'Sin resultados', 'author': 'Intenta otra búsqueda'}];
-    } catch (e) {
-      return [{'title': 'Error interno', 'author': e.toString()}];
-    }
-  }
-
+class AudioHandlerService {
   static Future<String?> getAudioUrl(String videoId) async {
     try {
-      var manifest = await _yt.videos.streamsClient.getManifest(videoId);
+      final uri = Uri.parse('https://mi-media-proxy.onrender.com/stream?id=$videoId');
+      final response = await http.get(uri).timeout(const Duration(seconds: 15));
       
-      // ¡EL TRUCO! Filtramos específicamente por el contenedor mp4/m4a
-      // Android maneja esto nativamente y evita errores de decodificación.
-      var audioStreams = manifest.audioOnly.where((stream) => stream.container.name == 'mp4');
-      
-      if (audioStreams.isEmpty) {
-        audioStreams = manifest.audioOnly; // Respaldo de emergencia
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        return data['url'] ?? data['audioUrl'];
       }
-      
-      var streamInfo = audioStreams.withHighestBitrate();
-      return streamInfo.url.toString();
+      return null;
     } catch (e) {
-      print("Error al extraer audio: $e");
+      print("Error obteniendo stream del backend: $e");
       return null;
     }
   }
