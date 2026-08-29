@@ -1,21 +1,16 @@
 name: media_app
-description: "Aplicación multimedia con Proxy Backend de Piped."
+description: "A new Flutter project."
 publish_to: 'none'
 version: 1.0.0+1
 
 environment:
-  sdk: ">=3.0.0 <4.0.0"
+  sdk: '>=3.0.0 <4.0.0'
 
 dependencies:
   flutter:
     sdk: flutter
-  cupertino_icons: ^1.0.6
-  
-  # LIBRERÍAS DE 1ER NIVEL (Audio, Estado y Red)
-  just_audio: ^0.9.36
-  just_audio_background: ^0.0.1-beta.11
   http: ^1.2.0
-  provider: ^6.1.1
+  audioplayers: ^6.0.0
 
 dev_dependencies:
   flutter_test:
