@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:just_audio_background/just_audio_background.dart';
+import 'http' as http; // Asegúrate de tener importado http
+import 'dart:convert';
 
 class MusicProvider extends ChangeNotifier {
   final AudioPlayer _audioPlayer = AudioPlayer();
@@ -28,17 +30,30 @@ class MusicProvider extends ChangeNotifier {
     try {
       await _audioPlayer.stop();
 
-      final proxyAudioUrl = 'https://mi-media-proxy.onrender.com/stream?id=$videoId';
-      print('URL generada para el proxy: $proxyAudioUrl');
+      // 1. Consultamos al proxy para que nos devuelva el JSON con la URL real de streaming
+      final proxyEndpoint = Uri.parse('https://mi-media-proxy.onrender.com/stream?id=$videoId');
+      final response = await http.get(proxyEndpoint).timeout(const Duration(seconds: 15));
+
+      if (response.statusCode != 200) {
+        throw Exception('El servidor respondió con código ${response.statusCode}');
+      }
+
+      final data = json.decode(response.body);
+      final directAudioUrl = data['url'] ?? data['audioUrl'];
+
+      if (directAudioUrl == null || directAudioUrl.isEmpty) {
+        throw Exception('El proxy no devolvió una URL de audio válida');
+      }
 
       Uri? parsedArtUri;
       if (artUri != null && artUri.isNotEmpty) {
         parsedArtUri = Uri.tryParse(artUri);
       }
 
+      // 2. Alimentamos al reproductor con la URL real y limpia extraída del JSON
       await _audioPlayer.setAudioSource(
         AudioSource.uri(
-          Uri.parse(proxyAudioUrl),
+          Uri.parse(directAudioUrl),
           tag: MediaItem(
             id: videoId.isNotEmpty ? videoId : 'default_id',
             album: 'Media App Pro',
@@ -50,7 +65,6 @@ class MusicProvider extends ChangeNotifier {
       );
 
       await _audioPlayer.play();
-      print('Reproducción iniciada exitosamente para: $trackName');
     } catch (e) {
       print('Error crítico al reproducir: $e');
       _currentTrack = 'Error al reproducir audio';
