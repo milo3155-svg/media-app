@@ -6,11 +6,11 @@ class MusicProvider extends ChangeNotifier {
   final AudioPlayer _audioPlayer = AudioPlayer();
 
   bool _isPlaying = false;
-  bool _isloading = false;
+  bool _isLoading = false;
   String _currentTrack = 'Ninguna pista seleccionada';
 
   bool get isPlaying => _isPlaying;
-  bool get isloading => _isloading;
+  bool get isLoading => _isLoading;
   String get currentTrack => _currentTrack;
 
   MusicProvider() {
@@ -21,14 +21,13 @@ class MusicProvider extends ChangeNotifier {
   }
 
   Future<void> playVideo(String videoId, String trackName, {String? author, String? artUri}) async {
-    _isloading = true;
+    _isLoading = true;
     _currentTrack = trackName;
     notifyListeners();
 
     try {
       await _audioPlayer.stop();
 
-      // Usamos el dominio correcto de tu servicio en Render
       final proxyAudioUrl = 'https://mi-media-proxy.onrender.com/stream?id=$videoId';
 
       Uri? parsedArtUri;
@@ -55,7 +54,7 @@ class MusicProvider extends ChangeNotifier {
       print('Error crítico al reproducir: $e');
       _currentTrack = 'Error al reproducir audio';
     } finally {
-      _isloading = false;
+      _isLoading = false;
       notifyListeners();
     }
   }
