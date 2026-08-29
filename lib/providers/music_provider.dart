@@ -29,6 +29,7 @@ class MusicProvider extends ChangeNotifier {
       await _audioPlayer.stop();
 
       final proxyAudioUrl = 'https://mi-media-proxy.onrender.com/stream?id=$videoId';
+      print('URL generada para el proxy: $proxyAudioUrl');
 
       Uri? parsedArtUri;
       if (artUri != null && artUri.isNotEmpty) {
