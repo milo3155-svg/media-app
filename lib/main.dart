@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
-import 'dart:convert';
+import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 import 'package:audioplayers/audioplayers.dart';
 
 void main() {
@@ -13,14 +12,10 @@ class MediaApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Media Streamer',
+      title: 'YouTube Streamer',
       debugShowCheckedModeBanner: false,
       theme: ThemeData.dark().copyWith(
         scaffoldBackgroundColor: const Color(0xFF121212),
-        colorScheme: ColorScheme.dark(
-          primary: Colors.deepPurpleAccent,
-          surface: const Color(0xFF1E1E1E),
-        ),
       ),
       home: const HomeScreen(),
     );
@@ -36,41 +31,52 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   final TextEditingController searchController = TextEditingController();
+  final YoutubeExplode yt = YoutubeExplode();
   final AudioPlayer audioPlayer = AudioPlayer();
-  List<dynamic> tracks = [];
+  
+  List<Video> videos = [];
   bool isLoading = false;
-  String? currentPlayingUrl;
+  String? playingVideoId;
 
-  Future<void> playPreview(String url) async {
-    await audioPlayer.stop();
-    await audioPlayer.play(UrlSource(url));
-    setState(() {
-      currentPlayingUrl = url;
-    });
-  }
-
-  Future<void> searchTracks(String query) async {
+  Future<void> searchVideos(String query) async {
     if (query.isEmpty) return;
     setState(() => isLoading = true);
-
-    final url = Uri.parse('https://itunes.apple.com/search?term=${Uri.encodeComponent(query)}&media=music&limit=25');
     try {
-      final response = await http.get(url);
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        setState(() => tracks = data['results'] ?? []);
-      }
+      // Búsqueda directa en YouTube sin servidores intermedios
+      final results = await yt.search.getVideos(query);
+      setState(() {
+        videos = results.take(15).toList();
+      });
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Error de conexión con la búsqueda')),
+        const SnackBar(content: Text('Error al buscar en YouTube')),
       );
     } finally {
       setState(() => isLoading = false);
     }
   }
 
+  Future<void> playAudio(Video video) async {
+    try {
+      setState(() => playingVideoId = video.id.value);
+      
+      // Obtener el manifiesto de streams directamente del cliente
+      var manifest = await yt.videos.streamsClient.getManifest(video.id);
+      var audioStreamInfo = manifest.audioOnly.withHighestBitrate();
+      
+      await audioPlayer.stop();
+      await audioPlayer.play(UrlSource(audioStreamInfo.url.toString()));
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Error al extraer el stream de audio')),
+      );
+      setState(() => playingVideoId = null);
+    }
+  }
+
   @override
   void dispose() {
+    yt.close();
     audioPlayer.dispose();
     searchController.dispose();
     super.dispose();
@@ -80,10 +86,8 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Media Streamer App', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
-        centerTitle: true,
+        title: const Text('YouTube Direct Streamer'),
         backgroundColor: const Color(0xFF1A1A1A),
-        elevation: 0,
       ),
       body: Column(
         children: [
@@ -92,7 +96,7 @@ class _HomeScreenState extends State<HomeScreen> {
             child: TextField(
               controller: searchController,
               decoration: InputDecoration(
-                hintText: 'Buscar pistas o contenido...',
+                hintText: 'Buscar video o música...',
                 filled: true,
                 fillColor: const Color(0xFF2C2C2C),
                 border: OutlineInputBorder(
@@ -101,65 +105,51 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
                 suffixIcon: IconButton(
                   icon: const Icon(Icons.search, color: Colors.deepPurpleAccent),
-                  onPressed: () => searchTracks(searchController.text),
+                  onPressed: () => searchVideos(searchController.text),
                 ),
               ),
-              onSubmitted: searchTracks,
+              onSubmitted: searchVideos,
             ),
           ),
           if (isLoading)
             const LinearProgressIndicator(color: Colors.deepPurpleAccent),
           Expanded(
             child: ListView.builder(
-              itemCount: tracks.length,
-              padding: const EdgeInsets.symmetric(horizontal: 16),
+              itemCount: videos.length,
               itemBuilder: (context, index) {
-                final track = tracks[index];
-                final isPlaying = currentPlayingUrl == track['previewUrl'];
-                
-                return Container(
-                  margin: const EdgeInsets.only(bottom: 10),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF1E1E1E),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                      color: isPlaying ? Colors.deepPurpleAccent : Colors.transparent,
-                      width: 1.5,
+                final video = videos[index];
+                final isPlaying = playingVideoId == video.id.value;
+
+                return ListTile(
+                  leading: ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: Image.network(
+                      video.thumbnails.mediumResUrl,
+                      width: 60,
+                      height: 45,
+                      fit: BoxFit.cover,
                     ),
                   ),
-                  child: ListTile(
-                    contentPadding: const EdgeInsets.all(8),
-                    leading: ClipRRect(
-                      borderRadius: BorderRadius.circular(8),
-                      child: Image.network(
-                        track['artworkUrl100'] ?? '',
-                        width: 55,
-                        height: 55,
-                        fit: BoxFit.cover,
-                        errorBuilder: (context, error, stackTrace) =>
-                            const Container(width: 55, height: 55, color: Colors.grey),
-                      ),
+                  title: Text(
+                    video.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: isPlaying ? Colors.deepPurpleAccent : Colors.white,
                     ),
-                    title: Text(
-                      track['trackName'] ?? 'Sin nombre',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  subtitle: Text(
+                    video.author,
+                    style: const TextStyle(color: Colors.grey),
+                  ),
+                  trailing: IconButton(
+                    icon: Icon(
+                      isPlaying ? Icons.pause_circle_filled : Icons.play_circle_fill,
+                      color: Colors.deepPurpleAccent,
+                      size: 32,
                     ),
-                    subtitle: Text(
-                      track['artistName'] ?? 'Artista desconocido',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(color: Colors.grey[400], fontSize: 13),
-                    ),
-                    trailing: IconButton(
-                      icon: Icon(
-                        isPlaying ? Icons.pause_circle_filled : Icons.play_circle_fill,
-                        color: Colors.deepPurpleAccent,
-                        size: 36,
-                      ),
-                      onPressed: () => playPreview(track['previewUrl'] ?? ''),
-                    ),
+                    onPressed: () => playAudio(video),
                   ),
                 );
               },
