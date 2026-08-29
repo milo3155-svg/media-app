@@ -8,8 +8,9 @@ workflows:
       - name: Get dependencies
         script: |
           flutter pub get
-      - name: Regenerate Android platform
+      - name: Clean and regenerate Android platform
         script: |
+          rm -rf android
           flutter create . --platforms=android
       - name: Build APK
         script: |
