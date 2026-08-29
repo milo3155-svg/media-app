@@ -8,9 +8,11 @@ workflows:
       - name: Get dependencies
         script: |
           flutter pub get
+      - name: Regenerate Android platform
+        script: |
+          flutter create . --platforms=android
       - name: Build APK
         script: |
           flutter build apk --release --no-pub
     artifacts:
       - build/**/outputs/**/*.apk
-      - build/**/outputs/bundle/**/*.aab
