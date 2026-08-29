@@ -1,4 +1,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Permiso esencial para el streaming de YouTube -->
+    <uses-permission android:name="android.permission.INTERNET"/>
+
     <application
         android:label="media_app"
         android:name="${applicationName}"
@@ -7,7 +10,6 @@
             android:name=".MainActivity"
             android:exported="true"
             android:launchMode="singleTop"
-            android:taskAffinity=""
             android:theme="@style/LaunchTheme"
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
             android:hardwareAccelerated="true"
@@ -21,6 +23,7 @@
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
         </activity>
+        <!-- Declaración obligatoria de v2 embedding -->
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
