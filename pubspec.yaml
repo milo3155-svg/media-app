@@ -1,19 +1,22 @@
-workflows:
-  default-workflow:
-    name: Default Workflow
-    max_build_duration: 30
-    environment:
-      flutter: stable
-      android_signing:
-        - reference: keystore_ref # (si usas firmas, o déjalo omitido)
-    scripts:
-      - name: Clean project
-        script: |
-          flutter clean
-          flutter pub get
-      - name: Build APK
-        script: |
-          flutter build apk --release
-    artifacts:
-      - build/**/outputs/**/*.apk
-      - build/**/outputs/bundle/**/*.aab
+name: media_app
+description: "A new Flutter project."
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.6
+  youtube_explode_dart: ^2.2.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
+
+flutter:
+  uses-material-design: true
