@@ -28,7 +28,9 @@ class MusicProvider extends ChangeNotifier {
     try {
       await _audioPlayer.stop();
 
-      final proxyAudioUrl = 'https://dia-proxy.onrender.com/stream?id=$videoId';
+      // Construimos la URL completa de YouTube que el proxy de Render procesa de forma segura
+      final youtubeUrl = 'https://www.youtube.com/watch?v=$videoId';
+      final proxyAudioUrl = 'https://dia-proxy.onrender.com/stream?url=${Uri.encodeComponent(youtubeUrl)}';
 
       Uri? parsedArtUri;
       if (artUri != null && artUri.isNotEmpty) {
