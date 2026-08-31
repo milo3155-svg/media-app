@@ -65,7 +65,6 @@ class _HomeScreenState extends State<HomeScreen> {
 
       var manifest = await yt.videos.streamsClient.getManifest(video.id);
       
-      // FILTRO ACTIVO: Obligamos a buscar MP4/M4A para que ExoPlayer no choque con WebM
       dynamic targetStream;
       for (var stream in manifest.audioOnly) {
         final codec = stream.audioCodec.toLowerCase();
@@ -76,7 +75,6 @@ class _HomeScreenState extends State<HomeScreen> {
         }
       }
       
-      // Si no encuentra audio puro en MP4, lo saca del stream de video+audio
       if (targetStream == null) {
         for (var stream in manifest.muxed) {
           final url = stream.url.toString().toLowerCase();
@@ -87,20 +85,13 @@ class _HomeScreenState extends State<HomeScreen> {
         }
       }
 
-      // Respaldo final absoluto
       targetStream ??= manifest.audioOnly.withHighestBitrate();
 
       await audioPlayer.stop();
       
-      // DISFRAZ ACTIVO: Le pasamos el stream limpio haciéndonos pasar por Chrome
+      // Conexión limpia y directa, sin engaños al servidor
       await audioPlayer.setAudioSource(
-        AudioSource.uri(
-          Uri.parse(targetStream.url.toString()),
-          headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Accept': '*/*',
-          },
-        ),
+        AudioSource.uri(Uri.parse(targetStream.url.toString())),
       );
       
       audioPlayer.play();
