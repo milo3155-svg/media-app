@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
-import 'package:audioplayers/audioplayers.dart';
+import 'package:just_audio/just_audio.dart'; // <--- El nuevo motor ultra rápido
 
 void main() {
   runApp(const MediaApp());
@@ -32,7 +32,7 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   final TextEditingController searchController = TextEditingController();
   final YoutubeExplode yt = YoutubeExplode();
-  final AudioPlayer audioPlayer = AudioPlayer();
+  final AudioPlayer audioPlayer = AudioPlayer(); // just_audio usa la misma clase, así que es fácil
 
   List<Video> videos = [];
   bool isLoading = false;
@@ -65,35 +65,13 @@ class _HomeScreenState extends State<HomeScreen> {
 
       var manifest = await yt.videos.streamsClient.getManifest(video.id);
       
-      // FILTRO ANTI-TIMEOUT: Evitamos streams WebM que congelan Android.
-      // Buscamos forzosamente un contenedor MP4 o M4A.
-      dynamic targetStream;
-      
-      for (var stream in manifest.audioOnly) {
-        final codec = stream.audioCodec.toLowerCase();
-        final url = stream.url.toString().toLowerCase();
-        if (codec.contains('mp4') || url.contains('mp4') || url.contains('m4a')) {
-          targetStream = stream;
-          break; // Encontramos un formato nativo compatible, rompemos el ciclo
-        }
-      }
-
-      // Fallback: Si no hay audioOnly en MP4, probamos extraerlo de los streams combinados
-      if (targetStream == null) {
-        for (var stream in manifest.muxed) {
-          final url = stream.url.toString().toLowerCase();
-          if (url.contains('mp4')) {
-            targetStream = stream;
-            break;
-          }
-        }
-      }
-
-      // Último recurso de emergencia
-      targetStream ??= manifest.audioOnly.withHighestBitrate();
+      // Gracias a just_audio, podemos pedir directamente la mayor calidad sin que colapse
+      var streamInfo = manifest.audioOnly.withHighestBitrate();
 
       await audioPlayer.stop();
-      await audioPlayer.play(UrlSource(targetStream.url.toString()));
+      // just_audio procesa la URL y arranca el motor ExoPlayer
+      await audioPlayer.setUrl(streamInfo.url.toString());
+      audioPlayer.play();
       
     } catch (e) {
       if (!mounted) return;
