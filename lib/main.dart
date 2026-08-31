@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
-import 'package:just_audio/just_audio.dart'; // <--- El nuevo motor ultra rápido
+import 'package:just_audio/just_audio.dart';
 
 void main() {
   runApp(const MediaApp());
@@ -32,7 +32,7 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   final TextEditingController searchController = TextEditingController();
   final YoutubeExplode yt = YoutubeExplode();
-  final AudioPlayer audioPlayer = AudioPlayer(); // just_audio usa la misma clase, así que es fácil
+  final AudioPlayer audioPlayer = AudioPlayer();
 
   List<Video> videos = [];
   bool isLoading = false;
@@ -64,13 +64,21 @@ class _HomeScreenState extends State<HomeScreen> {
       setState(() => playingVideoId = video.id.value);
 
       var manifest = await yt.videos.streamsClient.getManifest(video.id);
-      
-      // Gracias a just_audio, podemos pedir directamente la mayor calidad sin que colapse
       var streamInfo = manifest.audioOnly.withHighestBitrate();
 
       await audioPlayer.stop();
-      // just_audio procesa la URL y arranca el motor ExoPlayer
-      await audioPlayer.setUrl(streamInfo.url.toString());
+      
+      // MAGIA NEGRA: Engañamos a YouTube pasándole un User-Agent falso de PC
+      await audioPlayer.setAudioSource(
+        AudioSource.uri(
+          Uri.parse(streamInfo.url.toString()),
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': '*/*',
+          },
+        ),
+      );
+      
       audioPlayer.play();
       
     } catch (e) {
