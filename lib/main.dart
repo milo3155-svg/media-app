@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
-import 'package:just_audio/just_audio.dart';
+import 'package:youtube_player_flutter/youtube_player_flutter.dart';
 
 void main() {
   runApp(const MediaApp());
@@ -32,7 +32,7 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   final TextEditingController searchController = TextEditingController();
   final YoutubeExplode yt = YoutubeExplode();
-  final AudioPlayer audioPlayer = AudioPlayer();
+  YoutubePlayerController? _playerController;
 
   List<Video> videos = [];
   bool isLoading = false;
@@ -57,57 +57,31 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  Future<void> playAudio(Video video) async {
-    try {
-      setState(() {
-        playingVideoId = video.id.value;
-        isLoading = true;
-      });
-
-      var manifest = await yt.videos.streamsClient.getManifest(video.id);
+  void playAudio(Video video) {
+    // En lugar de extraer streams, le damos la orden al reproductor oficial
+    setState(() {
+      playingVideoId = video.id.value;
       
-      // FILTRO: Obligamos a usar MP4/M4A nativo para ExoPlayer
-      dynamic targetStream;
-      for (var stream in manifest.audioOnly) {
-        final codec = stream.audioCodec.toLowerCase();
-        if (codec.contains('mp4') || codec.contains('m4a')) {
-          targetStream = stream;
-          break;
-        }
+      if (_playerController == null) {
+        _playerController = YoutubePlayerController(
+          initialVideoId: video.id.value,
+          flags: const YoutubePlayerFlags(
+            autoPlay: true,
+            hideControls: true, // Lo mantenemos oculto para que parezca app de música
+            mute: false,
+            disableDragSeek: true,
+          ),
+        );
+      } else {
+        _playerController!.load(video.id.value);
       }
-      
-      targetStream ??= manifest.audioOnly.withHighestBitrate();
-
-      await audioPlayer.stop();
-      
-      // LA FUSIÓN: Pasamos el enlace directo al motor nativo usando el disfraz de navegador
-      await audioPlayer.setAudioSource(
-        AudioSource.uri(
-          Uri.parse(targetStream.url.toString()),
-          headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Accept': '*/*',
-          },
-        ),
-      );
-      
-      audioPlayer.play();
-      
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error de red: $e')),
-      );
-      setState(() => playingVideoId = null);
-    } finally {
-      if (mounted) setState(() => isLoading = false);
-    }
+    });
   }
 
   @override
   void dispose() {
     yt.close();
-    audioPlayer.dispose();
+    _playerController?.dispose();
     searchController.dispose();
     super.dispose();
   }
@@ -143,6 +117,17 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
           if (isLoading)
             const LinearProgressIndicator(color: Colors.deepPurpleAccent),
+          
+          // EL MOTOR INVISIBLE: Renderiza el reproductor oficial a 1x1 píxel
+          if (_playerController != null)
+            SizedBox(
+              height: 1,
+              width: 1,
+              child: YoutubePlayer(
+                controller: _playerController!,
+              ),
+            ),
+
           Expanded(
             child: ListView.builder(
               itemCount: videos.length,
