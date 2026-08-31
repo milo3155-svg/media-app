@@ -6,6 +6,28 @@ void main() {
   runApp(const MediaApp());
 }
 
+// --- NUEVA CLASE: CONVIERTE LA MEMORIA RAM EN UN REPRODUCTOR LOCAL ---
+class RamAudioSource extends StreamAudioSource {
+  final List<int> bytes;
+  final String contentType;
+
+  RamAudioSource(this.bytes, this.contentType);
+
+  @override
+  Future<StreamAudioResponse> request([int? start, int? end]) async {
+    start ??= 0;
+    end ??= bytes.length;
+    return StreamAudioResponse(
+      sourceLength: bytes.length,
+      contentLength: end - start,
+      offset: start,
+      stream: Stream.value(bytes.sublist(start, end)),
+      contentType: contentType,
+    );
+  }
+}
+// ----------------------------------------------------------------------
+
 class MediaApp extends StatelessWidget {
   const MediaApp({super.key});
 
@@ -61,13 +83,15 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> playAudio(Video video) async {
     try {
-      setState(() => playingVideoId = video.id.value);
+      // Activamos la barra de carga morada mientras baja el archivo a la RAM
+      setState(() {
+        playingVideoId = video.id.value;
+        isLoading = true; 
+      });
 
-      // Usamos el extractor actualizado a v3.1.0
       var manifest = await yt.videos.streamsClient.getManifest(video.id);
       
       dynamic targetStream;
-      // Filtramos para darle a ExoPlayer su formato favorito (MP4/M4A)
       for (var stream in manifest.audioOnly) {
         final codec = stream.audioCodec.toLowerCase();
         final url = stream.url.toString().toLowerCase();
@@ -89,11 +113,18 @@ class _HomeScreenState extends State<HomeScreen> {
 
       targetStream ??= manifest.audioOnly.withHighestBitrate();
 
+      // 1. EL CABALLO DE TROYA: Descargamos el stream autorizado a la memoria de la app
+      var streamBytes = yt.videos.streamsClient.get(targetStream);
+      List<int> audioData = [];
+      await for (var chunk in streamBytes) {
+        audioData.addAll(chunk);
+      }
+
       await audioPlayer.stop();
       
-      // Conexión súper limpia, la nueva librería de youtube_explode hace el trabajo sucio
+      // 2. Reproducimos el archivo local (YouTube ya no nos puede bloquear aquí)
       await audioPlayer.setAudioSource(
-        AudioSource.uri(Uri.parse(targetStream.url.toString())),
+        RamAudioSource(audioData, 'audio/mp4'),
       );
       
       audioPlayer.play();
@@ -104,6 +135,10 @@ class _HomeScreenState extends State<HomeScreen> {
         SnackBar(content: Text('Fallo: ${e.toString()}')),
       );
       setState(() => playingVideoId = null);
+    } finally {
+      if (mounted) {
+        setState(() => isLoading = false); // Apagamos la barra de carga al iniciar la música
+      }
     }
   }
 
