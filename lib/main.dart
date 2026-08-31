@@ -12,7 +12,7 @@ class MediaApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'YouTube Streamer',
+      title: 'Youtube Streamer',
       debugShowCheckedModeBanner: false,
       theme: ThemeData.dark().copyWith(
         scaffoldBackgroundColor: const Color(0xFF121212),
@@ -33,7 +33,7 @@ class _HomeScreenState extends State<HomeScreen> {
   final TextEditingController searchController = TextEditingController();
   final YoutubeExplode yt = YoutubeExplode();
   final AudioPlayer audioPlayer = AudioPlayer();
-  
+
   List<Video> videos = [];
   bool isLoading = false;
   String? playingVideoId;
@@ -42,31 +42,36 @@ class _HomeScreenState extends State<HomeScreen> {
     if (query.isEmpty) return;
     setState(() => isLoading = true);
     try {
-      // Búsqueda directa en YouTube sin servidores intermedios
+      // Búsqueda directa en youtube sin servidores intermedios
       final results = await yt.search.getVideos(query);
+      if (!mounted) return;
       setState(() {
         videos = results.take(15).toList();
       });
     } catch (e) {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Error al buscar en YouTube')),
       );
     } finally {
-      setState(() => isLoading = false);
+      if (mounted) {
+        setState(() => isLoading = false);
+      }
     }
   }
 
   Future<void> playAudio(Video video) async {
     try {
       setState(() => playingVideoId = video.id.value);
-      
+
       // Obtener el manifiesto de streams directamente del cliente
       var manifest = await yt.videos.streamsClient.getManifest(video.id);
       var audioStreamInfo = manifest.audioOnly.withHighestBitrate();
-      
+
       await audioPlayer.stop();
       await audioPlayer.play(UrlSource(audioStreamInfo.url.toString()));
     } catch (e) {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Error al extraer el stream de audio')),
       );
@@ -86,7 +91,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('YouTube Direct Streamer'),
+        title: const Text('Youtube Direct Streamer'),
         backgroundColor: const Color(0xFF1A1A1A),
       ),
       body: Column(
