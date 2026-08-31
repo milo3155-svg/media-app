@@ -64,14 +64,38 @@ class _HomeScreenState extends State<HomeScreen> {
       setState(() => playingVideoId = video.id.value);
 
       var manifest = await yt.videos.streamsClient.getManifest(video.id);
-      var streamInfo = manifest.audioOnly.withHighestBitrate();
+      
+      // FILTRO ACTIVO: Obligamos a buscar MP4/M4A para que ExoPlayer no choque con WebM
+      dynamic targetStream;
+      for (var stream in manifest.audioOnly) {
+        final codec = stream.audioCodec.toLowerCase();
+        final url = stream.url.toString().toLowerCase();
+        if (codec.contains('mp4') || url.contains('mp4') || url.contains('m4a')) {
+          targetStream = stream;
+          break;
+        }
+      }
+      
+      // Si no encuentra audio puro en MP4, lo saca del stream de video+audio
+      if (targetStream == null) {
+        for (var stream in manifest.muxed) {
+          final url = stream.url.toString().toLowerCase();
+          if (url.contains('mp4')) {
+            targetStream = stream;
+            break;
+          }
+        }
+      }
+
+      // Respaldo final absoluto
+      targetStream ??= manifest.audioOnly.withHighestBitrate();
 
       await audioPlayer.stop();
       
-      // MAGIA NEGRA: Engañamos a YouTube pasándole un User-Agent falso de PC
+      // DISFRAZ ACTIVO: Le pasamos el stream limpio haciéndonos pasar por Chrome
       await audioPlayer.setAudioSource(
         AudioSource.uri(
-          Uri.parse(streamInfo.url.toString()),
+          Uri.parse(targetStream.url.toString()),
           headers: {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
             'Accept': '*/*',
