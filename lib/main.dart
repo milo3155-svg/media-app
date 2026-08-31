@@ -65,22 +65,39 @@ class _HomeScreenState extends State<HomeScreen> {
 
       var manifest = await yt.videos.streamsClient.getManifest(video.id);
       
-      // Inteligencia de extracción: Si no hay 'audioOnly', intentamos usar el stream 'muxed' (video+audio)
-      dynamic streamInfo;
-      if (manifest.audioOnly.isNotEmpty) {
-        streamInfo = manifest.audioOnly.withHighestBitrate();
-      } else if (manifest.muxed.isNotEmpty) {
-        streamInfo = manifest.muxed.withHighestBitrate();
-      } else {
-        throw Exception('YouTube bloqueó los streams para este video.');
+      // FILTRO ANTI-TIMEOUT: Evitamos streams WebM que congelan Android.
+      // Buscamos forzosamente un contenedor MP4 o M4A.
+      dynamic targetStream;
+      
+      for (var stream in manifest.audioOnly) {
+        final codec = stream.audioCodec.toLowerCase();
+        final url = stream.url.toString().toLowerCase();
+        if (codec.contains('mp4') || url.contains('mp4') || url.contains('m4a')) {
+          targetStream = stream;
+          break; // Encontramos un formato nativo compatible, rompemos el ciclo
+        }
       }
 
+      // Fallback: Si no hay audioOnly en MP4, probamos extraerlo de los streams combinados
+      if (targetStream == null) {
+        for (var stream in manifest.muxed) {
+          final url = stream.url.toString().toLowerCase();
+          if (url.contains('mp4')) {
+            targetStream = stream;
+            break;
+          }
+        }
+      }
+
+      // Último recurso de emergencia
+      targetStream ??= manifest.audioOnly.withHighestBitrate();
+
       await audioPlayer.stop();
-      await audioPlayer.play(UrlSource(streamInfo.url.toString()));
+      await audioPlayer.play(UrlSource(targetStream.url.toString()));
+      
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        // Imprime el error real en la pantalla para saber qué falló exactamente
         SnackBar(content: Text('Fallo: ${e.toString()}')),
       );
       setState(() => playingVideoId = null);
