@@ -63,9 +63,11 @@ class _HomeScreenState extends State<HomeScreen> {
     try {
       setState(() => playingVideoId = video.id.value);
 
+      // Usamos el extractor actualizado a v3.1.0
       var manifest = await yt.videos.streamsClient.getManifest(video.id);
       
       dynamic targetStream;
+      // Filtramos para darle a ExoPlayer su formato favorito (MP4/M4A)
       for (var stream in manifest.audioOnly) {
         final codec = stream.audioCodec.toLowerCase();
         final url = stream.url.toString().toLowerCase();
@@ -89,7 +91,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
       await audioPlayer.stop();
       
-      // Conexión limpia y directa, sin engaños al servidor
+      // Conexión súper limpia, la nueva librería de youtube_explode hace el trabajo sucio
       await audioPlayer.setAudioSource(
         AudioSource.uri(Uri.parse(targetStream.url.toString())),
       );
