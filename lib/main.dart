@@ -6,28 +6,6 @@ void main() {
   runApp(const MediaApp());
 }
 
-// --- NUEVA CLASE: CONVIERTE LA MEMORIA RAM EN UN REPRODUCTOR LOCAL ---
-class RamAudioSource extends StreamAudioSource {
-  final List<int> bytes;
-  final String contentType;
-
-  RamAudioSource(this.bytes, this.contentType);
-
-  @override
-  Future<StreamAudioResponse> request([int? start, int? end]) async {
-    start ??= 0;
-    end ??= bytes.length;
-    return StreamAudioResponse(
-      sourceLength: bytes.length,
-      contentLength: end - start,
-      offset: start,
-      stream: Stream.value(bytes.sublist(start, end)),
-      contentType: contentType,
-    );
-  }
-}
-// ----------------------------------------------------------------------
-
 class MediaApp extends StatelessWidget {
   const MediaApp({super.key});
 
@@ -75,56 +53,42 @@ class _HomeScreenState extends State<HomeScreen> {
         SnackBar(content: Text('Error al buscar: ${e.toString()}')),
       );
     } finally {
-      if (mounted) {
-        setState(() => isLoading = false);
-      }
+      if (mounted) setState(() => isLoading = false);
     }
   }
 
   Future<void> playAudio(Video video) async {
     try {
-      // Activamos la barra de carga morada mientras baja el archivo a la RAM
       setState(() {
         playingVideoId = video.id.value;
-        isLoading = true; 
+        isLoading = true;
       });
 
       var manifest = await yt.videos.streamsClient.getManifest(video.id);
       
+      // FILTRO: Obligamos a usar MP4/M4A nativo para ExoPlayer
       dynamic targetStream;
       for (var stream in manifest.audioOnly) {
         final codec = stream.audioCodec.toLowerCase();
-        final url = stream.url.toString().toLowerCase();
-        if (codec.contains('mp4') || url.contains('mp4') || url.contains('m4a')) {
+        if (codec.contains('mp4') || codec.contains('m4a')) {
           targetStream = stream;
           break;
         }
       }
       
-      if (targetStream == null) {
-        for (var stream in manifest.muxed) {
-          final url = stream.url.toString().toLowerCase();
-          if (url.contains('mp4')) {
-            targetStream = stream;
-            break;
-          }
-        }
-      }
-
       targetStream ??= manifest.audioOnly.withHighestBitrate();
-
-      // 1. EL CABALLO DE TROYA: Descargamos el stream autorizado a la memoria de la app
-      var streamBytes = yt.videos.streamsClient.get(targetStream);
-      List<int> audioData = [];
-      await for (var chunk in streamBytes) {
-        audioData.addAll(chunk);
-      }
 
       await audioPlayer.stop();
       
-      // 2. Reproducimos el archivo local (YouTube ya no nos puede bloquear aquí)
+      // LA FUSIÓN: Pasamos el enlace directo al motor nativo usando el disfraz de navegador
       await audioPlayer.setAudioSource(
-        RamAudioSource(audioData, 'audio/mp4'),
+        AudioSource.uri(
+          Uri.parse(targetStream.url.toString()),
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': '*/*',
+          },
+        ),
       );
       
       audioPlayer.play();
@@ -132,13 +96,11 @@ class _HomeScreenState extends State<HomeScreen> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Fallo: ${e.toString()}')),
+        SnackBar(content: Text('Error de red: $e')),
       );
       setState(() => playingVideoId = null);
     } finally {
-      if (mounted) {
-        setState(() => isLoading = false); // Apagamos la barra de carga al iniciar la música
-      }
+      if (mounted) setState(() => isLoading = false);
     }
   }
 
