@@ -42,7 +42,6 @@ class _HomeScreenState extends State<HomeScreen> {
     if (query.isEmpty) return;
     setState(() => isLoading = true);
     try {
-      // Búsqueda directa en youtube sin servidores intermedios
       final results = await yt.search.getVideos(query);
       if (!mounted) return;
       setState(() {
@@ -51,7 +50,7 @@ class _HomeScreenState extends State<HomeScreen> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Error al buscar en YouTube')),
+        SnackBar(content: Text('Error al buscar: ${e.toString()}')),
       );
     } finally {
       if (mounted) {
@@ -64,16 +63,25 @@ class _HomeScreenState extends State<HomeScreen> {
     try {
       setState(() => playingVideoId = video.id.value);
 
-      // Obtener el manifiesto de streams directamente del cliente
       var manifest = await yt.videos.streamsClient.getManifest(video.id);
-      var audioStreamInfo = manifest.audioOnly.withHighestBitrate();
+      
+      // Inteligencia de extracción: Si no hay 'audioOnly', intentamos usar el stream 'muxed' (video+audio)
+      dynamic streamInfo;
+      if (manifest.audioOnly.isNotEmpty) {
+        streamInfo = manifest.audioOnly.withHighestBitrate();
+      } else if (manifest.muxed.isNotEmpty) {
+        streamInfo = manifest.muxed.withHighestBitrate();
+      } else {
+        throw Exception('YouTube bloqueó los streams para este video.');
+      }
 
       await audioPlayer.stop();
-      await audioPlayer.play(UrlSource(audioStreamInfo.url.toString()));
+      await audioPlayer.play(UrlSource(streamInfo.url.toString()));
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Error al extraer el stream de audio')),
+        // Imprime el error real en la pantalla para saber qué falló exactamente
+        SnackBar(content: Text('Fallo: ${e.toString()}')),
       );
       setState(() => playingVideoId = null);
     }
