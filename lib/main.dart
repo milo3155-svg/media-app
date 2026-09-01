@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
-import 'package:youtube_player_flutter/youtube_player_flutter.dart';
+import 'package:youtube_player_iframe/youtube_player_iframe.dart';
 
 void main() {
   runApp(const MediaApp());
@@ -61,26 +61,27 @@ class _HomeScreenState extends State<HomeScreen> {
     setState(() {
       playingVideoId = video.id.value;
       
+      // Iniciamos el reproductor oficial de Google si no existe
       if (_playerController == null) {
         _playerController = YoutubePlayerController(
-          initialVideoId: video.id.value,
-          flags: const YoutubePlayerFlags(
-            autoPlay: true,
-            hideControls: true, 
+          params: const YoutubePlayerParams(
+            showControls: false, // Oculto para que parezca app de música
             mute: false,
-            disableDragSeek: true,
+            showFullscreenButton: false,
+            loop: false,
           ),
         );
-      } else {
-        _playerController!.load(video.id.value);
       }
+      
+      // Le inyectamos el ID de la canción de Nirvana o Don Omar sin necesidad de extraer links
+      _playerController!.loadVideoById(videoId: video.id.value);
     });
   }
 
   @override
   void dispose() {
     yt.close();
-    _playerController?.dispose();
+    _playerController?.close();
     searchController.dispose();
     super.dispose();
   }
@@ -117,7 +118,7 @@ class _HomeScreenState extends State<HomeScreen> {
           if (isLoading)
             const LinearProgressIndicator(color: Colors.deepPurpleAccent),
           
-          // El reproductor nativo invisible incrustado
+          // LA BÓVEDA: Renderizamos el motor oficial a 1x1 píxel.
           if (_playerController != null)
             SizedBox(
               height: 1,
