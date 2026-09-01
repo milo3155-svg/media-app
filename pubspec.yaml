@@ -14,6 +14,9 @@ dependencies:
   youtube_explode_dart: ^3.1.0
   youtube_player_flutter: ^8.1.2
 
+dependency_overrides:
+  flutter_inappwebview: ^6.0.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
