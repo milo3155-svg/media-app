@@ -1,8 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 import 'package:youtube_player_iframe/youtube_player_iframe.dart';
+import 'package:audio_session/audio_session.dart'; // NUEVO
 
-void main() {
+void main() async {
+  // NUEVO: Aseguramos que Flutter esté listo antes de arrancar la sesión de audio
+  WidgetsFlutterBinding.ensureInitialized();
+  
+  // NUEVO: Le decimos a Android "¡Oye, somos una app de música profesional!"
+  final session = await AudioSession.instance;
+  await session.configure(const AudioSessionConfiguration.music());
+
   runApp(const MediaApp());
 }
 
@@ -61,11 +69,10 @@ class _HomeScreenState extends State<HomeScreen> {
     setState(() {
       playingVideoId = video.id.value;
       
-      // Iniciamos el reproductor oficial de Google si no existe
       if (_playerController == null) {
         _playerController = YoutubePlayerController(
           params: const YoutubePlayerParams(
-            showControls: false, // Oculto para que parezca app de música
+            showControls: false, 
             mute: false,
             showFullscreenButton: false,
             loop: false,
@@ -73,7 +80,6 @@ class _HomeScreenState extends State<HomeScreen> {
         );
       }
       
-      // Le inyectamos el ID de la canción de Nirvana o Don Omar sin necesidad de extraer links
       _playerController!.loadVideoById(videoId: video.id.value);
     });
   }
@@ -118,7 +124,6 @@ class _HomeScreenState extends State<HomeScreen> {
           if (isLoading)
             const LinearProgressIndicator(color: Colors.deepPurpleAccent),
           
-          // LA BÓVEDA: Renderizamos el motor oficial a 1x1 píxel.
           if (_playerController != null)
             SizedBox(
               height: 1,
