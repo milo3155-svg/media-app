@@ -1,15 +1,51 @@
 import 'package:flutter/material.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 import 'package:youtube_player_iframe/youtube_player_iframe.dart';
-import 'package:audio_session/audio_session.dart'; // NUEVO
+import 'package:audio_session/audio_session.dart';
+import 'package:audio_service/audio_service.dart';
+
+// 1. EL CEREBRO DE SEGUNDO PLANO
+class MyAudioHandler extends BaseAudioHandler {
+  MyAudioHandler() {
+    // Configuramos los botones que aparecerán en la notificación (Play/Pause)
+    playbackState.add(playbackState.value.copyWith(
+      controls: [MediaControl.pause, MediaControl.play],
+      systemActions: const {MediaAction.seek},
+      processingState: AudioProcessingState.ready,
+      playing: false,
+    ));
+  }
+
+  @override
+  Future<void> play() async {
+    playbackState.add(playbackState.value.copyWith(playing: true));
+  }
+
+  @override
+  Future<void> pause() async {
+    playbackState.add(playbackState.value.copyWith(playing: false));
+  }
+}
+
+// Variable global para controlar el servicio de audio
+late AudioHandler audioHandler;
 
 void main() async {
-  // NUEVO: Aseguramos que Flutter esté listo antes de arrancar la sesión de audio
   WidgetsFlutterBinding.ensureInitialized();
   
-  // NUEVO: Le decimos a Android "¡Oye, somos una app de música profesional!"
+  // 2. INICIAMOS EL SERVICIO VIP ANTES DE ABRIR LA APP
   final session = await AudioSession.instance;
   await session.configure(const AudioSessionConfiguration.music());
+
+  audioHandler = await AudioService.init(
+    builder: () => MyAudioHandler(),
+    config: const AudioServiceConfig(
+      androidNotificationChannelId: 'com.media_app.channel.audio',
+      androidNotificationChannelName: 'Reproductor de Música',
+      androidNotificationOngoing: true,
+      androidShowNotificationBadge: true,
+    ),
+  );
 
   runApp(const MediaApp());
 }
@@ -81,6 +117,15 @@ class _HomeScreenState extends State<HomeScreen> {
       }
       
       _playerController!.loadVideoById(videoId: video.id.value);
+      
+      // 3. ¡LA MAGIA! Le mandamos los datos de la canción a la notificación de Android
+      audioHandler.mediaItem.add(MediaItem(
+        id: video.id.value,
+        title: video.title,
+        artist: video.author,
+        artUri: Uri.parse(video.thumbnails.mediumResUrl),
+      ));
+      audioHandler.play();
     });
   }
 
