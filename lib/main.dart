@@ -25,6 +25,13 @@ class MyAudioHandler extends BaseAudioHandler {
   Future<void> pause() async {
     playbackState.add(playbackState.value.copyWith(playing: false));
   }
+
+  // LA SOLUCIÓN: Método oficial y seguro para recibir la canción desde la pantalla
+  @override
+  Future<void> playMediaItem(MediaItem item) async {
+    mediaItem.add(item); // Aquí adentro sí tenemos permiso de usar .add()
+    play();
+  }
 }
 
 // Variable global para controlar el servicio de audio
@@ -33,7 +40,7 @@ late AudioHandler audioHandler;
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   
-  // 2. INICIAMOS EL SERVICIO VIP ANTES DE ABRIR LA APP
+  // INICIAMOS EL SERVICIO VIP ANTES DE ABRIR LA APP
   final session = await AudioSession.instance;
   await session.configure(const AudioSessionConfiguration.music());
 
@@ -118,14 +125,13 @@ class _HomeScreenState extends State<HomeScreen> {
       
       _playerController!.loadVideoById(videoId: video.id.value);
       
-      // 3. ¡LA MAGIA! Le mandamos los datos de la canción a la notificación de Android
-      audioHandler.mediaItem.add(MediaItem(
+      // LA MAGIA CORREGIDA: Le pedimos al cerebro que inicie la canción y dibuje la notificación
+      audioHandler.playMediaItem(MediaItem(
         id: video.id.value,
         title: video.title,
         artist: video.author,
         artUri: Uri.parse(video.thumbnails.mediumResUrl),
       ));
-      audioHandler.play();
     });
   }
 
