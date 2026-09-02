@@ -7,7 +7,6 @@ import 'package:audio_service/audio_service.dart';
 // 1. EL CEREBRO DE SEGUNDO PLANO
 class MyAudioHandler extends BaseAudioHandler {
   MyAudioHandler() {
-    // Configuramos los botones que aparecerán en la notificación (Play/Pause)
     playbackState.add(playbackState.value.copyWith(
       controls: [MediaControl.pause, MediaControl.play],
       systemActions: const {MediaAction.seek},
@@ -26,34 +25,19 @@ class MyAudioHandler extends BaseAudioHandler {
     playbackState.add(playbackState.value.copyWith(playing: false));
   }
 
-  // LA SOLUCIÓN: Método oficial y seguro para recibir la canción desde la pantalla
   @override
   Future<void> playMediaItem(MediaItem item) async {
-    mediaItem.add(item); // Aquí adentro sí tenemos permiso de usar .add()
+    mediaItem.add(item);
     play();
   }
 }
 
-// Variable global para controlar el servicio de audio
-late AudioHandler audioHandler;
+// AHORA ES OPCIONAL PARA QUE NO ROMPA LA APP SI FALLA
+AudioHandler? audioHandler;
 
-void main() async {
+void main() {
+  // ARRANCAMOS LA INTERFAZ VISUAL PRIMERO QUE NADA (¡Adios pantalla negra!)
   WidgetsFlutterBinding.ensureInitialized();
-  
-  // INICIAMOS EL SERVICIO VIP ANTES DE ABRIR LA APP
-  final session = await AudioSession.instance;
-  await session.configure(const AudioSessionConfiguration.music());
-
-  audioHandler = await AudioService.init(
-    builder: () => MyAudioHandler(),
-    config: const AudioServiceConfig(
-      androidNotificationChannelId: 'com.media_app.channel.audio',
-      androidNotificationChannelName: 'Reproductor de Música',
-      androidNotificationOngoing: true,
-      androidShowNotificationBadge: true,
-    ),
-  );
-
   runApp(const MediaApp());
 }
 
@@ -88,6 +72,32 @@ class _HomeScreenState extends State<HomeScreen> {
   List<Video> videos = [];
   bool isLoading = false;
   String? playingVideoId;
+
+  @override
+  void initState() {
+    super.initState();
+    // INICIAMOS EL SERVICIO VIP EN SEGUNDO PLANO, SIN BLOQUEAR LA APP
+    _initAudioService();
+  }
+
+  Future<void> _initAudioService() async {
+    try {
+      final session = await AudioSession.instance;
+      await session.configure(const AudioSessionConfiguration.music());
+
+      audioHandler = await AudioService.init(
+        builder: () => MyAudioHandler(),
+        config: const AudioServiceConfig(
+          androidNotificationChannelId: 'com.media_app.channel.audio',
+          androidNotificationChannelName: 'Reproductor VIP',
+          androidNotificationOngoing: true,
+        ),
+      );
+    } catch (e) {
+      // Si Android rechaza la notificación, la app sobrevive y sigue funcionando de forma normal.
+      debugPrint('Error de AudioService: $e');
+    }
+  }
 
   Future<void> searchVideos(String query) async {
     if (query.isEmpty) return;
@@ -125,13 +135,15 @@ class _HomeScreenState extends State<HomeScreen> {
       
       _playerController!.loadVideoById(videoId: video.id.value);
       
-      // LA MAGIA CORREGIDA: Le pedimos al cerebro que inicie la canción y dibuje la notificación
-      audioHandler.playMediaItem(MediaItem(
-        id: video.id.value,
-        title: video.title,
-        artist: video.author,
-        artUri: Uri.parse(video.thumbnails.mediumResUrl),
-      ));
+      // SOLO ENVIAMOS DATOS SI EL SERVICIO VIP LOGRÓ INICIARSE
+      if (audioHandler != null) {
+        audioHandler!.playMediaItem(MediaItem(
+          id: video.id.value,
+          title: video.title,
+          artist: video.author,
+          artUri: Uri.parse(video.thumbnails.mediumResUrl),
+        ));
+      }
     });
   }
 
