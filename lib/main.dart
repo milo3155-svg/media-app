@@ -4,18 +4,26 @@ import 'package:just_audio/just_audio.dart';
 import 'package:audio_session/audio_session.dart';
 import 'package:audio_service/audio_service.dart';
 
-// 1. EL CEREBRO DE SEGUNDO PLANO
+// 1. EL CEREBRO DE SEGUNDO PLANO (Ahora con controles de bloqueo)
 class MyAudioHandler extends BaseAudioHandler {
   final _player = AudioPlayer();
 
   MyAudioHandler() {
     _player.playbackEventStream.listen((event) {
       final playing = _player.playing;
+      
+      // AQUÍ LE DECIMOS A ANDROID QUÉ BOTONES DIBUJAR EN EL BLOQUEO
       playbackState.add(playbackState.value.copyWith(
         controls: [
+          MediaControl.skipToPrevious,
           if (playing) MediaControl.pause else MediaControl.play,
+          MediaControl.skipToNext,
         ],
-        systemActions: const {MediaAction.seek},
+        systemActions: const {
+          MediaAction.seek,
+          MediaAction.seekForward,
+          MediaAction.seekBackward,
+        },
         processingState: const {
           ProcessingState.idle: AudioProcessingState.idle,
           ProcessingState.loading: AudioProcessingState.loading,
@@ -39,6 +47,19 @@ class MyAudioHandler extends BaseAudioHandler {
 
   @override
   Future<void> seek(Duration position) => _player.seek(position);
+
+  // Preparamos los botones de Siguiente y Anterior (Por ahora solo evitan errores)
+  @override
+  Future<void> skipToNext() async {
+    debugPrint("Botón Siguiente presionado desde bloqueo");
+    // Aquí conectaremos la cola de reproducción después
+  }
+
+  @override
+  Future<void> skipToPrevious() async {
+    debugPrint("Botón Anterior presionado desde bloqueo");
+    // Aquí conectaremos la cola de reproducción después
+  }
 
   @override
   Future<void> playMediaItem(MediaItem item) async {
@@ -77,7 +98,7 @@ class MediaApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Youtube Streamer',
+      title: 'Spotify-Killer',
       debugShowCheckedModeBanner: false,
       theme: ThemeData.dark().copyWith(
         scaffoldBackgroundColor: const Color(0xFF121212),
@@ -119,6 +140,8 @@ class _HomeScreenState extends State<HomeScreen> {
           androidNotificationChannelId: 'com.media_app.channel.audio',
           androidNotificationChannelName: 'Reproductor VIP',
           androidNotificationOngoing: true,
+          // Habilitamos los controles en la notificación
+          androidShowNotificationBadge: true,
         ),
       );
 
@@ -170,19 +193,17 @@ class _HomeScreenState extends State<HomeScreen> {
     try {
       final manifest = await yt.videos.streamsClient.getManifest(video.id);
       
-      // EL TRUCO DEFINITIVO: En lugar de pedir "Solo Audio", pedimos el "Video Muxed (Video+Audio)".
-      // ExoPlayer extrae el audio de ese MP4 tradicional sin que YouTube bloquee la conexión.
       final muxedStreams = manifest.muxed.where((stream) => stream.container.name == 'mp4');
-      
       if (muxedStreams.isEmpty) throw Exception("Sin formato compatible");
       
       final streamInfo = muxedStreams.first;
 
+      // LA MAGIA VISUAL: Enviamos los datos para la pantalla de bloqueo
       audioHandler!.playMediaItem(MediaItem(
         id: video.id.value,
         title: video.title,
         artist: video.author,
-        artUri: Uri.parse(video.thumbnails.mediumResUrl),
+        artUri: Uri.parse(video.thumbnails.highResUrl), // Usamos alta resolución para la portada
         extras: {'url': streamInfo.url.toString()},
       ));
       
@@ -205,7 +226,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Youtube Direct Streamer'),
+        title: const Text('Spotify-Killer'),
         backgroundColor: const Color(0xFF1A1A1A),
       ),
       body: Column(
