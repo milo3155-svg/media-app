@@ -1,42 +1,61 @@
 import 'package:flutter/material.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
-import 'package:youtube_player_iframe/youtube_player_iframe.dart';
+import 'package:just_audio/just_audio.dart';
 import 'package:audio_session/audio_session.dart';
 import 'package:audio_service/audio_service.dart';
 
-// 1. EL CEREBRO DE SEGUNDO PLANO
+// 1. EL NUEVO CEREBRO (Conectado a un reproductor nativo)
 class MyAudioHandler extends BaseAudioHandler {
+  final _player = AudioPlayer();
+
   MyAudioHandler() {
-    playbackState.add(playbackState.value.copyWith(
-      controls: [MediaControl.pause, MediaControl.play],
-      systemActions: const {MediaAction.seek},
-      processingState: AudioProcessingState.ready,
-      playing: false,
-    ));
+    // Sincronizar el estado del reproductor con la notificación de la pantalla de bloqueo
+    _player.playbackEventStream.listen((event) {
+      final playing = _player.playing;
+      playbackState.add(playbackState.value.copyWith(
+        controls: [
+          if (playing) MediaControl.pause else MediaControl.play,
+        ],
+        systemActions: const {MediaAction.seek},
+        processingState: const {
+          ProcessingState.idle: AudioProcessingState.idle,
+          ProcessingState.loading: AudioProcessingState.loading,
+          ProcessingState.buffering: AudioProcessingState.buffering,
+          ProcessingState.ready: AudioProcessingState.ready,
+          ProcessingState.completed: AudioProcessingState.completed,
+        }[_player.processingState]!,
+        playing: playing,
+        updatePosition: _player.position,
+        bufferedPosition: _player.bufferedPosition,
+        speed: _player.speed,
+      ));
+    });
   }
 
   @override
-  Future<void> play() async {
-    playbackState.add(playbackState.value.copyWith(playing: true));
-  }
+  Future<void> play() => _player.play();
 
   @override
-  Future<void> pause() async {
-    playbackState.add(playbackState.value.copyWith(playing: false));
-  }
+  Future<void> pause() => _player.pause();
+
+  @override
+  Future<void> seek(Duration position) => _player.seek(position);
 
   @override
   Future<void> playMediaItem(MediaItem item) async {
     mediaItem.add(item);
-    play();
+    // Recuperamos la URL pura del audio que inyectamos desde la interfaz
+    final url = item.extras?['url'] as String?;
+    if (url != null) {
+      await _player.setUrl(url);
+      play();
+    }
   }
 }
 
-// AHORA ES OPCIONAL PARA QUE NO ROMPA LA APP SI FALLA
 AudioHandler? audioHandler;
 
 void main() {
-  // ARRANCAMOS LA INTERFAZ VISUAL PRIMERO QUE NADA (¡Adios pantalla negra!)
   WidgetsFlutterBinding.ensureInitialized();
   runApp(const MediaApp());
 }
@@ -67,7 +86,6 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   final TextEditingController searchController = TextEditingController();
   final YoutubeExplode yt = YoutubeExplode();
-  YoutubePlayerController? _playerController;
 
   List<Video> videos = [];
   bool isLoading = false;
@@ -76,7 +94,6 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
-    // INICIAMOS EL SERVICIO VIP EN SEGUNDO PLANO, SIN BLOQUEAR LA APP
     _initAudioService();
   }
 
@@ -94,7 +111,6 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
       );
     } catch (e) {
-      // Si Android rechaza la notificación, la app sobrevive y sigue funcionando de forma normal.
       debugPrint('Error de AudioService: $e');
     }
   }
@@ -118,39 +134,41 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  void playAudio(Video video) {
+  Future<void> playAudio(Video video) async {
     setState(() {
       playingVideoId = video.id.value;
-      
-      if (_playerController == null) {
-        _playerController = YoutubePlayerController(
-          params: const YoutubePlayerParams(
-            showControls: false, 
-            mute: false,
-            showFullscreenButton: false,
-            loop: false,
-          ),
-        );
-      }
-      
-      _playerController!.loadVideoById(videoId: video.id.value);
-      
-      // SOLO ENVIAMOS DATOS SI EL SERVICIO VIP LOGRÓ INICIARSE
+    });
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Extrayendo audio puro...')),
+    );
+
+    try {
+      // LA EXTRACCIÓN: Sacamos la URL directa del audio con la mejor calidad
+      final manifest = await yt.videos.streamsClient.getManifest(video.id);
+      final audioStream = manifest.audioOnly.withHighestBitrate();
+
       if (audioHandler != null) {
         audioHandler!.playMediaItem(MediaItem(
           id: video.id.value,
           title: video.title,
           artist: video.author,
           artUri: Uri.parse(video.thumbnails.mediumResUrl),
+          // Inyectamos la URL pura para que el reproductor nativo la lea
+          extras: {'url': audioStream.url.toString()},
         ));
       }
-    });
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error al extraer audio: $e')),
+      );
+    }
   }
 
   @override
   void dispose() {
     yt.close();
-    _playerController?.close();
     searchController.dispose();
     super.dispose();
   }
@@ -187,15 +205,6 @@ class _HomeScreenState extends State<HomeScreen> {
           if (isLoading)
             const LinearProgressIndicator(color: Colors.deepPurpleAccent),
           
-          if (_playerController != null)
-            SizedBox(
-              height: 1,
-              width: 1,
-              child: YoutubePlayer(
-                controller: _playerController!,
-              ),
-            ),
-
           Expanded(
             child: ListView.builder(
               itemCount: videos.length,
