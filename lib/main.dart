@@ -4,7 +4,7 @@ import 'package:just_audio/just_audio.dart';
 import 'package:audio_session/audio_session.dart';
 import 'package:audio_service/audio_service.dart';
 
-// 1. EL NUEVO CEREBRO (Conectado a un reproductor nativo con camuflaje)
+// 1. EL CEREBRO DE SEGUNDO PLANO
 class MyAudioHandler extends BaseAudioHandler {
   final _player = AudioPlayer();
 
@@ -44,9 +44,9 @@ class MyAudioHandler extends BaseAudioHandler {
   Future<void> playMediaItem(MediaItem item) async {
     mediaItem.add(item);
     final url = item.extras?['url'] as String?;
+    
     if (url != null) {
       try {
-        // EL TRUCO: Camuflamos nuestro reproductor nativo como si fuera Google Chrome
         await _player.setAudioSource(AudioSource.uri(
           Uri.parse(url),
           headers: {
@@ -55,7 +55,11 @@ class MyAudioHandler extends BaseAudioHandler {
         ));
         play();
       } catch (e) {
-        debugPrint("Error en just_audio: $e");
+        // Si el motor interno falla, mandamos un mensaje de error especial
+        playbackState.add(playbackState.value.copyWith(
+          errorMessage: "Error reproductor: $e",
+          processingState: AudioProcessingState.error,
+        ));
       }
     }
   }
@@ -118,8 +122,24 @@ class _HomeScreenState extends State<HomeScreen> {
           androidNotificationOngoing: true,
         ),
       );
+
+      // Escuchar errores internos del reproductor y mostrarlos en pantalla
+      audioHandler!.playbackState.listen((state) {
+        if (state.processingState == AudioProcessingState.error && mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(state.errorMessage ?? 'Error desconocido de audio'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      });
     } catch (e) {
-      debugPrint('Error de AudioService: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Fallo crítico de AudioService: $e')),
+        );
+      }
     }
   }
 
@@ -147,27 +167,41 @@ class _HomeScreenState extends State<HomeScreen> {
       playingVideoId = video.id.value;
     });
 
+    if (audioHandler == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Error: El servicio de audio no está listo.'), backgroundColor: Colors.red),
+      );
+      return;
+    }
+
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Extrayendo audio puro...')),
+      const SnackBar(content: Text('Preparando audio (MP4)...')),
     );
 
     try {
       final manifest = await yt.videos.streamsClient.getManifest(video.id);
-      final audioStream = manifest.audioOnly.withHighestBitrate();
-
-      if (audioHandler != null) {
-        audioHandler!.playMediaItem(MediaItem(
-          id: video.id.value,
-          title: video.title,
-          artist: video.author,
-          artUri: Uri.parse(video.thumbnails.mediumResUrl),
-          extras: {'url': audioStream.url.toString()},
-        ));
+      
+      // EL TRUCO MAESTRO: Filtramos para obligarlo a usar un formato que Android entienda sí o sí (MP4)
+      final audioStreams = manifest.audioOnly.where((stream) => stream.container.name == 'mp4' || stream.container.name == 'm4a');
+      
+      if (audioStreams.isEmpty) {
+        throw Exception("No hay formato MP4 disponible para este audio.");
       }
+      
+      final bestAudio = audioStreams.withHighestBitrate();
+
+      audioHandler!.playMediaItem(MediaItem(
+        id: video.id.value,
+        title: video.title,
+        artist: video.author,
+        artUri: Uri.parse(video.thumbnails.mediumResUrl),
+        extras: {'url': bestAudio.url.toString()},
+      ));
+      
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error al extraer audio: $e')),
+        SnackBar(content: Text('Error en extracción: $e'), backgroundColor: Colors.red),
       );
     }
   }
