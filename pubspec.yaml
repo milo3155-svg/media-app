@@ -11,7 +11,8 @@ dependencies:
   flutter:
     sdk: flutter
   cupertino_icons: ^1.0.6
-  youtube_explode_dart: ^3.1.0
+  # ESTA ES LA CLAVE: 'any' fuerza a descargar el último parche antibloqueo
+  youtube_explode_dart: any
   just_audio: ^0.9.36
   audio_session: ^0.1.18
   audio_service: ^0.18.13
