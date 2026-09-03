@@ -55,7 +55,6 @@ class MyAudioHandler extends BaseAudioHandler {
         ));
         play();
       } catch (e) {
-        // Si el motor interno falla, mandamos un mensaje de error especial
         playbackState.add(playbackState.value.copyWith(
           errorMessage: "Error reproductor: $e",
           processingState: AudioProcessingState.error,
@@ -123,7 +122,6 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
       );
 
-      // Escuchar errores internos del reproductor y mostrarlos en pantalla
       audioHandler!.playbackState.listen((state) {
         if (state.processingState == AudioProcessingState.error && mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -162,6 +160,7 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  // PRUEBA DE FUEGO CON MP3 DIRECTO
   Future<void> playAudio(Video video) async {
     setState(() {
       playingVideoId = video.id.value;
@@ -175,35 +174,19 @@ class _HomeScreenState extends State<HomeScreen> {
     }
 
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Preparando audio (MP4)...')),
+      const SnackBar(content: Text('Reproduciendo MP3 de prueba para confirmar 2do plano...')),
     );
 
-    try {
-      final manifest = await yt.videos.streamsClient.getManifest(video.id);
-      
-      // EL TRUCO MAESTRO: Filtramos para obligarlo a usar un formato que Android entienda sí o sí (MP4)
-      final audioStreams = manifest.audioOnly.where((stream) => stream.container.name == 'mp4' || stream.container.name == 'm4a');
-      
-      if (audioStreams.isEmpty) {
-        throw Exception("No hay formato MP4 disponible para este audio.");
-      }
-      
-      final bestAudio = audioStreams.withHighestBitrate();
+    // Enlace de prueba libre de bloqueos
+    final testAudioUrl = 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3';
 
-      audioHandler!.playMediaItem(MediaItem(
-        id: video.id.value,
-        title: video.title,
-        artist: video.author,
-        artUri: Uri.parse(video.thumbnails.mediumResUrl),
-        extras: {'url': bestAudio.url.toString()},
-      ));
-      
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error en extracción: $e'), backgroundColor: Colors.red),
-      );
-    }
+    audioHandler!.playMediaItem(MediaItem(
+      id: video.id.value,
+      title: video.title, 
+      artist: "Prueba de Sistema - 2do Plano",
+      artUri: Uri.parse(video.thumbnails.mediumResUrl),
+      extras: {'url': testAudioUrl},
+    ));
   }
 
   @override
