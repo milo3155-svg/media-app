@@ -4,7 +4,7 @@ import 'package:just_audio/just_audio.dart';
 import 'package:audio_session/audio_session.dart';
 import 'package:audio_service/audio_service.dart';
 
-// 1. EL CEREBRO DE SEGUNDO PLANO (Ahora con controles de bloqueo)
+// 1. EL CEREBRO VIP (Con botones de pantalla de bloqueo)
 class MyAudioHandler extends BaseAudioHandler {
   final _player = AudioPlayer();
 
@@ -12,7 +12,6 @@ class MyAudioHandler extends BaseAudioHandler {
     _player.playbackEventStream.listen((event) {
       final playing = _player.playing;
       
-      // AQUÍ LE DECIMOS A ANDROID QUÉ BOTONES DIBUJAR EN EL BLOQUEO
       playbackState.add(playbackState.value.copyWith(
         controls: [
           MediaControl.skipToPrevious,
@@ -48,17 +47,14 @@ class MyAudioHandler extends BaseAudioHandler {
   @override
   Future<void> seek(Duration position) => _player.seek(position);
 
-  // Preparamos los botones de Siguiente y Anterior (Por ahora solo evitan errores)
   @override
   Future<void> skipToNext() async {
-    debugPrint("Botón Siguiente presionado desde bloqueo");
-    // Aquí conectaremos la cola de reproducción después
+    debugPrint("Botón Siguiente presionado");
   }
 
   @override
   Future<void> skipToPrevious() async {
-    debugPrint("Botón Anterior presionado desde bloqueo");
-    // Aquí conectaremos la cola de reproducción después
+    debugPrint("Botón Anterior presionado");
   }
 
   @override
@@ -140,23 +136,21 @@ class _HomeScreenState extends State<HomeScreen> {
           androidNotificationChannelId: 'com.media_app.channel.audio',
           androidNotificationChannelName: 'Reproductor VIP',
           androidNotificationOngoing: true,
-          // Habilitamos los controles en la notificación
           androidShowNotificationBadge: true,
+          // 👇 EL PARCHE DEL ÍCONO PARA OBLIGAR A DIBUJAR LA TARJETA
+          androidNotificationIcon: 'mipmap/ic_launcher', 
         ),
       );
 
       audioHandler!.playbackState.listen((state) {
         if (state.processingState == AudioProcessingState.error && mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(state.errorMessage ?? 'Error desconocido de audio'),
-              backgroundColor: Colors.red,
-            ),
+            SnackBar(content: Text(state.errorMessage ?? 'Error desconocido'), backgroundColor: Colors.red),
           );
         }
       });
     } catch (e) {
-      debugPrint('Error de AudioService: $e');
+      debugPrint('Error AudioService: $e');
     }
   }
 
@@ -166,52 +160,35 @@ class _HomeScreenState extends State<HomeScreen> {
     try {
       final results = await yt.search.getVideos(query);
       if (!mounted) return;
-      setState(() {
-        videos = results.take(15).toList();
-      });
+      setState(() => videos = results.take(15).toList());
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error al buscar: ${e.toString()}')),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
     } finally {
       if (mounted) setState(() => isLoading = false);
     }
   }
 
   Future<void> playAudio(Video video) async {
-    setState(() {
-      playingVideoId = video.id.value;
-    });
-
+    setState(() => playingVideoId = video.id.value);
     if (audioHandler == null) return;
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Cargando pista segura...')),
-    );
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Cargando pista segura...')));
 
     try {
       final manifest = await yt.videos.streamsClient.getManifest(video.id);
-      
       final muxedStreams = manifest.muxed.where((stream) => stream.container.name == 'mp4');
       if (muxedStreams.isEmpty) throw Exception("Sin formato compatible");
       
-      final streamInfo = muxedStreams.first;
-
-      // LA MAGIA VISUAL: Enviamos los datos para la pantalla de bloqueo
       audioHandler!.playMediaItem(MediaItem(
         id: video.id.value,
         title: video.title,
         artist: video.author,
-        artUri: Uri.parse(video.thumbnails.highResUrl), // Usamos alta resolución para la portada
-        extras: {'url': streamInfo.url.toString()},
+        artUri: Uri.parse(video.thumbnails.highResUrl),
+        extras: {'url': muxedStreams.first.url.toString()},
       ));
-      
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red));
     }
   }
 
@@ -225,10 +202,7 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Spotify-Killer'),
-        backgroundColor: const Color(0xFF1A1A1A),
-      ),
+      appBar: AppBar(title: const Text('Spotify-Killer'), backgroundColor: const Color(0xFF1A1A1A)),
       body: Column(
         children: [
           Padding(
@@ -236,62 +210,27 @@ class _HomeScreenState extends State<HomeScreen> {
             child: TextField(
               controller: searchController,
               decoration: InputDecoration(
-                hintText: 'Buscar video o música...',
+                hintText: 'Buscar...',
                 filled: true,
                 fillColor: const Color(0xFF2C2C2C),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide.none,
-                ),
-                suffixIcon: IconButton(
-                  icon: const Icon(Icons.search, color: Colors.deepPurpleAccent),
-                  onPressed: () => searchVideos(searchController.text),
-                ),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                suffixIcon: IconButton(icon: const Icon(Icons.search, color: Colors.deepPurpleAccent), onPressed: () => searchVideos(searchController.text)),
               ),
               onSubmitted: searchVideos,
             ),
           ),
-          if (isLoading)
-            const LinearProgressIndicator(color: Colors.deepPurpleAccent),
-          
+          if (isLoading) const LinearProgressIndicator(color: Colors.deepPurpleAccent),
           Expanded(
             child: ListView.builder(
               itemCount: videos.length,
               itemBuilder: (context, index) {
                 final video = videos[index];
                 final isPlaying = playingVideoId == video.id.value;
-
                 return ListTile(
-                  leading: ClipRRect(
-                    borderRadius: BorderRadius.circular(8),
-                    child: Image.network(
-                      video.thumbnails.mediumResUrl,
-                      width: 60,
-                      height: 45,
-                      fit: BoxFit.cover,
-                    ),
-                  ),
-                  title: Text(
-                    video.title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      color: isPlaying ? Colors.deepPurpleAccent : Colors.white,
-                    ),
-                  ),
-                  subtitle: Text(
-                    video.author,
-                    style: const TextStyle(color: Colors.grey),
-                  ),
-                  trailing: IconButton(
-                    icon: Icon(
-                      isPlaying ? Icons.pause_circle_filled : Icons.play_circle_fill,
-                      color: Colors.deepPurpleAccent,
-                      size: 32,
-                    ),
-                    onPressed: () => playAudio(video),
-                  ),
+                  leading: ClipRRect(borderRadius: BorderRadius.circular(8), child: Image.network(video.thumbnails.mediumResUrl, width: 60, height: 45, fit: BoxFit.cover)),
+                  title: Text(video.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontWeight: FontWeight.bold, color: isPlaying ? Colors.deepPurpleAccent : Colors.white)),
+                  subtitle: Text(video.author, style: const TextStyle(color: Colors.grey)),
+                  trailing: IconButton(icon: Icon(isPlaying ? Icons.pause_circle_filled : Icons.play_circle_fill, color: Colors.deepPurpleAccent, size: 32), onPressed: () => playAudio(video)),
                 );
               },
             ),
