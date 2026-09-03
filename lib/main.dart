@@ -12,7 +12,6 @@ class MyAudioHandler extends BaseAudioHandler {
     _player.playbackEventStream.listen(_broadcastState);
   }
 
-  // Función para forzar la actualización del estado a Android
   void _broadcastState(PlaybackEvent event) {
     final playing = _player.playing;
     playbackState.add(playbackState.value.copyWith(
@@ -73,7 +72,6 @@ class MyAudioHandler extends BaseAudioHandler {
           },
         ));
         
-        // Fuerzo la actualización del estado AHORA
         _broadcastState(_player.playbackEvent); 
         play();
       } catch (e) {
@@ -86,30 +84,31 @@ class MyAudioHandler extends BaseAudioHandler {
   }
 }
 
-AudioHandler? audioHandler;
+// VARIABLE GLOBAL AISLADA
+late AudioHandler audioHandler;
+
+// FUNCIÓN DE INICIALIZACIÓN BLINDADA
+Future<void> initAudioService() async {
+  final session = await AudioSession.instance;
+  await session.configure(const AudioSessionConfiguration.music());
+
+  audioHandler = await AudioService.init(
+    builder: () => MyAudioHandler(),
+    config: const AudioServiceConfig(
+      androidNotificationChannelId: 'com.example.media_app.channel.audio',
+      androidNotificationChannelName: 'Reproductor VIP',
+      androidNotificationOngoing: true,
+      androidShowNotificationBadge: true,
+      // IMPORTANTE: Aseguramos que el ícono sea el correcto para el sistema
+      androidNotificationIcon: 'mipmap/ic_launcher', 
+    ),
+  );
+}
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  
-  // INICIALIZACIÓN MÁS ROBUSTA AQUÍ MISMO
-  try {
-      final session = await AudioSession.instance;
-      await session.configure(const AudioSessionConfiguration.music());
-
-      audioHandler = await AudioService.init(
-        builder: () => MyAudioHandler(),
-        config: const AudioServiceConfig(
-          androidNotificationChannelId: 'com.example.media_app.channel.audio',
-          androidNotificationChannelName: 'Reproductor VIP',
-          androidNotificationOngoing: true,
-          androidShowNotificationBadge: true,
-          androidNotificationIcon: 'mipmap/ic_launcher', 
-        ),
-      );
-    } catch (e) {
-      debugPrint('Error inicializando AudioService: $e');
-    }
-    
+  // INICIAMOS EL SERVICIO ANTES DE QUE NAZCA LA APP
+  await initAudioService();
   runApp(const MediaApp());
 }
 
@@ -161,7 +160,6 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> playAudio(Video video) async {
     setState(() => playingVideoId = video.id.value);
-    if (audioHandler == null) return;
     ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Cargando pista segura...')));
 
     try {
@@ -169,7 +167,8 @@ class _HomeScreenState extends State<HomeScreen> {
       final muxedStreams = manifest.muxed.where((stream) => stream.container.name == 'mp4');
       if (muxedStreams.isEmpty) throw Exception("Sin formato compatible");
       
-      audioHandler!.playMediaItem(MediaItem(
+      // COMUNICACIÓN DIRECTA CON EL HANDLER GLOBAL
+      audioHandler.playMediaItem(MediaItem(
         id: video.id.value,
         title: video.title,
         artist: video.author,
