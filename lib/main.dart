@@ -9,33 +9,35 @@ class MyAudioHandler extends BaseAudioHandler {
   final _player = AudioPlayer();
 
   MyAudioHandler() {
-    _player.playbackEventStream.listen((event) {
-      final playing = _player.playing;
-      
-      playbackState.add(playbackState.value.copyWith(
-        controls: [
-          MediaControl.skipToPrevious,
-          if (playing) MediaControl.pause else MediaControl.play,
-          MediaControl.skipToNext,
-        ],
-        systemActions: const {
-          MediaAction.seek,
-          MediaAction.seekForward,
-          MediaAction.seekBackward,
-        },
-        processingState: const {
-          ProcessingState.idle: AudioProcessingState.idle,
-          ProcessingState.loading: AudioProcessingState.loading,
-          ProcessingState.buffering: AudioProcessingState.buffering,
-          ProcessingState.ready: AudioProcessingState.ready,
-          ProcessingState.completed: AudioProcessingState.completed,
-        }[_player.processingState]!,
-        playing: playing,
-        updatePosition: _player.position,
-        bufferedPosition: _player.bufferedPosition,
-        speed: _player.speed,
-      ));
-    });
+    _player.playbackEventStream.listen(_broadcastState);
+  }
+
+  // Función para forzar la actualización del estado a Android
+  void _broadcastState(PlaybackEvent event) {
+    final playing = _player.playing;
+    playbackState.add(playbackState.value.copyWith(
+      controls: [
+        MediaControl.skipToPrevious,
+        if (playing) MediaControl.pause else MediaControl.play,
+        MediaControl.skipToNext,
+      ],
+      systemActions: const {
+        MediaAction.seek,
+        MediaAction.seekForward,
+        MediaAction.seekBackward,
+      },
+      processingState: const {
+        ProcessingState.idle: AudioProcessingState.idle,
+        ProcessingState.loading: AudioProcessingState.loading,
+        ProcessingState.buffering: AudioProcessingState.buffering,
+        ProcessingState.ready: AudioProcessingState.ready,
+        ProcessingState.completed: AudioProcessingState.completed,
+      }[_player.processingState]!,
+      playing: playing,
+      updatePosition: _player.position,
+      bufferedPosition: _player.bufferedPosition,
+      speed: _player.speed,
+    ));
   }
 
   @override
@@ -70,6 +72,9 @@ class MyAudioHandler extends BaseAudioHandler {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36'
           },
         ));
+        
+        // Fuerzo la actualización del estado AHORA
+        _broadcastState(_player.playbackEvent); 
         play();
       } catch (e) {
         playbackState.add(playbackState.value.copyWith(
@@ -83,8 +88,28 @@ class MyAudioHandler extends BaseAudioHandler {
 
 AudioHandler? audioHandler;
 
-void main() {
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  
+  // INICIALIZACIÓN MÁS ROBUSTA AQUÍ MISMO
+  try {
+      final session = await AudioSession.instance;
+      await session.configure(const AudioSessionConfiguration.music());
+
+      audioHandler = await AudioService.init(
+        builder: () => MyAudioHandler(),
+        config: const AudioServiceConfig(
+          androidNotificationChannelId: 'com.example.media_app.channel.audio',
+          androidNotificationChannelName: 'Reproductor VIP',
+          androidNotificationOngoing: true,
+          androidShowNotificationBadge: true,
+          androidNotificationIcon: 'mipmap/ic_launcher', 
+        ),
+      );
+    } catch (e) {
+      debugPrint('Error inicializando AudioService: $e');
+    }
+    
   runApp(const MediaApp());
 }
 
@@ -118,41 +143,6 @@ class _HomeScreenState extends State<HomeScreen> {
   List<Video> videos = [];
   bool isLoading = false;
   String? playingVideoId;
-
-  @override
-  void initState() {
-    super.initState();
-    _initAudioService();
-  }
-
-  Future<void> _initAudioService() async {
-    try {
-      final session = await AudioSession.instance;
-      await session.configure(const AudioSessionConfiguration.music());
-
-      audioHandler = await AudioService.init(
-        builder: () => MyAudioHandler(),
-        config: const AudioServiceConfig(
-          androidNotificationChannelId: 'com.media_app.channel.audio',
-          androidNotificationChannelName: 'Reproductor VIP',
-          androidNotificationOngoing: true,
-          androidShowNotificationBadge: true,
-          // 👇 EL PARCHE DEL ÍCONO PARA OBLIGAR A DIBUJAR LA TARJETA
-          androidNotificationIcon: 'mipmap/ic_launcher', 
-        ),
-      );
-
-      audioHandler!.playbackState.listen((state) {
-        if (state.processingState == AudioProcessingState.error && mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(state.errorMessage ?? 'Error desconocido'), backgroundColor: Colors.red),
-          );
-        }
-      });
-    } catch (e) {
-      debugPrint('Error AudioService: $e');
-    }
-  }
 
   Future<void> searchVideos(String query) async {
     if (query.isEmpty) return;
