@@ -1,10 +1,56 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:audio_session/audio_session.dart';
 import 'package:audio_service/audio_service.dart';
 
-// 1. EL CEREBRO DE SEGUNDO PLANO
+// 1. EL PROXY LOCAL MAESTRO (Engaña a YouTube)
+class AudioProxy {
+  static HttpServer? _server;
+
+  static Future<String> createProxy(String realUrl) async {
+    await _server?.close(force: true);
+    _server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+
+    _server!.listen((HttpRequest request) async {
+      try {
+        final client = HttpClient();
+        final ytRequest = await client.getUrl(Uri.parse(realUrl));
+        
+        // EL CAMUFLAJE: Nos hacemos pasar por Google Chrome de PC
+        ytRequest.headers.set('User-Agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36');
+        
+        if (request.headers.value('range') != null) {
+          ytRequest.headers.set('Range', request.headers.value('range')!);
+        }
+
+        final ytResponse = await ytRequest.close();
+        request.response.statusCode = ytResponse.statusCode;
+        
+        ytResponse.headers.forEach((name, values) {
+          if (name.toLowerCase() != 'transfer-encoding') {
+             for (var value in values) {
+               request.response.headers.add(name, value);
+             }
+          }
+        });
+
+        await ytResponse.pipe(request.response);
+      } catch (e) {
+        if (request.response.connectionInfo != null) {
+          request.response.statusCode = HttpStatus.internalServerError;
+          request.response.close();
+        }
+      }
+    });
+
+    // Retorna una dirección local (ej. http://127.0.0.1:45321/)
+    return 'http://${_server!.address.address}:${_server!.port}/';
+  }
+}
+
+// 2. EL CEREBRO DE SEGUNDO PLANO
 class MyAudioHandler extends BaseAudioHandler {
   final _player = AudioPlayer();
 
@@ -47,12 +93,7 @@ class MyAudioHandler extends BaseAudioHandler {
     
     if (url != null) {
       try {
-        await _player.setAudioSource(AudioSource.uri(
-          Uri.parse(url),
-          headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36'
-          },
-        ));
+        await _player.setUrl(url); // Ahora lee del servidor fantasma local
         play();
       } catch (e) {
         playbackState.add(playbackState.value.copyWith(
@@ -160,33 +201,42 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  // PRUEBA DE FUEGO CON MP3 DIRECTO
   Future<void> playAudio(Video video) async {
     setState(() {
       playingVideoId = video.id.value;
     });
 
-    if (audioHandler == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Error: El servicio de audio no está listo.'), backgroundColor: Colors.red),
-      );
-      return;
-    }
+    if (audioHandler == null) return;
 
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Reproduciendo MP3 de prueba para confirmar 2do plano...')),
+      const SnackBar(content: Text('Creando conexión cifrada...')),
     );
 
-    // Enlace de prueba libre de bloqueos
-    final testAudioUrl = 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3';
+    try {
+      final manifest = await yt.videos.streamsClient.getManifest(video.id);
+      final audioStreams = manifest.audioOnly.where((stream) => stream.container.name == 'mp4' || stream.container.name == 'm4a');
+      
+      if (audioStreams.isEmpty) throw Exception("Sin formato compatible");
+      
+      final bestAudio = audioStreams.withHighestBitrate();
+      
+      // LA MAGIA OCURRE AQUÍ: Generamos la URL del servidor fantasma local
+      final proxyUrl = await AudioProxy.createProxy(bestAudio.url.toString());
 
-    audioHandler!.playMediaItem(MediaItem(
-      id: video.id.value,
-      title: video.title, 
-      artist: "Prueba de Sistema - 2do Plano",
-      artUri: Uri.parse(video.thumbnails.mediumResUrl),
-      extras: {'url': testAudioUrl},
-    ));
+      audioHandler!.playMediaItem(MediaItem(
+        id: video.id.value,
+        title: video.title,
+        artist: video.author,
+        artUri: Uri.parse(video.thumbnails.mediumResUrl),
+        extras: {'url': proxyUrl}, // Le damos el servidor fantasma
+      ));
+      
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error en stream: $e'), backgroundColor: Colors.red),
+      );
+    }
   }
 
   @override
