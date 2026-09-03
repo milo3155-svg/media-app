@@ -4,12 +4,11 @@ import 'package:just_audio/just_audio.dart';
 import 'package:audio_session/audio_session.dart';
 import 'package:audio_service/audio_service.dart';
 
-// 1. EL NUEVO CEREBRO (Conectado a un reproductor nativo)
+// 1. EL NUEVO CEREBRO (Conectado a un reproductor nativo con camuflaje)
 class MyAudioHandler extends BaseAudioHandler {
   final _player = AudioPlayer();
 
   MyAudioHandler() {
-    // Sincronizar el estado del reproductor con la notificación de la pantalla de bloqueo
     _player.playbackEventStream.listen((event) {
       final playing = _player.playing;
       playbackState.add(playbackState.value.copyWith(
@@ -44,11 +43,20 @@ class MyAudioHandler extends BaseAudioHandler {
   @override
   Future<void> playMediaItem(MediaItem item) async {
     mediaItem.add(item);
-    // Recuperamos la URL pura del audio que inyectamos desde la interfaz
     final url = item.extras?['url'] as String?;
     if (url != null) {
-      await _player.setUrl(url);
-      play();
+      try {
+        // EL TRUCO: Camuflamos nuestro reproductor nativo como si fuera Google Chrome
+        await _player.setAudioSource(AudioSource.uri(
+          Uri.parse(url),
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36'
+          },
+        ));
+        play();
+      } catch (e) {
+        debugPrint("Error en just_audio: $e");
+      }
     }
   }
 }
@@ -144,7 +152,6 @@ class _HomeScreenState extends State<HomeScreen> {
     );
 
     try {
-      // LA EXTRACCIÓN: Sacamos la URL directa del audio con la mejor calidad
       final manifest = await yt.videos.streamsClient.getManifest(video.id);
       final audioStream = manifest.audioOnly.withHighestBitrate();
 
@@ -154,7 +161,6 @@ class _HomeScreenState extends State<HomeScreen> {
           title: video.title,
           artist: video.author,
           artUri: Uri.parse(video.thumbnails.mediumResUrl),
-          // Inyectamos la URL pura para que el reproductor nativo la lea
           extras: {'url': audioStream.url.toString()},
         ));
       }
