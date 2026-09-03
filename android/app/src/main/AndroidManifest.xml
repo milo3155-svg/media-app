@@ -1,6 +1,6 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="com.example.media_app">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <!-- PERMISOS DE SEGUNDO PLANO Y NOTIFICACIONES -->
     <uses-permission android:name="android.permission.WAKE_LOCK"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA"/>
@@ -12,8 +12,9 @@
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         
+        <!-- REGRESAMOS A TU ACTIVIDAD ORIGINAL PARA QUE ENCUENTRE LOS ÍCONOS -->
         <activity
-            android:name="com.ryanheise.audioservice.AudioServiceActivity"
+            android:name=".MainActivity"
             android:exported="true"
             android:launchMode="singleTop"
             android:theme="@style/LaunchTheme"
