@@ -1,56 +1,10 @@
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:audio_session/audio_session.dart';
 import 'package:audio_service/audio_service.dart';
 
-// 1. EL PROXY LOCAL MAESTRO (Engaña a YouTube)
-class AudioProxy {
-  static HttpServer? _server;
-
-  static Future<String> createProxy(String realUrl) async {
-    await _server?.close(force: true);
-    _server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
-
-    _server!.listen((HttpRequest request) async {
-      try {
-        final client = HttpClient();
-        final ytRequest = await client.getUrl(Uri.parse(realUrl));
-        
-        // EL CAMUFLAJE: Nos hacemos pasar por Google Chrome de PC
-        ytRequest.headers.set('User-Agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36');
-        
-        if (request.headers.value('range') != null) {
-          ytRequest.headers.set('Range', request.headers.value('range')!);
-        }
-
-        final ytResponse = await ytRequest.close();
-        request.response.statusCode = ytResponse.statusCode;
-        
-        ytResponse.headers.forEach((name, values) {
-          if (name.toLowerCase() != 'transfer-encoding') {
-             for (var value in values) {
-               request.response.headers.add(name, value);
-             }
-          }
-        });
-
-        await ytResponse.pipe(request.response);
-      } catch (e) {
-        if (request.response.connectionInfo != null) {
-          request.response.statusCode = HttpStatus.internalServerError;
-          request.response.close();
-        }
-      }
-    });
-
-    // Retorna una dirección local (ej. http://127.0.0.1:45321/)
-    return 'http://${_server!.address.address}:${_server!.port}/';
-  }
-}
-
-// 2. EL CEREBRO DE SEGUNDO PLANO
+// 1. EL CEREBRO DE SEGUNDO PLANO
 class MyAudioHandler extends BaseAudioHandler {
   final _player = AudioPlayer();
 
@@ -90,10 +44,15 @@ class MyAudioHandler extends BaseAudioHandler {
   Future<void> playMediaItem(MediaItem item) async {
     mediaItem.add(item);
     final url = item.extras?['url'] as String?;
-    
+
     if (url != null) {
       try {
-        await _player.setUrl(url); // Ahora lee del servidor fantasma local
+        await _player.setAudioSource(AudioSource.uri(
+          Uri.parse(url),
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36'
+          },
+        ));
         play();
       } catch (e) {
         playbackState.add(playbackState.value.copyWith(
@@ -174,11 +133,7 @@ class _HomeScreenState extends State<HomeScreen> {
         }
       });
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Fallo crítico de AudioService: $e')),
-        );
-      }
+      debugPrint('Error de AudioService: $e');
     }
   }
 
@@ -209,32 +164,32 @@ class _HomeScreenState extends State<HomeScreen> {
     if (audioHandler == null) return;
 
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Creando conexión cifrada...')),
+      const SnackBar(content: Text('Cargando pista segura...')),
     );
 
     try {
       final manifest = await yt.videos.streamsClient.getManifest(video.id);
-      final audioStreams = manifest.audioOnly.where((stream) => stream.container.name == 'mp4' || stream.container.name == 'm4a');
       
-      if (audioStreams.isEmpty) throw Exception("Sin formato compatible");
+      // EL TRUCO DEFINITIVO: En lugar de pedir "Solo Audio", pedimos el "Video Muxed (Video+Audio)".
+      // ExoPlayer extrae el audio de ese MP4 tradicional sin que YouTube bloquee la conexión.
+      final muxedStreams = manifest.muxed.where((stream) => stream.container.name == 'mp4');
       
-      final bestAudio = audioStreams.withHighestBitrate();
+      if (muxedStreams.isEmpty) throw Exception("Sin formato compatible");
       
-      // LA MAGIA OCURRE AQUÍ: Generamos la URL del servidor fantasma local
-      final proxyUrl = await AudioProxy.createProxy(bestAudio.url.toString());
+      final streamInfo = muxedStreams.first;
 
       audioHandler!.playMediaItem(MediaItem(
         id: video.id.value,
         title: video.title,
         artist: video.author,
         artUri: Uri.parse(video.thumbnails.mediumResUrl),
-        extras: {'url': proxyUrl}, // Le damos el servidor fantasma
+        extras: {'url': streamInfo.url.toString()},
       ));
       
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error en stream: $e'), backgroundColor: Colors.red),
+        SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
       );
     }
   }
