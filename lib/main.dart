@@ -124,6 +124,7 @@ class _HomeScreenState extends State<HomeScreen> {
           androidNotificationChannelName: 'Reproductor VIP',
           androidNotificationOngoing: true,
           androidShowNotificationBadge: true,
+          androidNotificationIcon: 'mipmap/ic_launcher',
           // Ícono eliminado para que el sistema use el default y no crashee
         ),
       );
