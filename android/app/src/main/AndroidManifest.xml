@@ -1,34 +1,28 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <!-- TUS PERMISOS ORIGINALES -->
+
+    <!-- PERMISOS VITALES PARA ANDROID 14+ -->
     <uses-permission android:name="android.permission.INTERNET"/>
-    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
-    
-    <!-- PERMISOS VIP PARA SEGUNDO PLANO Y AUDIO -->
     <uses-permission android:name="android.permission.WAKE_LOCK"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"/>
-    
-    <!-- 👇 ESTE ES EL PERMISO MAESTRO PARA LIBERAR EL INTERRUPTOR GRIS 👇 -->
-    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
 
     <application
         android:label="media_app"
         android:name="${applicationName}"
-        android:icon="@android:drawable/sym_def_app_icon"
-        android:usesCleartextTraffic="true">
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round">
         
-        <!-- EL CAMBIO MAESTRO: Entregamos el control del Activity a AudioService -->
         <activity
-            android:name="com.ryanheise.audioservice.AudioServiceActivity"
+            android:name=".MainActivity"
             android:exported="true"
             android:launchMode="singleTop"
-            android:theme="@android:style/Theme.Black.NoTitleBar"
+            android:theme="@style/LaunchTheme"
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
             android:hardwareAccelerated="true"
             android:windowSoftInputMode="adjustResize">
             <meta-data
               android:name="io.flutter.embedding.android.NormalTheme"
-              android:resource="@android:style/Theme.Black.NoTitleBar"
+              android:resource="@style/NormalTheme"
               />
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
@@ -39,22 +33,25 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
-            
-        <!-- SERVICIO VIP QUE MANTIENE LA APP VIVA -->
-        <service android:name="com.ryanheise.audioservice.AudioService"
+
+        <!-- 🎵 ESTO ES LO QUE LE DA EL PODER MEDIASTYLE A ANDROID -->
+        <service
+            android:name="com.ryanheise.audioservice.AudioService"
+            android:exported="true"
             android:foregroundServiceType="mediaPlayback"
-            android:exported="true">
+            tools:ignore="Instantiatable">
             <intent-filter>
                 <action android:name="android.media.browse.MediaBrowserService" />
             </intent-filter>
         </service>
-        
-        <!-- RECEPTOR PARA BOTONES DE PANTALLA DE BLOQUEO -->
-        <receiver android:name="com.ryanheise.audioservice.MediaButtonReceiver"
+
+        <receiver
+            android:name="com.ryanheise.audioservice.MediaButtonReceiver"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MEDIA_BUTTON" />
             </intent-filter>
         </receiver>
+
     </application>
 </manifest>
