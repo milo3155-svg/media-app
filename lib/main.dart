@@ -4,7 +4,6 @@ import 'package:just_audio/just_audio.dart';
 import 'package:audio_session/audio_session.dart';
 import 'package:audio_service/audio_service.dart';
 
-// 1. EL CEREBRO VIP (Con botones de pantalla de bloqueo)
 class MyAudioHandler extends BaseAudioHandler {
   final _player = AudioPlayer();
 
@@ -25,6 +24,8 @@ class MyAudioHandler extends BaseAudioHandler {
         MediaAction.seekForward,
         MediaAction.seekBackward,
       },
+      // 👇 FIX 1: Android exige saber qué botones mostrar en la notificación pequeña
+      androidCompactActionIndices: const [0, 1, 2], 
       processingState: const {
         ProcessingState.idle: AudioProcessingState.idle,
         ProcessingState.loading: AudioProcessingState.loading,
@@ -50,12 +51,12 @@ class MyAudioHandler extends BaseAudioHandler {
 
   @override
   Future<void> skipToNext() async {
-    debugPrint("Botón Siguiente presionado");
+    debugPrint("Siguiente");
   }
 
   @override
   Future<void> skipToPrevious() async {
-    debugPrint("Botón Anterior presionado");
+    debugPrint("Anterior");
   }
 
   @override
@@ -76,7 +77,7 @@ class MyAudioHandler extends BaseAudioHandler {
         play();
       } catch (e) {
         playbackState.add(playbackState.value.copyWith(
-          errorMessage: "Error reproductor: $e",
+          errorMessage: "Error: $e",
           processingState: AudioProcessingState.error,
         ));
       }
@@ -84,10 +85,8 @@ class MyAudioHandler extends BaseAudioHandler {
   }
 }
 
-// VARIABLE GLOBAL AISLADA
 late AudioHandler audioHandler;
 
-// FUNCIÓN DE INICIALIZACIÓN BLINDADA
 Future<void> initAudioService() async {
   final session = await AudioSession.instance;
   await session.configure(const AudioSessionConfiguration.music());
@@ -99,7 +98,6 @@ Future<void> initAudioService() async {
       androidNotificationChannelName: 'Reproductor VIP',
       androidNotificationOngoing: true,
       androidShowNotificationBadge: true,
-      // IMPORTANTE: Aseguramos que el ícono sea el correcto para el sistema
       androidNotificationIcon: 'mipmap/ic_launcher', 
     ),
   );
@@ -107,7 +105,6 @@ Future<void> initAudioService() async {
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  // INICIAMOS EL SERVICIO ANTES DE QUE NAZCA LA APP
   await initAudioService();
   runApp(const MediaApp());
 }
@@ -167,12 +164,12 @@ class _HomeScreenState extends State<HomeScreen> {
       final muxedStreams = manifest.muxed.where((stream) => stream.container.name == 'mp4');
       if (muxedStreams.isEmpty) throw Exception("Sin formato compatible");
       
-      // COMUNICACIÓN DIRECTA CON EL HANDLER GLOBAL
       audioHandler.playMediaItem(MediaItem(
         id: video.id.value,
         title: video.title,
         artist: video.author,
-        artUri: Uri.parse(video.thumbnails.highResUrl),
+        // 👇 FIX 2: Resolucion media para evitar que Android cancele la tarjeta por error de imagen
+        artUri: Uri.parse(video.thumbnails.mediumResUrl),
         extras: {'url': muxedStreams.first.url.toString()},
       ));
     } catch (e) {
