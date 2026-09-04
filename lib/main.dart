@@ -120,12 +120,12 @@ class _HomeScreenState extends State<HomeScreen> {
       audioHandler = await AudioService.init(
         builder: () => MyAudioHandler(),
         config: const AudioServiceConfig(
-          androidNotificationChannelId: 'com.example.media_app.channel.audio',
-          androidNotificationChannelName: 'Reproductor VIP',
+          // 👇 CAMBIO VITAL 1: ID nuevo para forzar a Android a sacar el canal del calabozo de "Silenciadas"
+          androidNotificationChannelId: 'com.example.media_app.audio.master_v2',
+          androidNotificationChannelName: 'Reproductor VIP Master',
           androidNotificationOngoing: true,
           androidShowNotificationBadge: true,
           androidNotificationIcon: 'mipmap/ic_launcher',
-          // Ícono eliminado para que el sistema use el default y no crashee
         ),
       );
       setState(() {
@@ -162,7 +162,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     id: 'test_audio_1',
                     title: 'Prueba de Sistema VIP',
                     artist: 'Laboratorio Android',
-                    artUri: Uri.parse('https://images.unsplash.com/photo-1515694346937-94d85e41e6f0?w=500'),
+                    // 👇 CAMBIO VITAL 2: Sin imagen externa temporalmente para evitar que una descarga atore la notificación
                     extras: {'url': 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3'},
                   ));
                 },
