@@ -59,8 +59,6 @@ class MyAudioHandler extends BaseAudioHandler {
     final url = item.extras?['url'] as String?;
 
     if (url != null) {
-      // 👇 TRUCO MAESTRO: Disparamos el reproductor ANTES de descargar el audio
-      // Esto burla el bloqueo de segundo plano de Android 14.
       playbackState.add(playbackState.value.copyWith(
         controls: [MediaControl.pause],
         processingState: AudioProcessingState.loading,
@@ -128,13 +126,11 @@ class _HomeScreenState extends State<HomeScreen> {
       audioHandler = await AudioService.init(
         builder: () => MyAudioHandler(),
         config: const AudioServiceConfig(
-          // 👇 CAMBIO VITAL: Canal v3 para escapar del calabozo de las notificaciones "Silenciadas"
           androidNotificationChannelId: 'com.example.media_app.audio.master_v3',
           androidNotificationChannelName: 'Reproductor VIP Final',
           androidNotificationOngoing: true,
           androidShowNotificationBadge: true,
-          androidNotificationIcon: 'mipmap/ic_launcher', 
-        ),
+          androidNotificationIcon: 'mipmap/ic_launcher',
         ),
       );
       setState(() {
