@@ -65,7 +65,7 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
         await _player.setAudioSource(AudioSource.uri(Uri.parse(url)));
         await _player.play();
       } catch (e) {
-        debugPrint("Error crítico al reproducir: $e");
+        debugPrint("Error crítico al reproducir audio real: $e");
       }
     }
   }
@@ -82,7 +82,7 @@ void main() async {
   audioHandler = await AudioService.init(
     builder: () => MyAudioHandler(),
     config: const AudioServiceConfig(
-      androidNotificationChannelId: 'com.example.media_app.audio.master_v11',
+      androidNotificationChannelId: 'com.example.media_app.audio.master_v12',
       androidNotificationChannelName: 'Spotify-Killer Buscador',
       androidNotificationOngoing: true,
       androidShowNotificationBadge: true,
@@ -149,26 +149,34 @@ class _SearchScreenState extends State<SearchScreen> {
   }
 
   Future<void> _playVideo(Video video) async {
-    try {
-      // Obtenemos el manifiesto de streams de audio reales
-      var manifest = await _yt.videos.streamsClient.getManifest(video.id);
-      var audioStream = manifest.audioOnly.withHighestBitrate();
+    // Mostramos un aviso de carga en pantalla
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Obteniendo audio de: ${video.title}...'), duration: const Duration(seconds: 1)),
+    );
 
-      // Mandamos a reproducir utilizando el AudioHandler que ya conquista la pantalla de bloqueo
+    try {
+      // Obtenemos el manifiesto del video
+      var manifest = await _yt.videos.streamsClient.getManifest(video.id);
+      
+      // Filtramos el stream de audio con la mejor calidad disponible
+      var audioStreamInfo = manifest.audioOnly.withHighestBitrate();
+
+      // Enviamos la URL directa al manejador
       audioHandler?.playMediaItem(MediaItem(
         id: video.id.value,
         title: video.title,
         artist: video.author,
         duration: video.duration,
         artUri: Uri.parse(video.thumbnails.highResUrl),
-        extras: {'url': audioStream.url.toString()},
+        extras: {'url': audioStreamInfo.url.toString()},
       ));
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Reproduciendo: ${video.title}')),
-      );
     } catch (e) {
-      debugPrint("Error extrayendo stream: $e");
+      debugPrint("Error al extraer el stream de YouTube: $e");
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Error: No se pudo reproducir este video de YouTube.')),
+        );
+      }
     }
   }
 
