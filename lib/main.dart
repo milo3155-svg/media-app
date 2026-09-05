@@ -178,14 +178,12 @@ class _SearchScreenState extends State<SearchScreen> {
   void playVideo(Video video) {
     setState(() => playingVideoId = video.id.value);
     
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Cargando pista segura: ${video.title}'), duration: const Duration(seconds: 2)),
-    );
-
+    // IMPORTANTE: Ahora inyectamos video.duration para que el slider calcule el tiempo exacto
     audioHandler?.playMediaItem(MediaItem(
       id: video.id.value,
       title: video.title,
       artist: video.author,
+      duration: video.duration, 
       artUri: Uri.parse(video.thumbnails.highResUrl),
     ));
   }
@@ -201,7 +199,7 @@ class _SearchScreenState extends State<SearchScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Spotify-Killer Buscador VIP'),
+        title: const Text('Spotify-Killer VIP'),
         backgroundColor: const Color(0xFF1A1A1A),
       ),
       body: Column(
@@ -250,8 +248,133 @@ class _SearchScreenState extends State<SearchScreen> {
                 },
               ),
             ),
+          
+          // NUEVO: El componente flotante integrado al final de la columna
+          const MiniPlayer(),
         ],
       ),
+    );
+  }
+}
+
+// WIDGET NUEVO: Reproductor minimalista con barra interactiva
+class MiniPlayer extends StatelessWidget {
+  const MiniPlayer({super.key});
+
+  String _formatDuration(Duration d) {
+    final minutes = d.inMinutes.remainder(60).toString().padLeft(2, '0');
+    final seconds = d.inSeconds.remainder(60).toString().padLeft(2, '0');
+    return '${d.inHours > 0 ? '${d.inHours}:' : ''}$minutes:$seconds';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<MediaItem?>(
+      stream: audioHandler?.mediaItem,
+      builder: (context, snapshot) {
+        final mediaItem = snapshot.data;
+        if (mediaItem == null) return const SizedBox.shrink(); // Oculto si no hay música
+
+        return Container(
+          padding: const EdgeInsets.only(left: 16, right: 16, top: 12, bottom: 20),
+          decoration: const BoxDecoration(
+            color: Color(0xFF1E1E1E),
+            borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+            boxShadow: [
+              BoxShadow(color: Colors.black54, blurRadius: 10, offset: Offset(0, -5))
+            ]
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(
+                children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: Image.network(
+                      mediaItem.artUri.toString(),
+                      width: 45,
+                      height: 45,
+                      fit: BoxFit.cover,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(mediaItem.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                        Text(mediaItem.artist ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.grey, fontSize: 13)),
+                      ],
+                    ),
+                  ),
+                  StreamBuilder<PlaybackState>(
+                    stream: audioHandler?.playbackState,
+                    builder: (context, snapshot) {
+                      final state = snapshot.data;
+                      final playing = state?.playing ?? false;
+                      return IconButton(
+                        icon: Icon(playing ? Icons.pause_circle_filled : Icons.play_circle_fill),
+                        iconSize: 42,
+                        color: Colors.deepPurpleAccent,
+                        onPressed: () {
+                          if (playing) {
+                            audioHandler?.pause();
+                          } else {
+                            audioHandler?.play();
+                          }
+                        },
+                      );
+                    }
+                  )
+                ],
+              ),
+              const SizedBox(height: 8),
+              
+              // Barra de Progreso Deslizable (Seek Bar)
+              StreamBuilder<Duration>(
+                stream: AudioService.position,
+                builder: (context, snapshot) {
+                  final position = snapshot.data ?? Duration.zero;
+                  final duration = mediaItem.duration ?? Duration.zero;
+                  
+                  // Protecciones de división para el Slider
+                  double positionValue = position.inMilliseconds.toDouble();
+                  double durationValue = duration.inMilliseconds.toDouble();
+                  if (positionValue > durationValue) positionValue = durationValue;
+                  if (durationValue <= 0) durationValue = 1.0; // Evitar división por cero
+
+                  return Row(
+                    children: [
+                      Text(_formatDuration(position), style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                      Expanded(
+                        child: SliderTheme(
+                          data: SliderTheme.of(context).copyWith(
+                            trackHeight: 4,
+                            thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
+                            overlayShape: const RoundSliderOverlayShape(overlayRadius: 16),
+                            activeTrackColor: Colors.deepPurpleAccent,
+                            inactiveTrackColor: Colors.grey[800],
+                            thumbColor: Colors.deepPurpleAccent,
+                          ),
+                          child: Slider(
+                            value: positionValue,
+                            max: durationValue,
+                            onChanged: (value) {
+                              audioHandler?.seek(Duration(milliseconds: value.toInt()));
+                            },
+                          ),
+                        ),
+                      ),
+                      Text(_formatDuration(duration), style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                    ],
+                  );
+                }
+              )
+            ],
+          ),
+        );
+      }
     );
   }
 }
