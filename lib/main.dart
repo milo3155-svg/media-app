@@ -67,16 +67,16 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
     try {
       debugPrint("Obteniendo manifiesto con contenedores MP4 para: $videoId");
       
-      // 1. Obtenemos el manifiesto completo y filtramos por streams MP4 (la clave que funcionaba)
+      // Obtenemos el manifiesto completo y filtramos por streams MP4 usando 'muxed'
       var manifest = await _yt.videos.streamsClient.getManifest(videoId);
-      var streamInfo = manifest.muxedStreams
+      var streamInfo = manifest.muxed
           .where((stream) => stream.container.name == 'mp4')
           .withHighestBitrate();
 
       final uriString = streamInfo.url.toString();
       debugPrint("URL obtenida: $uriString");
 
-      // 2. Configuramos la fuente con el User-Agent de navegador para burlar el bloqueo de YouTube
+      // Configuramos la fuente con el User-Agent de navegador para burlar el bloqueo de YouTube
       await _player.setAudioSource(
         AudioSource.uri(
           Uri.parse(uriString),
@@ -183,7 +183,6 @@ class _SearchScreenState extends State<SearchScreen> {
       SnackBar(content: Text('Cargando pista segura: ${video.title}'), duration: const Duration(seconds: 2)),
     );
 
-    // Mandamos la orden al AudioHandler global con la estructura probada
     audioHandler?.playMediaItem(MediaItem(
       id: video.id.value,
       title: video.title,
