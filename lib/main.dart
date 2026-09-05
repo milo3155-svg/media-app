@@ -65,18 +65,18 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
     final videoId = item.id;
     
     try {
-      debugPrint("Iniciando resolución de stream para: $videoId");
-      var manifest = await _yt.videos.streamsClient.getManifest(videoId).timeout(
-        const Duration(seconds: 8),
-        onTimeout: () => throw Exception("Timeout de conexión al resolver manifiesto"),
-      );
+      debugPrint("Obteniendo stream optimizado para: $videoId");
+      
+      // Usamos el cliente de streams de forma directa al ID del video
+      var streamManifest = await _yt.videos.streamsClient.getManifest(videoId);
+      var streamInfo = streamManifest.audioOnly.withHighestBitrate();
 
-      var audioStreamInfo = manifest.audioOnly.withHighestBitrate();
-
-      await _player.setAudioSource(AudioSource.uri(audioStreamInfo.url));
+      await _player.setUrl(streamInfo.url.toString());
       await _player.play();
+      
+      debugPrint("¡Reproducción iniciada con éxito!");
     } catch (e) {
-      debugPrint("❌ Error al procesar stream de YouTube: $e");
+      debugPrint("❌ Error crítico en playMediaItem: $e");
     }
   }
 }
@@ -92,7 +92,7 @@ void main() async {
   audioHandler = await AudioService.init(
     builder: () => MyAudioHandler(),
     config: const AudioServiceConfig(
-      androidNotificationChannelId: 'com.example.media_app.audio.master_v18',
+      androidNotificationChannelId: 'com.example.media_app.audio.master_v19',
       androidNotificationChannelName: 'Spotify-Killer Buscador',
       androidNotificationOngoing: true,
       androidShowNotificationBadge: true,
@@ -159,6 +159,7 @@ class _SearchScreenState extends State<SearchScreen> {
   }
 
   void _onVideoSelected(Video video) {
+    // Disparamos la acción de forma limpia
     audioHandler?.playMediaItem(MediaItem(
       id: video.id.value,
       title: video.title,
@@ -168,7 +169,7 @@ class _SearchScreenState extends State<SearchScreen> {
     ));
 
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Procesando: ${video.title}'), duration: const Duration(seconds: 2)),
+      SnackBar(content: Text('Cargando: ${video.title}'), duration: const Duration(seconds: 2)),
     );
   }
 
