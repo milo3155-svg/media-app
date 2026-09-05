@@ -61,6 +61,7 @@ class MyAudioHandler extends BaseAudioHandler {
 
   @override
   Future<void> playMediaItem(MediaItem item) async {
+    // 1. Vinculamos los metadatos obligatorios al frente para que Android dibuje la tarjeta multimedia
     mediaItem.add(item);
     final url = item.extras?['url'] as String?;
 
@@ -68,7 +69,7 @@ class MyAudioHandler extends BaseAudioHandler {
       try {
         await _player.setAudioSource(AudioSource.uri(Uri.parse(url)));
         
-        // Forzamos el estado activo con los controles visibles inmediatamente
+        // 2. Definimos explícitamente los controles activos que exige la tarjeta VIP
         playbackState.add(playbackState.value.copyWith(
           controls: [
             MediaControl.skipToPrevious,
@@ -98,7 +99,7 @@ void main() async {
   audioHandler = await AudioService.init(
     builder: () => MyAudioHandler(),
     config: const AudioServiceConfig(
-      androidNotificationChannelId: 'com.example.media_app.audio.master_final_v1',
+      androidNotificationChannelId: 'com.example.media_app.audio.master_final_v2',
       androidNotificationChannelName: 'Reproductor VIP Multimedia',
       androidNotificationOngoing: true,
       androidShowNotificationBadge: true,
