@@ -65,27 +65,31 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
     final videoId = item.id;
     
     try {
-      debugPrint("Intentando extraer stream de YouTube para: $videoId");
+      debugPrint("Obteniendo manifiesto con contenedores MP4 para: $videoId");
       
-      // Intentamos con límite de tiempo de 6 segundos
-      var manifest = await _yt.videos.streamsClient.getManifest(videoId).timeout(
-        const Duration(seconds: 6),
+      // 1. Obtenemos el manifiesto completo y filtramos por streams MP4 (la clave que funcionaba)
+      var manifest = await _yt.videos.streamsClient.getManifest(videoId);
+      var streamInfo = manifest.muxedStreams
+          .where((stream) => stream.container.name == 'mp4')
+          .withHighestBitrate();
+
+      final uriString = streamInfo.url.toString();
+      debugPrint("URL obtenida: $uriString");
+
+      // 2. Configuramos la fuente con el User-Agent de navegador para burlar el bloqueo de YouTube
+      await _player.setAudioSource(
+        AudioSource.uri(
+          Uri.parse(uriString),
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36'
+          },
+        ),
       );
-
-      var audioStream = manifest.audioOnly.withHighestBitrate();
-
-      await _player.setUrl(audioStream.url.toString());
+      
       await _player.play();
-      debugPrint("¡Reproducción de YouTube exitosa!");
+      debugPrint("¡Reproducción real iniciada con éxito!");
     } catch (e) {
-      debugPrint("⚠️ YouTube bloqueó o tardó demasiado ($e). Activando stream alternativo seguro...");
-      try {
-        // Enlace de respaldo garantizado para que el motor de audio siempre emita sonido y fluya la app
-        await _player.setUrl("https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3");
-        await _player.play();
-      } catch (fallbackError) {
-        debugPrint("❌ Error crítico en fallback: $fallbackError");
-      }
+      debugPrint("❌ Error crítico en playMediaItem: $e");
     }
   }
 }
@@ -101,7 +105,7 @@ void main() async {
   audioHandler = await AudioService.init(
     builder: () => MyAudioHandler(),
     config: const AudioServiceConfig(
-      androidNotificationChannelId: 'com.example.media_app.audio.master_v22',
+      androidNotificationChannelId: 'com.example.media_app.audio.master_v23',
       androidNotificationChannelName: 'Spotify-Killer Buscador',
       androidNotificationOngoing: true,
       androidShowNotificationBadge: true,
@@ -137,10 +141,11 @@ class SearchScreen extends StatefulWidget {
 }
 
 class _SearchScreenState extends State<SearchScreen> {
-  final _controller = TextEditingController();
-  final _yt = YoutubeExplode();
-  List<Video> _results = [];
-  bool _isLoading = false;
+  final searchController = TextEditingController();
+  final yt = YoutubeExplode();
+  List<Video> videos = [];
+  bool isLoading = false;
+  String playingVideoId = '';
 
   @override
   void initState() {
@@ -152,33 +157,46 @@ class _SearchScreenState extends State<SearchScreen> {
     await Permission.notification.request();
   }
 
-  Future<void> _search(String query) async {
+  Future<void> searchVideos(String query) async {
     if (query.isEmpty) return;
-    setState(() => _isLoading = true);
+    setState(() => isLoading = true);
     try {
-      final results = await _yt.search.search(query);
+      final results = await yt.search.search(query);
+      if (!mounted) return;
       setState(() {
-        _results = results.toList();
-        _isLoading = false;
+        videos = results.toList();
+        isLoading = false;
       });
     } catch (e) {
-      debugPrint("Error en búsqueda: $e");
-      setState(() => _isLoading = false);
+      if (!mounted) return;
+      setState(() => isLoading = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+      );
     }
   }
 
-  void _onVideoSelected(Video video) {
+  void playVideo(Video video) {
+    setState(() => playingVideoId = video.id.value);
+    
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Cargando pista segura: ${video.title}'), duration: const Duration(seconds: 2)),
+    );
+
+    // Mandamos la orden al AudioHandler global con la estructura probada
     audioHandler?.playMediaItem(MediaItem(
       id: video.id.value,
       title: video.title,
       artist: video.author,
-      duration: video.duration,
       artUri: Uri.parse(video.thumbnails.highResUrl),
     ));
+  }
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Reproduciendo: ${video.title}'), duration: const Duration(seconds: 2)),
-    );
+  @override
+  void dispose() {
+    yt.close();
+    searchController.dispose();
+    super.dispose();
   }
 
   @override
@@ -188,49 +206,53 @@ class _SearchScreenState extends State<SearchScreen> {
         title: const Text('Spotify-Killer Buscador VIP'),
         backgroundColor: const Color(0xFF1A1A1A),
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(12.0),
-        child: Column(
-          children: [
-            TextField(
-              controller: _controller,
+      body: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(12.0),
+            child: TextField(
+              controller: searchController,
               decoration: InputDecoration(
                 hintText: 'Busca artista o canción...',
                 filled: true,
                 fillColor: const Color(0xFF2A2A2A),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
                 suffixIcon: IconButton(
                   icon: const Icon(Icons.search, color: Colors.deepPurpleAccent),
-                  onPressed: () => _search(_controller.text),
+                  onPressed: () => searchVideos(searchController.text),
                 ),
               ),
-              onSubmitted: _search,
+              onSubmitted: searchVideos,
             ),
-            const SizedBox(height: 12),
-            if (_isLoading)
-              const Expanded(child: Center(child: CircularProgressIndicator(color: Colors.deepPurpleAccent)))
-            else
-              Expanded(
-                child: ListView.builder(
-                  itemCount: _results.length,
-                  itemBuilder: (context, index) {
-                    final video = _results[index];
-                    return ListTile(
-                      leading: Image.network(
-                        video.thumbnails.mediumResUrl,
-                        width: 50,
-                        fit: BoxFit.cover,
-                      ),
-                      title: Text(video.title, maxLines: 1, overflow: TextOverflow.ellipsis),
-                      subtitle: Text(video.author, maxLines: 1),
-                      trailing: const Icon(Icons.play_circle_fill, color: Colors.deepPurpleAccent, size: 32),
-                      onTap: () => _onVideoSelected(video),
-                    );
-                  },
-                ),
+          ),
+          const SizedBox(height: 6),
+          if (isLoading)
+            const Expanded(child: Center(child: CircularProgressIndicator(color: Colors.deepPurpleAccent)))
+          else
+            Expanded(
+              child: ListView.builder(
+                itemCount: videos.length,
+                itemBuilder: (context, index) {
+                  final video = videos[index];
+                  final isPlaying = playingVideoId == video.id.value;
+                  return ListTile(
+                    leading: ClipRRect(
+                      borderRadius: BorderRadius.circular(8),
+                      child: Image.network(video.thumbnails.mediumResUrl, width: 50, height: 50, fit: BoxFit.cover),
+                    ),
+                    title: Text(video.title, maxLines: 1, overflow: TextOverflow.ellipsis),
+                    subtitle: Text(video.author, maxLines: 1, style: const TextStyle(color: Colors.grey)),
+                    trailing: Icon(
+                      isPlaying ? Icons.pause_circle_filled : Icons.play_circle_fill,
+                      color: Colors.deepPurpleAccent,
+                      size: 32,
+                    ),
+                    onTap: () => playVideo(video),
+                  );
+                },
               ),
-          ],
-        ),
+            ),
+        ],
       ),
     );
   }
