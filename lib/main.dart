@@ -59,17 +59,24 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
   @override
   Future<void> playMediaItem(MediaItem item) async {
     mediaItem.add(item);
-    
     final videoId = item.id;
+    
     try {
-      // Extraemos el stream de audio de forma segura en segundo plano dentro del Handler
-      var manifest = await _yt.videos.streamsClient.getManifest(videoId);
+      debugPrint("Iniciando extracción de stream para: $videoId");
+      
+      // Añadimos un Timeout de seguridad estricto para evitar bloqueos eternos de red
+      var manifest = await _yt.videos.streamsClient.getManifest(videoId).timeout(
+        const Duration(seconds: 8),
+        onTimeout: () => throw Exception("Timeout de conexión con YouTube"),
+      );
+
       var audioStreamInfo = manifest.audioOnly.withHighestBitrate();
+      debugPrint("URL de audio obtenida con éxito: ${audioStreamInfo.url}");
 
       await _player.setAudioSource(AudioSource.uri(audioStreamInfo.url));
       await _player.play();
     } catch (e) {
-      debugPrint("Error crítico al extraer o reproducir el stream de YouTube: $e");
+      debugPrint("❌ Error crítico en AudioHandler al reproducir: $e");
     }
   }
 }
@@ -85,7 +92,7 @@ void main() async {
   audioHandler = await AudioService.init(
     builder: () => MyAudioHandler(),
     config: const AudioServiceConfig(
-      androidNotificationChannelId: 'com.example.media_app.audio.master_v13',
+      androidNotificationChannelId: 'com.example.media_app.audio.master_v14',
       androidNotificationChannelName: 'Spotify-Killer Buscador',
       androidNotificationOngoing: true,
       androidShowNotificationBadge: true,
@@ -152,7 +159,6 @@ class _SearchScreenState extends State<SearchScreen> {
   }
 
   void _onVideoSelected(Video video) {
-    // Mandamos la orden inmediata al AudioHandler sin bloquear la UI
     audioHandler?.playMediaItem(MediaItem(
       id: video.id.value,
       title: video.title,
@@ -162,7 +168,7 @@ class _SearchScreenState extends State<SearchScreen> {
     ));
 
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Cargando: ${video.title}'), duration: const Duration(seconds: 2)),
+      SnackBar(content: Text('Procesando: ${video.title}'), duration: const Duration(seconds: 2)),
     );
   }
 
