@@ -67,16 +67,15 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
     try {
       debugPrint("Obteniendo manifiesto con contenedores MP4 para: $videoId");
       
-      // Obtenemos el manifiesto completo y filtramos por streams MP4 usando 'muxed'
       var manifest = await _yt.videos.streamsClient.getManifest(videoId);
-      var streamInfo = manifest.muxed
-          .where((stream) => stream.container.name == 'mp4')
-          .withHighestBitrate();
+      var mp4Streams = manifest.muxed.where((s) => s.container.name == 'mp4').toList();
+      if (mp4Streams.isEmpty) throw Exception("No hay streams MP4 disponibles");
+      mp4Streams.sort((a, b) => b.bitrate.compareTo(a.bitrate));
+      var streamInfo = mp4Streams.first;
 
       final uriString = streamInfo.url.toString();
       debugPrint("URL obtenida: $uriString");
 
-      // Configuramos la fuente con el User-Agent de navegador para burlar el bloqueo de YouTube
       await _player.setAudioSource(
         AudioSource.uri(
           Uri.parse(uriString),
