@@ -65,18 +65,28 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
     final videoId = item.id;
     
     try {
-      debugPrint("Obteniendo stream optimizado para: $videoId");
+      debugPrint("Intentando extraer stream para: $videoId");
       
-      // Usamos el cliente de streams de forma directa al ID del video
-      var streamManifest = await _yt.videos.streamsClient.getManifest(videoId);
-      var streamInfo = streamManifest.audioOnly.withHighestBitrate();
+      // Forzamos un límite estricto de 6 segundos usando una carrera de futuros
+      var manifest = await _yt.videos.streamsClient.getManifest(videoId).timeout(
+        const Duration(seconds: 6),
+      );
 
-      await _player.setUrl(streamInfo.url.toString());
+      var audioStreamInfo = manifest.audioOnly.withHighestBitrate();
+
+      await _player.setUrl(audioStreamInfo.url.toString());
       await _player.play();
-      
-      debugPrint("¡Reproducción iniciada con éxito!");
+      debugPrint("¡Reproducción de YouTube iniciada con éxito!");
     } catch (e) {
-      debugPrint("❌ Error crítico en playMediaItem: $e");
+      debugPrint("⚠️ Capturado bloqueo o error de YouTube: $e");
+      // Fallback temporal de emergencia para comprobar que el reproductor funciona si YouTube bloquea
+      try {
+        debugPrint("Activando audio de respaldo por bloqueo de red...");
+        await _player.setUrl("https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3");
+        await _player.play();
+      } catch (fallbackError) {
+        debugPrint("❌ Error en fallback: $fallbackError");
+      }
     }
   }
 }
@@ -92,7 +102,7 @@ void main() async {
   audioHandler = await AudioService.init(
     builder: () => MyAudioHandler(),
     config: const AudioServiceConfig(
-      androidNotificationChannelId: 'com.example.media_app.audio.master_v19',
+      androidNotificationChannelId: 'com.example.media_app.audio.master_v20',
       androidNotificationChannelName: 'Spotify-Killer Buscador',
       androidNotificationOngoing: true,
       androidShowNotificationBadge: true,
@@ -159,7 +169,6 @@ class _SearchScreenState extends State<SearchScreen> {
   }
 
   void _onVideoSelected(Video video) {
-    // Disparamos la acción de forma limpia
     audioHandler?.playMediaItem(MediaItem(
       id: video.id.value,
       title: video.title,
