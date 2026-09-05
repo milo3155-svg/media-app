@@ -1,7 +1,6 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-          xmlns:tools="http://schemas.android.com/tools">
+    xmlns:tools="http://schemas.android.com/tools">
 
-    <!-- PERMISOS VITALES PARA ANDROID 14+ -->
     <uses-permission android:name="android.permission.INTERNET"/>
     <uses-permission android:name="android.permission.WAKE_LOCK"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
@@ -36,7 +35,6 @@
             android:name="flutterEmbedding"
             android:value="2" />
 
-        <!-- 🎵 ESTO ES LO QUE LE DA EL PODER MEDIASTYLE A ANDROID -->
         <service
             android:name="com.ryanheise.audioservice.AudioService"
             android:exported="true"
