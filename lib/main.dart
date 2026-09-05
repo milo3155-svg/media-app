@@ -59,6 +59,14 @@ class MyAudioHandler extends BaseAudioHandler {
     final url = item.extras?['url'] as String?;
 
     if (url != null) {
+      // 👇 TRUCO MAESTRO: Disparamos el reproductor ANTES de descargar el audio
+      // Esto burla el bloqueo de segundo plano de Android 14.
+      playbackState.add(playbackState.value.copyWith(
+        controls: [MediaControl.pause],
+        processingState: AudioProcessingState.loading,
+        playing: true,
+      ));
+
       try {
         await _player.setAudioSource(AudioSource.uri(Uri.parse(url)));
         _broadcastState(_player.playbackEvent);
@@ -120,12 +128,11 @@ class _HomeScreenState extends State<HomeScreen> {
       audioHandler = await AudioService.init(
         builder: () => MyAudioHandler(),
         config: const AudioServiceConfig(
-          // 👇 CAMBIO VITAL 1: ID nuevo para forzar a Android a sacar el canal del calabozo de "Silenciadas"
-          androidNotificationChannelId: 'com.example.media_app.audio.master_v2',
-          androidNotificationChannelName: 'Reproductor VIP Master',
+          // 👇 CAMBIO VITAL: Canal v3 para escapar del calabozo de las notificaciones "Silenciadas"
+          androidNotificationChannelId: 'com.example.media_app.audio.master_v3',
+          androidNotificationChannelName: 'Reproductor VIP Final',
           androidNotificationOngoing: true,
           androidShowNotificationBadge: true,
-          androidNotificationIcon: 'mipmap/ic_launcher',
         ),
       );
       setState(() {
@@ -154,15 +161,10 @@ class _HomeScreenState extends State<HomeScreen> {
                 label: const Text('PROBAR PANTALLA DE BLOQUEO',
                     style: TextStyle(fontSize: 16, color: Colors.white, fontWeight: FontWeight.bold)),
                 onPressed: () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Reproduciendo audio seguro. ¡Bloquea la pantalla!'))
-                  );
-                  
                   audioHandler?.playMediaItem(MediaItem(
                     id: 'test_audio_1',
                     title: 'Prueba de Sistema VIP',
                     artist: 'Laboratorio Android',
-                    // 👇 CAMBIO VITAL 2: Sin imagen externa temporalmente para evitar que una descarga atore la notificación
                     extras: {'url': 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3'},
                   ));
                 },
