@@ -11,10 +11,9 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
   }
 
   Future<void> _init() async {
-    // Escuchamos los eventos del reproductor para actualizar el estado global
     _player.playbackEventStream.listen(_broadcastState);
     
-    // Forzamos un elemento multimedia inicial para que Android reconozca la sesión desde el inicio
+    // Elemento inicial para despertar la sesión multimedia desde el inicio
     mediaItem.add(const MediaItem(
       id: 'init_audio',
       album: 'Spotify-Killer',
@@ -52,25 +51,50 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
   }
 
   @override
-  Future<void> play() => _player.play();
+  Future<void> play() async {
+    await _player.play();
+    _broadcastState(_player.playbackEvent);
+  }
 
   @override
-  Future<void> pause() => _player.pause();
+  Future<void> pause() async {
+    await _player.pause();
+    _broadcastState(_player.playbackEvent);
+  }
 
   @override
   Future<void> seek(Duration position) => _player.seek(position);
 
   @override
+  Future<void> skipToNext() async => debugPrint("Siguiente");
+
+  @override
+  Future<void> skipToPrevious() async => debugPrint("Anterior");
+
+  @override
   Future<void> playMediaItem(MediaItem item) async {
+    // 1. Vinculamos metadatos al frente (AHORA LLEVA LA IMAGEN)
     mediaItem.add(item);
     final url = item.extras?['url'] as String?;
 
     if (url != null) {
       try {
         await _player.setAudioSource(AudioSource.uri(Uri.parse(url)));
-        play();
+        
+        // 2. Forzamos el estado activo con los controles visibles
+        playbackState.add(playbackState.value.copyWith(
+          controls: [
+            MediaControl.skipToPrevious,
+            MediaControl.pause,
+            MediaControl.skipToNext,
+          ],
+          processingState: AudioProcessingState.ready,
+          playing: true,
+        ));
+
+        await _player.play();
       } catch (e) {
-        debugPrint("Error al reproducir: $e");
+        debugPrint("Error crítico al reproducir: $e");
       }
     }
   }
@@ -80,15 +104,16 @@ AudioHandler? audioHandler;
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-
+  
   final session = await AudioSession.instance;
   await session.configure(const AudioSessionConfiguration.music());
 
   audioHandler = await AudioService.init(
     builder: () => MyAudioHandler(),
     config: const AudioServiceConfig(
-      androidNotificationChannelId: 'com.example.media_app.audio.media_channel_v5',
-      androidNotificationChannelName: 'Reproductor Multimedia VIP',
+      // Le cambiamos el ID al canal para que Android lo cree desde cero y fresquito
+      androidNotificationChannelId: 'com.example.media_app.audio.master_final_v3',
+      androidNotificationChannelName: 'Reproductor VIP Multimedia',
       androidNotificationOngoing: true,
       androidShowNotificationBadge: true,
       androidNotificationIcon: 'mipmap/ic_launcher',
@@ -138,6 +163,8 @@ class HomeScreen extends StatelessWidget {
               id: 'test_audio_1',
               title: 'Prueba de Sistema VIP',
               artist: 'Laboratorio Android',
+              // 👇 LA PIEZA CLAVE QUE RECORDASTE: Imagen de Portada
+              artUri: Uri.parse('https://picsum.photos/500/500'),
               extras: {'url': 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3'},
             ));
           },
