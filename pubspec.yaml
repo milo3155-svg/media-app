@@ -10,6 +10,8 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  # ... tus otros paquetes ...
+  permission_handler: ^11.3.1
   cupertino_icons: ^1.0.6
   # ESTA ES LA CLAVE: 'any' fuerza a descargar el último parche antibloqueo
   youtube_explode_dart: any
