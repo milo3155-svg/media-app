@@ -65,28 +65,21 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
     final videoId = item.id;
     
     try {
-      debugPrint("Intentando extraer stream para: $videoId");
+      debugPrint("Obteniendo manifiesto real para: $videoId");
       
-      // Forzamos un límite estricto de 6 segundos usando una carrera de futuros
-      var manifest = await _yt.videos.streamsClient.getManifest(videoId).timeout(
-        const Duration(seconds: 6),
-      );
+      // Consultamos el manifiesto de streams del video seleccionado
+      var manifest = await _yt.videos.streamsClient.getManifest(videoId);
+      
+      // Filtramos únicamente el audio con mayor tasa de bits disponible
+      var audioStream = manifest.audioOnly.withHighestBitrate();
 
-      var audioStreamInfo = manifest.audioOnly.withHighestBitrate();
-
-      await _player.setUrl(audioStreamInfo.url.toString());
+      // Asignamos la URL limpia al reproductor nativo
+      await _player.setUrl(audioStream.url.toString());
       await _player.play();
-      debugPrint("¡Reproducción de YouTube iniciada con éxito!");
+      
+      debugPrint("¡Audio real de YouTube reproduciéndose con éxito!");
     } catch (e) {
-      debugPrint("⚠️ Capturado bloqueo o error de YouTube: $e");
-      // Fallback temporal de emergencia para comprobar que el reproductor funciona si YouTube bloquea
-      try {
-        debugPrint("Activando audio de respaldo por bloqueo de red...");
-        await _player.setUrl("https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3");
-        await _player.play();
-      } catch (fallbackError) {
-        debugPrint("❌ Error en fallback: $fallbackError");
-      }
+      debugPrint("❌ Error detallado al extraer YouTube: $e");
     }
   }
 }
@@ -102,7 +95,7 @@ void main() async {
   audioHandler = await AudioService.init(
     builder: () => MyAudioHandler(),
     config: const AudioServiceConfig(
-      androidNotificationChannelId: 'com.example.media_app.audio.master_v20',
+      androidNotificationChannelId: 'com.example.media_app.audio.master_v21',
       androidNotificationChannelName: 'Spotify-Killer Buscador',
       androidNotificationOngoing: true,
       androidShowNotificationBadge: true,
