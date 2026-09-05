@@ -1,6 +1,5 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-          xmlns:tools="http://schemas.android.com/tools"
-          package="com.example.media_app">
+          xmlns:tools="http://schemas.android.com/tools">
 
     <!-- PERMISOS VITALES PARA ANDROID 14+ -->
     <uses-permission android:name="android.permission.INTERNET"/>
