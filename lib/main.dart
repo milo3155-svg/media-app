@@ -11,6 +11,9 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
 
   MyAudioHandler() {
     _player.playbackEventStream.listen(_broadcastState);
+    _player.playerStateStream.listen((state) {
+      playbackState.add(playbackState.value.copyWith(playing: state.playing));
+    });
   }
 
   void _broadcastState(PlaybackEvent event) {
@@ -62,21 +65,18 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
     final videoId = item.id;
     
     try {
-      debugPrint("Buscando stream para: $videoId");
+      debugPrint("Iniciando resolución de stream para: $videoId");
       var manifest = await _yt.videos.streamsClient.getManifest(videoId).timeout(
         const Duration(seconds: 8),
-        onTimeout: () => throw Exception("Timeout de red"),
+        onTimeout: () => throw Exception("Timeout de conexión al resolver manifiesto"),
       );
 
       var audioStreamInfo = manifest.audioOnly.withHighestBitrate();
-      
+
       await _player.setAudioSource(AudioSource.uri(audioStreamInfo.url));
       await _player.play();
-      
-      // FORZAMOS LA EMISIÓN DE ESTADO ACTIVO PARA QUE EL BOTÓN CAMBIE
-      _broadcastState(_player.playbackEvent);
     } catch (e) {
-      debugPrint("❌ Error al reproducir audio: $e");
+      debugPrint("❌ Error al procesar stream de YouTube: $e");
     }
   }
 }
@@ -92,7 +92,7 @@ void main() async {
   audioHandler = await AudioService.init(
     builder: () => MyAudioHandler(),
     config: const AudioServiceConfig(
-      androidNotificationChannelId: 'com.example.media_app.audio.master_v15',
+      androidNotificationChannelId: 'com.example.media_app.audio.master_v18',
       androidNotificationChannelName: 'Spotify-Killer Buscador',
       androidNotificationOngoing: true,
       androidShowNotificationBadge: true,
@@ -168,7 +168,7 @@ class _SearchScreenState extends State<SearchScreen> {
     ));
 
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Reproduciendo: ${video.title}'), duration: const Duration(seconds: 2)),
+      SnackBar(content: Text('Procesando: ${video.title}'), duration: const Duration(seconds: 2)),
     );
   }
 
