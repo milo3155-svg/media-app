@@ -81,11 +81,12 @@ void main() async {
   audioHandler = await AudioService.init(
     builder: () => MyAudioHandler(),
     config: const AudioServiceConfig(
-      androidNotificationChannelId: 'com.example.media_app.audio.master_v9',
+      androidNotificationChannelId: 'com.example.media_app.audio.master_v10',
       androidNotificationChannelName: 'Reproductor VIP Oficial',
       androidNotificationOngoing: true,
       androidShowNotificationBadge: true,
-      // Ícono eliminado para evitar el crasheo de la tarjeta multimedia
+      // AQUI JALAMOS EL ICONO DIBUJADO A MANO PARA QUE NO CRASHEE LA LIBRERIA
+      androidNotificationIcon: 'drawable/ic_notification',
     ),
   );
 
