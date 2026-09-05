@@ -59,8 +59,13 @@ class MyAudioHandler extends BaseAudioHandler {
     final url = item.extras?['url'] as String?;
 
     if (url != null) {
+      // Estado de carga seguro con los 3 índices para evitar que Android crashee
       playbackState.add(playbackState.value.copyWith(
-        controls: [MediaControl.pause],
+        controls: [
+          MediaControl.skipToPrevious,
+          MediaControl.pause,
+          MediaControl.skipToNext,
+        ],
         processingState: AudioProcessingState.loading,
         playing: true,
       ));
@@ -126,8 +131,8 @@ class _HomeScreenState extends State<HomeScreen> {
       audioHandler = await AudioService.init(
         builder: () => MyAudioHandler(),
         config: const AudioServiceConfig(
-          androidNotificationChannelId: 'com.example.media_app.audio.master_v3',
-          androidNotificationChannelName: 'Reproductor VIP Final',
+          androidNotificationChannelId: 'com.example.media_app.audio.master_v4',
+          androidNotificationChannelName: 'Reproductor VIP Oficial',
           androidNotificationOngoing: true,
           androidShowNotificationBadge: true,
           androidNotificationIcon: 'mipmap/ic_launcher',
@@ -143,6 +148,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    print('Construyendo pantalla principal, estado de audio: $_isAudioInitialized');
     return Scaffold(
       appBar: AppBar(
         title: const Text('Spotify-Killer VIP'),
