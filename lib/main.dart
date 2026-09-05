@@ -3,11 +3,24 @@ import 'package:just_audio/just_audio.dart';
 import 'package:audio_session/audio_session.dart';
 import 'package:audio_service/audio_service.dart';
 
-class MyAudioHandler extends BaseAudioHandler {
+class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
   final _player = AudioPlayer();
 
   MyAudioHandler() {
+    _init();
+  }
+
+  Future<void> _init() async {
+    // Escuchamos los eventos del reproductor para actualizar el estado global
     _player.playbackEventStream.listen(_broadcastState);
+    
+    // Forzamos un elemento multimedia inicial para que Android reconozca la sesión desde el inicio
+    mediaItem.add(const MediaItem(
+      id: 'init_audio',
+      album: 'Spotify-Killer',
+      title: 'Reproductor VIP',
+      artist: 'Laboratorio Android',
+    ));
   }
 
   void _broadcastState(PlaybackEvent event) {
@@ -39,50 +52,25 @@ class MyAudioHandler extends BaseAudioHandler {
   }
 
   @override
-  Future<void> play() async {
-    await _player.play();
-    _broadcastState(_player.playbackEvent);
-  }
+  Future<void> play() => _player.play();
 
   @override
-  Future<void> pause() async {
-    await _player.pause();
-    _broadcastState(_player.playbackEvent);
-  }
+  Future<void> pause() => _player.pause();
 
   @override
   Future<void> seek(Duration position) => _player.seek(position);
 
   @override
-  Future<void> skipToNext() async => debugPrint("Siguiente");
-
-  @override
-  Future<void> skipToPrevious() async => debugPrint("Anterior");
-
-  @override
   Future<void> playMediaItem(MediaItem item) async {
-    // 1. Vinculamos los metadatos obligatorios al frente para que Android dibuje la tarjeta multimedia
     mediaItem.add(item);
     final url = item.extras?['url'] as String?;
 
     if (url != null) {
       try {
         await _player.setAudioSource(AudioSource.uri(Uri.parse(url)));
-        
-        // 2. Definimos explícitamente los controles activos que exige la tarjeta VIP
-        playbackState.add(playbackState.value.copyWith(
-          controls: [
-            MediaControl.skipToPrevious,
-            MediaControl.pause,
-            MediaControl.skipToNext,
-          ],
-          processingState: AudioProcessingState.ready,
-          playing: true,
-        ));
-
-        await _player.play();
+        play();
       } catch (e) {
-        debugPrint("Error crítico al reproducir: $e");
+        debugPrint("Error al reproducir: $e");
       }
     }
   }
@@ -92,15 +80,15 @@ AudioHandler? audioHandler;
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  
+
   final session = await AudioSession.instance;
   await session.configure(const AudioSessionConfiguration.music());
 
   audioHandler = await AudioService.init(
     builder: () => MyAudioHandler(),
     config: const AudioServiceConfig(
-      androidNotificationChannelId: 'com.example.media_app.audio.master_final_v2',
-      androidNotificationChannelName: 'Reproductor VIP Multimedia',
+      androidNotificationChannelId: 'com.example.media_app.audio.media_channel_v5',
+      androidNotificationChannelName: 'Reproductor Multimedia VIP',
       androidNotificationOngoing: true,
       androidShowNotificationBadge: true,
       androidNotificationIcon: 'mipmap/ic_launcher',
