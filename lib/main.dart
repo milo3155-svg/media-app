@@ -3,6 +3,7 @@ import 'package:just_audio/just_audio.dart';
 import 'package:audio_session/audio_session.dart';
 import 'package:audio_service/audio_service.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 
 class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
   final _player = AudioPlayer();
@@ -81,11 +82,10 @@ void main() async {
   audioHandler = await AudioService.init(
     builder: () => MyAudioHandler(),
     config: const AudioServiceConfig(
-      androidNotificationChannelId: 'com.example.media_app.audio.master_v10',
-      androidNotificationChannelName: 'Reproductor VIP Oficial',
+      androidNotificationChannelId: 'com.example.media_app.audio.master_v11',
+      androidNotificationChannelName: 'Spotify-Killer Buscador',
       androidNotificationOngoing: true,
       androidShowNotificationBadge: true,
-      // AQUI JALAMOS EL ICONO DIBUJADO A MANO PARA QUE NO CRASHEE LA LIBRERIA
       androidNotificationIcon: 'drawable/ic_notification',
     ),
   );
@@ -103,21 +103,26 @@ class MediaApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       theme: ThemeData.dark().copyWith(
         scaffoldBackgroundColor: const Color(0xFF121212),
+        primaryColor: Colors.deepPurpleAccent,
       ),
-      home: const HomeScreen(),
+      home: const SearchScreen(),
     );
   }
 }
 
-class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key});
+class SearchScreen extends StatefulWidget {
+  const SearchScreen({super.key});
 
   @override
-  State<HomeScreen> createState() => _HomeScreenState();
+  State<SearchScreen> createState() => _SearchScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
-  
+class _SearchScreenState extends State<SearchScreen> {
+  final _controller = TextEditingController();
+  final _yt = YoutubeExplode();
+  List<Video> _results = [];
+  bool _isLoading = false;
+
   @override
   void initState() {
     super.initState();
@@ -125,36 +130,97 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _pedirPermisos() async {
-    final status = await Permission.notification.request();
-    debugPrint("Estado del permiso de notificaciones: $status");
+    await Permission.notification.request();
+  }
+
+  Future<void> _search(String query) async {
+    if (query.isEmpty) return;
+    setState(() => _isLoading = true);
+    try {
+      final results = await _yt.search.search(query);
+      setState(() {
+        _results = results.toList();
+        _isLoading = false;
+      });
+    } catch (e) {
+      debugPrint("Error en búsqueda: $e");
+      setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _playVideo(Video video) async {
+    try {
+      // Obtenemos el manifiesto de streams de audio reales
+      var manifest = await _yt.videos.streamsClient.getManifest(video.id);
+      var audioStream = manifest.audioOnly.withHighestBitrate();
+
+      // Mandamos a reproducir utilizando el AudioHandler que ya conquista la pantalla de bloqueo
+      audioHandler?.playMediaItem(MediaItem(
+        id: video.id.value,
+        title: video.title,
+        artist: video.author,
+        duration: video.duration,
+        artUri: Uri.parse(video.thumbnails.highResUrl),
+        extras: {'url': audioStream.url.toString()},
+      ));
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Reproduciendo: ${video.title}')),
+      );
+    } catch (e) {
+      debugPrint("Error extrayendo stream: $e");
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Spotify-Killer VIP'),
+        title: const Text('Spotify-Killer Buscador VIP'),
         backgroundColor: const Color(0xFF1A1A1A),
       ),
-      body: Center(
-        child: ElevatedButton.icon(
-          style: ElevatedButton.styleFrom(
-            backgroundColor: Colors.deepPurpleAccent,
-            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-          ),
-          icon: const Icon(Icons.play_arrow, size: 32, color: Colors.white),
-          label: const Text('PROBAR PANTALLA DE BLOQUEO',
-              style: TextStyle(fontSize: 16, color: Colors.white, fontWeight: FontWeight.bold)),
-          onPressed: () {
-            audioHandler?.playMediaItem(MediaItem(
-              id: 'test_audio_1',
-              title: 'Prueba de Sistema VIP',
-              artist: 'Laboratorio Android',
-              duration: const Duration(minutes: 3, seconds: 45),
-              artUri: Uri.parse('https://picsum.photos/500/500'),
-              extras: {'url': 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3'},
-            ));
-          },
+      body: Padding(
+        padding: const EdgeInsets.all(12.0),
+        child: Column(
+          children: [
+            TextField(
+              controller: _controller,
+              decoration: InputDecoration(
+                hintText: 'Busca artista o canción...',
+                filled: true,
+                fillColor: const Color(0xFF2A2A2A),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                suffixIcon: IconButton(
+                  icon: const Icon(Icons.search, color: Colors.deepPurpleAccent),
+                  onPressed: () => _search(_controller.text),
+                ),
+              ),
+              onSubmitted: _search,
+            ),
+            const SizedBox(height: 12),
+            if (_isLoading)
+              const Expanded(child: Center(child: CircularProgressIndicator(color: Colors.deepPurpleAccent)))
+            else
+              Expanded(
+                child: ListView.builder(
+                  itemCount: _results.length,
+                  itemBuilder: (context, index) {
+                    final video = _results[index];
+                    return ListTile(
+                      leading: Image.network(
+                        video.thumbnails.mediumResUrl,
+                        width: 50,
+                        fit: BoxFit.cover,
+                      ),
+                      title: Text(video.title, maxLines: 1, overflow: TextOverflow.ellipsis),
+                      subtitle: Text(video.author, maxLines: 1),
+                      trailing: const Icon(Icons.play_circle_fill, color: Colors.deepPurpleAccent, size: 32),
+                      onTap: () => _playVideo(video),
+                    );
+                  },
+                ),
+              ),
+          ],
         ),
       ),
     );
