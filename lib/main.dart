@@ -59,26 +59,11 @@ class MyAudioHandler extends BaseAudioHandler {
     final url = item.extras?['url'] as String?;
 
     if (url != null) {
-      // Estado de carga seguro con los 3 índices para evitar que Android crashee
-      playbackState.add(playbackState.value.copyWith(
-        controls: [
-          MediaControl.skipToPrevious,
-          MediaControl.pause,
-          MediaControl.skipToNext,
-        ],
-        processingState: AudioProcessingState.loading,
-        playing: true,
-      ));
-
       try {
         await _player.setAudioSource(AudioSource.uri(Uri.parse(url)));
-        _broadcastState(_player.playbackEvent);
         play();
       } catch (e) {
-        playbackState.add(playbackState.value.copyWith(
-          errorMessage: "Error: $e",
-          processingState: AudioProcessingState.error,
-        ));
+        debugPrint("Error al reproducir: $e");
       }
     }
   }
@@ -86,8 +71,20 @@ class MyAudioHandler extends BaseAudioHandler {
 
 AudioHandler? audioHandler;
 
-void main() {
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  
+  audioHandler = await AudioService.init(
+    builder: () => MyAudioHandler(),
+    config: const AudioServiceConfig(
+      androidNotificationChannelId: 'com.example.media_app.audio.clean_v1',
+      androidNotificationChannelName: 'Reproductor VIP Limpio',
+      androidNotificationOngoing: true,
+      androidShowNotificationBadge: true,
+      androidNotificationIcon: 'mipmap/ic_launcher',
+    ),
+  );
+
   runApp(const MediaApp());
 }
 
@@ -107,73 +104,34 @@ class MediaApp extends StatelessWidget {
   }
 }
 
-class HomeScreen extends StatefulWidget {
+class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
 
   @override
-  State<HomeScreen> createState() => _HomeScreenState();
-}
-
-class _HomeScreenState extends State<HomeScreen> {
-  bool _isAudioInitialized = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _initAudioServiceAsync();
-  }
-
-  Future<void> _initAudioServiceAsync() async {
-    try {
-      final session = await AudioSession.instance;
-      await session.configure(const AudioSessionConfiguration.music());
-
-      audioHandler = await AudioService.init(
-        builder: () => MyAudioHandler(),
-        config: const AudioServiceConfig(
-          androidNotificationChannelId: 'com.example.media_app.audio.master_v4',
-          androidNotificationChannelName: 'Reproductor VIP Oficial',
-          androidNotificationOngoing: true,
-          androidShowNotificationBadge: true,
-          androidNotificationIcon: 'mipmap/ic_launcher',
-        ),
-      );
-      setState(() {
-        _isAudioInitialized = true;
-      });
-    } catch (e) {
-      debugPrint("Error al iniciar AudioService: $e");
-    }
-  }
-
-  @override
   Widget build(BuildContext context) {
-    print('Construyendo pantalla principal, estado de audio: $_isAudioInitialized');
     return Scaffold(
       appBar: AppBar(
         title: const Text('Spotify-Killer VIP'),
         backgroundColor: const Color(0xFF1A1A1A),
       ),
       body: Center(
-        child: _isAudioInitialized
-            ? ElevatedButton.icon(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.deepPurpleAccent,
-                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-                ),
-                icon: const Icon(Icons.play_arrow, size: 32, color: Colors.white),
-                label: const Text('PROBAR PANTALLA DE BLOQUEO',
-                    style: TextStyle(fontSize: 16, color: Colors.white, fontWeight: FontWeight.bold)),
-                onPressed: () {
-                  audioHandler?.playMediaItem(MediaItem(
-                    id: 'test_audio_1',
-                    title: 'Prueba de Sistema VIP',
-                    artist: 'Laboratorio Android',
-                    extras: {'url': 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3'},
-                  ));
-                },
-              )
-            : const CircularProgressIndicator(color: Colors.deepPurpleAccent),
+        child: ElevatedButton.icon(
+          style: ElevatedButton.styleFrom(
+            backgroundColor: Colors.deepPurpleAccent,
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+          ),
+          icon: const Icon(Icons.play_arrow, size: 32, color: Colors.white),
+          label: const Text('PROBAR PANTALLA DE BLOQUEO',
+              style: TextStyle(fontSize: 16, color: Colors.white, fontWeight: FontWeight.bold)),
+          onPressed: () {
+            audioHandler?.playMediaItem(MediaItem(
+              id: 'test_audio_1',
+              title: 'Prueba de Sistema VIP',
+              artist: 'Laboratorio Android',
+              extras: {'url': 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3'},
+            ));
+          },
+        ),
       ),
     );
   }
