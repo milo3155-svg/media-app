@@ -81,13 +81,11 @@ void main() async {
   audioHandler = await AudioService.init(
     builder: () => MyAudioHandler(),
     config: const AudioServiceConfig(
-      // 👇 Canal v8 fresquito para Android 14
-      androidNotificationChannelId: 'com.example.media_app.audio.master_v8',
+      androidNotificationChannelId: 'com.example.media_app.audio.master_v9',
       androidNotificationChannelName: 'Reproductor VIP Oficial',
       androidNotificationOngoing: true,
       androidShowNotificationBadge: true,
-      // 👇 ESTE ES EL PASO CLAVE: Match perfecto con tu AndroidManifest.xml
-      androidNotificationIcon: 'mipmap/ic_launcher',
+      // Ícono eliminado para evitar el crasheo de la tarjeta multimedia
     ),
   );
 
@@ -125,7 +123,6 @@ class _HomeScreenState extends State<HomeScreen> {
     _pedirPermisos();
   }
 
-  // Petición legal de permisos para Android 14
   Future<void> _pedirPermisos() async {
     final status = await Permission.notification.request();
     debugPrint("Estado del permiso de notificaciones: $status");
