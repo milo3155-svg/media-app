@@ -7,6 +7,7 @@ import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 
 class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
   final _player = AudioPlayer();
+  final _yt = YoutubeExplode();
 
   MyAudioHandler() {
     _player.playbackEventStream.listen(_broadcastState);
@@ -59,14 +60,16 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
   Future<void> playMediaItem(MediaItem item) async {
     mediaItem.add(item);
     
-    final url = item.extras?['url'] as String?;
-    if (url != null) {
-      try {
-        await _player.setAudioSource(AudioSource.uri(Uri.parse(url)));
-        await _player.play();
-      } catch (e) {
-        debugPrint("Error crítico al reproducir audio real: $e");
-      }
+    final videoId = item.id;
+    try {
+      // Extraemos el stream de audio de forma segura en segundo plano dentro del Handler
+      var manifest = await _yt.videos.streamsClient.getManifest(videoId);
+      var audioStreamInfo = manifest.audioOnly.withHighestBitrate();
+
+      await _player.setAudioSource(AudioSource.uri(audioStreamInfo.url));
+      await _player.play();
+    } catch (e) {
+      debugPrint("Error crítico al extraer o reproducir el stream de YouTube: $e");
     }
   }
 }
@@ -82,7 +85,7 @@ void main() async {
   audioHandler = await AudioService.init(
     builder: () => MyAudioHandler(),
     config: const AudioServiceConfig(
-      androidNotificationChannelId: 'com.example.media_app.audio.master_v12',
+      androidNotificationChannelId: 'com.example.media_app.audio.master_v13',
       androidNotificationChannelName: 'Spotify-Killer Buscador',
       androidNotificationOngoing: true,
       androidShowNotificationBadge: true,
@@ -148,36 +151,19 @@ class _SearchScreenState extends State<SearchScreen> {
     }
   }
 
-  Future<void> _playVideo(Video video) async {
-    // Mostramos un aviso de carga en pantalla
+  void _onVideoSelected(Video video) {
+    // Mandamos la orden inmediata al AudioHandler sin bloquear la UI
+    audioHandler?.playMediaItem(MediaItem(
+      id: video.id.value,
+      title: video.title,
+      artist: video.author,
+      duration: video.duration,
+      artUri: Uri.parse(video.thumbnails.highResUrl),
+    ));
+
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Obteniendo audio de: ${video.title}...'), duration: const Duration(seconds: 1)),
+      SnackBar(content: Text('Cargando: ${video.title}'), duration: const Duration(seconds: 2)),
     );
-
-    try {
-      // Obtenemos el manifiesto del video
-      var manifest = await _yt.videos.streamsClient.getManifest(video.id);
-      
-      // Filtramos el stream de audio con la mejor calidad disponible
-      var audioStreamInfo = manifest.audioOnly.withHighestBitrate();
-
-      // Enviamos la URL directa al manejador
-      audioHandler?.playMediaItem(MediaItem(
-        id: video.id.value,
-        title: video.title,
-        artist: video.author,
-        duration: video.duration,
-        artUri: Uri.parse(video.thumbnails.highResUrl),
-        extras: {'url': audioStreamInfo.url.toString()},
-      ));
-    } catch (e) {
-      debugPrint("Error al extraer el stream de YouTube: $e");
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Error: No se pudo reproducir este video de YouTube.')),
-        );
-      }
-    }
   }
 
   @override
@@ -223,7 +209,7 @@ class _SearchScreenState extends State<SearchScreen> {
                       title: Text(video.title, maxLines: 1, overflow: TextOverflow.ellipsis),
                       subtitle: Text(video.author, maxLines: 1),
                       trailing: const Icon(Icons.play_circle_fill, color: Colors.deepPurpleAccent, size: 32),
-                      onTap: () => _playVideo(video),
+                      onTap: () => _onVideoSelected(video),
                     );
                   },
                 ),
