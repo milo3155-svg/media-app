@@ -2,12 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:audio_session/audio_session.dart';
 import 'package:audio_service/audio_service.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
   final _player = AudioPlayer();
 
   MyAudioHandler() {
-    // ÚNICA fuente de la verdad para el estado. Evita colisiones que asustan a Android.
     _player.playbackEventStream.listen(_broadcastState);
   }
 
@@ -56,13 +56,11 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
 
   @override
   Future<void> playMediaItem(MediaItem item) async {
-    // 1. Notificamos al sistema QUÉ va a sonar ANTES de tocar el reproductor
     mediaItem.add(item);
     
     final url = item.extras?['url'] as String?;
     if (url != null) {
       try {
-        // 2. Cargamos y reproducimos. El stream se encarga de actualizar la UI sin colisiones.
         await _player.setAudioSource(AudioSource.uri(Uri.parse(url)));
         await _player.play();
       } catch (e) {
@@ -83,9 +81,8 @@ void main() async {
   audioHandler = await AudioService.init(
     builder: () => MyAudioHandler(),
     config: const AudioServiceConfig(
-      // Cambiamos el ID para obligar a Android a crear un canal limpio desde cero
-      androidNotificationChannelId: 'com.example.media_app.audio.master_v6',
-      androidNotificationChannelName: 'Reproductor VIP',
+      androidNotificationChannelId: 'com.example.media_app.audio.master_v7',
+      androidNotificationChannelName: 'Reproductor VIP Oficial',
       androidNotificationOngoing: true,
       androidShowNotificationBadge: true,
       androidNotificationIcon: 'mipmap/ic_launcher',
@@ -111,8 +108,26 @@ class MediaApp extends StatelessWidget {
   }
 }
 
-class HomeScreen extends StatelessWidget {
+class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
+
+  @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> {
+  
+  @override
+  void initState() {
+    super.initState();
+    _pedirPermisos();
+  }
+
+  // 👇 LA VÍA LEGAL PARA ANDROID 14
+  Future<void> _pedirPermisos() async {
+    final status = await Permission.notification.request();
+    debugPrint("Estado del permiso de notificaciones: $status");
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -135,7 +150,6 @@ class HomeScreen extends StatelessWidget {
               id: 'test_audio_1',
               title: 'Prueba de Sistema VIP',
               artist: 'Laboratorio Android',
-              // 👇 REQUISITO DE ANDROID 14: Duración explícita para renderizar controles
               duration: const Duration(minutes: 3, seconds: 45),
               artUri: Uri.parse('https://picsum.photos/500/500'),
               extras: {'url': 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3'},
