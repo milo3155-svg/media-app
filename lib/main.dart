@@ -62,21 +62,21 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
     final videoId = item.id;
     
     try {
-      debugPrint("Iniciando extracción de stream para: $videoId");
-      
-      // Añadimos un Timeout de seguridad estricto para evitar bloqueos eternos de red
+      debugPrint("Buscando stream para: $videoId");
       var manifest = await _yt.videos.streamsClient.getManifest(videoId).timeout(
         const Duration(seconds: 8),
-        onTimeout: () => throw Exception("Timeout de conexión con YouTube"),
+        onTimeout: () => throw Exception("Timeout de red"),
       );
 
       var audioStreamInfo = manifest.audioOnly.withHighestBitrate();
-      debugPrint("URL de audio obtenida con éxito: ${audioStreamInfo.url}");
-
+      
       await _player.setAudioSource(AudioSource.uri(audioStreamInfo.url));
       await _player.play();
+      
+      // FORZAMOS LA EMISIÓN DE ESTADO ACTIVO PARA QUE EL BOTÓN CAMBIE
+      _broadcastState(_player.playbackEvent);
     } catch (e) {
-      debugPrint("❌ Error crítico en AudioHandler al reproducir: $e");
+      debugPrint("❌ Error al reproducir audio: $e");
     }
   }
 }
@@ -92,7 +92,7 @@ void main() async {
   audioHandler = await AudioService.init(
     builder: () => MyAudioHandler(),
     config: const AudioServiceConfig(
-      androidNotificationChannelId: 'com.example.media_app.audio.master_v14',
+      androidNotificationChannelId: 'com.example.media_app.audio.master_v15',
       androidNotificationChannelName: 'Spotify-Killer Buscador',
       androidNotificationOngoing: true,
       androidShowNotificationBadge: true,
@@ -168,7 +168,7 @@ class _SearchScreenState extends State<SearchScreen> {
     ));
 
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Procesando: ${video.title}'), duration: const Duration(seconds: 2)),
+      SnackBar(content: Text('Reproduciendo: ${video.title}'), duration: const Duration(seconds: 2)),
     );
   }
 
