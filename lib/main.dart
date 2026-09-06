@@ -101,22 +101,29 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
 
   @override
   Future<void> playMediaItem(MediaItem item) async {
+    // 1. Actualizamos la interfaz de inmediato
     mediaItem.add(item);
-    final videoId = item.id;
-
+    
     try {
-      debugPrint("Obteniendo manifiesto con contenedores MP4 para: $videoId");
-      var manifest = await _yt.videos.streamsClient.getManifest(videoId);
-      var mp4Streams = manifest.audioOnly.where((s) => s.container.name == 'mp4');
-      if (mp4Streams.isEmpty) throw Exception("No hay streams MP4 disponibles");
-      var streamInfo = mp4Streams.withHighestBitrate();
+      // 2. Avisamos al sistema que estamos cargando el audio
+      playbackState.add(playbackState.value.copyWith(
+        processingState: AudioProcessingState.loading,
+      ));
 
-      final uriString = streamInfo.url.toString();
-      debugPrint("URL obtenida: $uriString");
+      // 3. Detenemos el reproductor para limpiar la canción anterior
+      await _player.stop();
+
+      final videoId = item.id;
+      debugPrint("Obteniendo manifiesto para: $videoId");
+      var manifest = await _yt.videos.streamsClient.getManifest(videoId);
+      
+      // EL CAMBIO CLAVE: Tomamos la mejor calidad sin importar el formato
+      var streamInfo = manifest.audioOnly.withHighestBitrate();
+      debugPrint("URL obtenida: ${streamInfo.url}");
 
       await _player.setAudioSource(
         AudioSource.uri(
-          Uri.parse(uriString),
+          streamInfo.url,
           tag: item,
         ),
       );
@@ -124,6 +131,11 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
       await _player.play();
     } catch (e) {
       debugPrint("Error crítico en playMediaItem: $e");
+      // En caso de error, el reproductor simplemente se quedará pausado
+      playbackState.add(playbackState.value.copyWith(
+        processingState: AudioProcessingState.error,
+        playing: false,
+      ));
     }
   }
 
@@ -164,6 +176,16 @@ class _SearchScreenState extends State<SearchScreen> {
   bool isLoading = false;
   String? playingVideoId;
 
+  @override
+  void initState() {
+    super.initState();
+    _requestPermissions();
+  }
+
+  Future<void> _requestPermissions() async {
+    await Permission.notification.request();
+  }
+
   void searchVideos(String query) async {
     if (query.isEmpty) return;
     setState(() => isLoading = true);
@@ -176,7 +198,7 @@ class _SearchScreenState extends State<SearchScreen> {
     } catch (e) {
       setState(() => isLoading = false);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+        SnackBar(content: Text('Error al buscar: $e'), backgroundColor: Colors.red),
       );
     }
   }
@@ -287,7 +309,7 @@ class MiniPlayer extends StatelessWidget {
 
         return GestureDetector(
           onTap: () {
-            // Aquí conectaremos la Fase 2 (FullScreenPlayer)
+            // Fase 2 (Pantalla completa)
           },
           child: Container(
             padding: const EdgeInsets.only(left: 16, right: 16, top: 12, bottom: 20),
@@ -327,6 +349,15 @@ class MiniPlayer extends StatelessWidget {
                       builder: (context, snapshot) {
                         final state = snapshot.data;
                         final playing = state?.playing ?? false;
+                        final isBuffering = state?.processingState == AudioProcessingState.buffering || state?.processingState == AudioProcessingState.loading;
+                        
+                        if (isBuffering) {
+                          return const Padding(
+                            padding: EdgeInsets.all(12.0),
+                            child: SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.deepPurpleAccent)),
+                          );
+                        }
+
                         return IconButton(
                           icon: Icon(playing ? Icons.pause_circle_filled : Icons.play_circle_fill),
                           iconSize: 42,
