@@ -101,37 +101,34 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
 
   @override
   Future<void> playMediaItem(MediaItem item) async {
-    // 1. Actualizamos la interfaz de inmediato
     mediaItem.add(item);
     
     try {
-      // 2. Avisamos al sistema que estamos cargando el audio
       playbackState.add(playbackState.value.copyWith(
         processingState: AudioProcessingState.loading,
       ));
 
-      // 3. Detenemos el reproductor para limpiar la canción anterior
       await _player.stop();
 
       final videoId = item.id;
-      debugPrint("Obteniendo manifiesto para: $videoId");
       var manifest = await _yt.videos.streamsClient.getManifest(videoId);
-      
-      // EL CAMBIO CLAVE: Tomamos la mejor calidad sin importar el formato
       var streamInfo = manifest.audioOnly.withHighestBitrate();
-      debugPrint("URL obtenida: ${streamInfo.url}");
 
       await _player.setAudioSource(
         AudioSource.uri(
           streamInfo.url,
           tag: item,
+          // EL RESCATE: Los headers originales que evitan el bloqueo de YouTube
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36',
+          },
         ),
       );
 
       await _player.play();
     } catch (e) {
-      debugPrint("Error crítico en playMediaItem: $e");
-      // En caso de error, el reproductor simplemente se quedará pausado
+      // TRAMPA VISUAL: Si falla, el error se mostrará en lugar del nombre del artista
+      mediaItem.add(item.copyWith(artist: "Error: $e"));
       playbackState.add(playbackState.value.copyWith(
         processingState: AudioProcessingState.error,
         playing: false,
@@ -309,7 +306,7 @@ class MiniPlayer extends StatelessWidget {
 
         return GestureDetector(
           onTap: () {
-            // Fase 2 (Pantalla completa)
+            // Fase 2 (Pantalla completa) se integrará aquí en el próximo paso
           },
           child: Container(
             padding: const EdgeInsets.only(left: 16, right: 16, top: 12, bottom: 20),
@@ -340,6 +337,7 @@ class MiniPlayer extends StatelessWidget {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(mediaItem.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
+                          // El subtítulo mostrará el error si algo falla en la descarga
                           Text(mediaItem.artist ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.grey)),
                         ],
                       ),
