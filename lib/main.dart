@@ -113,26 +113,39 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
       final videoId = item.id;
       var manifest = await _yt.videos.streamsClient.getManifest(videoId);
       
-      if (manifest.audioOnly.isEmpty) {
+      // EL SECRETO: Forzar el contenedor MP4 (m4a) que ExoPlayer procesa sin problemas
+      var mp4Streams = manifest.audioOnly.where((s) => s.container.name.toLowerCase() == 'mp4');
+      
+      StreamInfo streamInfo;
+      if (mp4Streams.isNotEmpty) {
+        streamInfo = mp4Streams.withHighestBitrate();
+      } else if (manifest.audioOnly.isNotEmpty) {
+        streamInfo = manifest.audioOnly.withHighestBitrate();
+      } else {
         throw Exception("No hay audios disponibles");
       }
-      
-      var streamInfo = manifest.audioOnly.withHighestBitrate();
 
+      // Limpiamos los headers, a veces ExoPlayer es bloqueado si finge ser Chrome
       await _player.setAudioSource(
         AudioSource.uri(
-          streamInfo.url,
+          Uri.parse(streamInfo.url.toString()),
           tag: item,
-          headers: const {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36',
-          },
         ),
       );
 
       await _player.play();
     } catch (e) {
       debugPrint("Error crítico en playMediaItem: $e");
-      mediaItem.add(item.copyWith(artist: "Error de fuente"));
+      
+      // TRAMPA VISUAL: Extraemos el error exacto de ExoPlayer o HTTP
+      String errorMsg = e.toString();
+      // Limpiamos los saltos de línea para que se lea en la interfaz
+      errorMsg = errorMsg.replaceAll('\n', ' ');
+      // Recortamos a 60 caracteres para no romper tu diseño
+      if (errorMsg.length > 60) errorMsg = errorMsg.substring(0, 60);
+      
+      mediaItem.add(item.copyWith(artist: "🛑 $errorMsg"));
+      
       playbackState.add(playbackState.value.copyWith(
         processingState: AudioProcessingState.error,
         playing: false,
@@ -339,6 +352,7 @@ class MiniPlayer extends StatelessWidget {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(mediaItem.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
+                          // Aquí aparecerá el error del sistema si algo falla
                           Text(mediaItem.artist ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.grey)),
                         ],
                       ),
