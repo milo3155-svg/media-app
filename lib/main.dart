@@ -4,18 +4,23 @@ import 'package:audio_session/audio_session.dart';
 import 'package:audio_service/audio_service.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
+import 'package:hive_flutter/hive_flutter.dart';
 import 'dart:math' as math;
 
 // Controladores Globales
 late MyAudioHandler audioHandler;
 final ValueNotifier<bool> isHDMode = ValueNotifier<bool>(true);
-
-// NUEVO: Cerebro de color global (Tema dinámico)
 final ValueNotifier<Color> appColor = ValueNotifier<Color>(Colors.deepPurpleAccent);
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
+  // 1. INICIALIZAR BASE DE DATOS LOCAL (HIVE)
+  await Hive.initFlutter();
+  await Hive.openBox('favorites');
+  await Hive.openBox('history');
+
+  // 2. INICIALIZAR AUDIO
   final session = await AudioSession.instance;
   await session.configure(const AudioSessionConfiguration.music());
 
@@ -34,26 +39,19 @@ Future<void> main() async {
 }
 
 // -----------------------------------------------------------------------------
-// EL LOGO CONSPIRANOICO V2: "El Ojo de Osiris" con texto oculto
+// LOGO V3: "El Sello de Osiris" (Jeroglíficos Trigonométricos)
 // -----------------------------------------------------------------------------
 class ConspiracyLogo extends StatelessWidget {
   final double size;
   final Color color;
 
-  const ConspiracyLogo({
-    super.key, 
-    this.size = 150.0, 
-    required this.color,
-  });
+  const ConspiracyLogo({super.key, this.size = 150.0, required this.color});
 
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      width: size,
-      height: size,
-      child: CustomPaint(
-        painter: _OsirisEyePainter(color: color),
-      ),
+      width: size, height: size,
+      child: CustomPaint(painter: _OsirisEyePainter(color: color)),
     );
   }
 }
@@ -61,6 +59,28 @@ class ConspiracyLogo extends StatelessWidget {
 class _OsirisEyePainter extends CustomPainter {
   final Color color;
   _OsirisEyePainter({required this.color});
+
+  void _drawTextOnLine(Canvas canvas, String text, Offset start, Offset end, double fontSize) {
+    // Calcula el punto medio de la línea
+    final midPoint = Offset((start.dx + end.dx) / 2, (start.dy + end.dy) / 2);
+    // Calcula el ángulo de inclinación
+    final angle = math.atan2(end.dy - start.dy, end.dx - start.dx);
+
+    canvas.save();
+    canvas.translate(midPoint.dx, midPoint.dy);
+    canvas.rotate(angle);
+
+    final textSpan = TextSpan(
+      text: text,
+      style: TextStyle(color: color, fontSize: fontSize, fontWeight: FontWeight.bold, letterSpacing: 3, fontFamily: 'Courier'),
+    );
+    final textPainter = TextPainter(text: textSpan, textDirection: TextDirection.ltr);
+    textPainter.layout();
+    
+    // Dibuja el texto centrado, flotando ligeramente por encima de la línea
+    textPainter.paint(canvas, Offset(-textPainter.width / 2, -textPainter.height - 5));
+    canvas.restore();
+  }
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -74,62 +94,51 @@ class _OsirisEyePainter extends CustomPainter {
       ..strokeJoin = StrokeJoin.round
       ..strokeCap = StrokeCap.round;
 
-    // La Pirámide (Botón Play)
-    final playPath = Path();
-    playPath.moveTo(w * 0.15, h * 0.15); 
-    playPath.lineTo(w * 0.15, h * 0.85); 
-    playPath.lineTo(w * 0.90, h * 0.50); 
-    playPath.close();
+    // Vértices de la Pirámide
+    final p1 = Offset(w * 0.15, h * 0.15); // Arriba Izquierda
+    final p2 = Offset(w * 0.15, h * 0.85); // Abajo Izquierda
+    final p3 = Offset(w * 0.90, h * 0.50); // Punta Derecha
+
+    // Dibujar Pirámide
+    final playPath = Path()..moveTo(p1.dx, p1.dy)..lineTo(p2.dx, p2.dy)..lineTo(p3.dx, p3.dy)..close();
     canvas.drawPath(playPath, paint);
 
-    // El Ojo
-    final eyePath = Path();
-    final eyeLeft = w * 0.25;
-    final eyeRight = w * 0.65;
+    // Textos Místicos en cada cara del triángulo
+    final fontSize = w * 0.08;
+    // Línea Izquierda (Caída) -> "Ojo"
+    _drawTextOnLine(canvas, "Θ ⅃ Θ", p1, p2, fontSize);
+    // Línea Inferior (Base) -> "De"
+    _drawTextOnLine(canvas, "Δ Ξ", p2, p3, fontSize);
+    // Línea Superior (Ascenso) -> "Osiris"
+    _drawTextOnLine(canvas, "Θ Ϟ Ι ℟ Ι Ϟ", p3, p1, fontSize);
+
+    // El Ojo Central
+    final eyeLeft = w * 0.28;
+    final eyeRight = w * 0.62;
     final eyeY = h * 0.50;
     final eyeCenterX = w * 0.45;
     
+    final eyePath = Path();
     eyePath.moveTo(eyeLeft, eyeY);
-    eyePath.quadraticBezierTo(eyeCenterX, h * 0.30, eyeRight, eyeY);
-    eyePath.quadraticBezierTo(eyeCenterX, h * 0.75, eyeLeft, eyeY);
+    eyePath.quadraticBezierTo(eyeCenterX, h * 0.32, eyeRight, eyeY);
+    eyePath.quadraticBezierTo(eyeCenterX, h * 0.68, eyeLeft, eyeY);
     canvas.drawPath(eyePath, paint);
 
-    // La Frecuencia (Iris)
-    final wavePaint = Paint()
-      ..color = color
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = w * 0.03;
-      
-    canvas.drawCircle(Offset(eyeCenterX, h * 0.50), w * 0.10, wavePaint);
-    canvas.drawCircle(Offset(eyeCenterX, h * 0.50), w * 0.04, wavePaint);
-    canvas.drawLine(Offset(eyeCenterX - w * 0.15, h * 0.50), Offset(eyeCenterX + w * 0.15, h * 0.50), wavePaint);
-
-    // NUEVO: Texto Críptico Inyectado en el Vector
-    final textSpan = TextSpan(
-      text: 'O S I R I S   4 3 2',
-      style: TextStyle(
-        color: color,
-        fontSize: w * 0.12,
-        fontWeight: FontWeight.bold,
-        letterSpacing: 2,
-        fontFamily: 'Courier', // Estilo de archivo clasificado
-      ),
-    );
-    final textPainter = TextPainter(
-      text: textSpan,
-      textDirection: TextDirection.ltr,
-    );
-    textPainter.layout();
-    // Lo posicionamos justo debajo de la pirámide
-    textPainter.paint(canvas, Offset(w * 0.5 - textPainter.width / 2, h * 0.95));
+    // La Frecuencia 432 (Ondas centrales)
+    final wavePaint = Paint()..color = color..style = PaintingStyle.stroke..strokeWidth = w * 0.03;
+    canvas.drawCircle(Offset(eyeCenterX, h * 0.50), w * 0.08, wavePaint);
+    canvas.drawCircle(Offset(eyeCenterX, h * 0.50), w * 0.03, wavePaint);
+    canvas.drawLine(Offset(eyeCenterX - w * 0.12, h * 0.50), Offset(eyeCenterX + w * 0.12, h * 0.50), wavePaint);
   }
 
   @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => true; // Cambia al cambiar color
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
 }
 // -----------------------------------------------------------------------------
 
-// MOTOR DE AUDIO (MANTENIDO INTACTO)
+// -----------------------------------------------------------------------------
+// MOTOR DE AUDIO 
+// -----------------------------------------------------------------------------
 class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
   final _player = AudioPlayer();
   final _yt = YoutubeExplode();
@@ -187,6 +196,18 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
   @override
   Future<void> playMediaItem(MediaItem item) async {
     mediaItem.add(item);
+    
+    // NUEVO: Guardar en Historial automáticamente
+    final historyBox = Hive.box('history');
+    historyBox.put(item.id, {
+      'id': item.id,
+      'title': item.title,
+      'artist': item.artist,
+      'artUri': item.artUri.toString(),
+      'duration': item.duration?.inMilliseconds ?? 0,
+      'timestamp': DateTime.now().millisecondsSinceEpoch,
+    });
+
     try {
       playbackState.add(playbackState.value.copyWith(processingState: AudioProcessingState.loading));
       await _player.stop();
@@ -236,7 +257,6 @@ class MediaApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Escuchamos los cambios del color global
     return ValueListenableBuilder<Color>(
       valueListenable: appColor,
       builder: (context, color, _) {
@@ -245,10 +265,10 @@ class MediaApp extends StatelessWidget {
           debugShowCheckedModeBanner: false,
           theme: ThemeData.dark().copyWith(
             scaffoldBackgroundColor: const Color(0xFF1A1A1A),
-            primaryColor: color, // Color dinámico
+            primaryColor: color,
             bottomNavigationBarTheme: BottomNavigationBarThemeData(
               backgroundColor: const Color(0xFF111111),
-              selectedItemColor: color, // Iconos dinámicos
+              selectedItemColor: color,
               unselectedItemColor: Colors.grey,
               type: BottomNavigationBarType.fixed,
               elevation: 20,
@@ -296,21 +316,12 @@ class _SuperAppSkeletonState extends State<SuperAppSkeleton> {
   }
 }
 
-// --- TAB 0: INICIO (CON SELECTOR DE COLOR) ---
+// --- TAB 0: INICIO ---
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
-
   @override
   Widget build(BuildContext context) {
-    // Lista de temas VIP disponibles
-    final List<Color> themeColors = [
-      Colors.deepPurpleAccent,
-      Colors.redAccent,
-      Colors.greenAccent,
-      Colors.amberAccent,
-      Colors.blueAccent,
-    ];
-
+    final List<Color> themeColors = [Colors.deepPurpleAccent, Colors.redAccent, Colors.greenAccent, Colors.amberAccent, Colors.blueAccent, Colors.white];
     return Scaffold(
       body: Center(
         child: Column(
@@ -318,34 +329,19 @@ class HomeScreen extends StatelessWidget {
           children: [
             ValueListenableBuilder<Color>(
               valueListenable: appColor,
-              builder: (context, color, _) {
-                return ConspiracyLogo(size: 180, color: color); 
-              }
+              builder: (context, color, _) => ConspiracyLogo(size: 200, color: color)
             ),
-            const SizedBox(height: 50), // Espacio para el texto del logo
-            
-            // NUEVO: Selector de colores
+            const SizedBox(height: 50),
             const Text("PROTOCOLOS DE COLOR", style: TextStyle(color: Colors.grey, fontSize: 12, letterSpacing: 2)),
             const SizedBox(height: 16),
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: themeColors.map((colorOption) {
                 return GestureDetector(
-                  onTap: () {
-                    appColor.value = colorOption; // Cambia el color global mágicamente
-                  },
+                  onTap: () => appColor.value = colorOption,
                   child: Container(
-                    margin: const EdgeInsets.symmetric(horizontal: 8),
-                    width: 30,
-                    height: 30,
-                    decoration: BoxDecoration(
-                      color: colorOption,
-                      shape: BoxShape.circle,
-                      border: Border.all(color: Colors.white24, width: 2),
-                      boxShadow: [
-                        BoxShadow(color: colorOption.withOpacity(0.5), blurRadius: 8, spreadRadius: 2)
-                      ]
-                    ),
+                    margin: const EdgeInsets.symmetric(horizontal: 8), width: 30, height: 30,
+                    decoration: BoxDecoration(color: colorOption, shape: BoxShape.circle, border: Border.all(color: Colors.white24, width: 2), boxShadow: [BoxShadow(color: colorOption.withOpacity(0.5), blurRadius: 8, spreadRadius: 2)]),
                   ),
                 );
               }).toList(),
@@ -373,10 +369,7 @@ class _SearchScreenState extends State<SearchScreen> {
   String selectedFilter = 'Todos';
 
   @override
-  void initState() {
-    super.initState();
-    Permission.notification.request();
-  }
+  void initState() { super.initState(); Permission.notification.request(); }
 
   void searchVideos(String query) async {
     if (query.isEmpty) return;
@@ -408,11 +401,7 @@ class _SearchScreenState extends State<SearchScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              ListTile(
-                leading: ClipRRect(borderRadius: BorderRadius.circular(4), child: Image.network(video.thumbnails.lowResUrl, width: 40, height: 40, fit: BoxFit.cover)),
-                title: Text(video.title, maxLines: 1, overflow: TextOverflow.ellipsis),
-                subtitle: Text(video.author, style: const TextStyle(color: Colors.grey)),
-              ),
+              ListTile(leading: ClipRRect(borderRadius: BorderRadius.circular(4), child: Image.network(video.thumbnails.lowResUrl, width: 40, height: 40, fit: BoxFit.cover)), title: Text(video.title, maxLines: 1, overflow: TextOverflow.ellipsis), subtitle: Text(video.author, style: const TextStyle(color: Colors.grey))),
               const Divider(color: Colors.white24),
               ListTile(
                 leading: const Icon(Icons.queue_music, color: Colors.white), title: const Text('Agregar a cola'),
@@ -422,10 +411,6 @@ class _SearchScreenState extends State<SearchScreen> {
                   if (!currentQueue.any((item) => item.id == newItem.id)) { currentQueue.add(newItem); audioHandler.updateQueue(currentQueue); }
                   Navigator.pop(context); ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: const Text('Agregada a la cola'), backgroundColor: appColor.value));
                 },
-              ),
-              ListTile(
-                leading: const Icon(Icons.download, color: Colors.white), title: const Text('Descargar para escuchar offline'),
-                onTap: () { Navigator.pop(context); ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Próximamente en Fase 2'))); },
               ),
             ],
           ),
@@ -437,7 +422,7 @@ class _SearchScreenState extends State<SearchScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Buscador VIP')),
+      appBar: AppBar(title: const Text('Buscador VIP', style: TextStyle(fontWeight: FontWeight.bold))),
       body: Column(
         children: [
           Padding(
@@ -445,13 +430,9 @@ class _SearchScreenState extends State<SearchScreen> {
             child: TextField(
               controller: searchController,
               decoration: InputDecoration(
-                hintText: 'Buscar música, artistas...', filled: true, fillColor: const Color(0xFF2A2A2A),
-                contentPadding: const EdgeInsets.symmetric(vertical: 0, horizontal: 20),
+                hintText: 'Buscar música...', filled: true, fillColor: const Color(0xFF2A2A2A), contentPadding: const EdgeInsets.symmetric(vertical: 0, horizontal: 20),
                 border: OutlineInputBorder(borderRadius: BorderRadius.circular(30), borderSide: BorderSide.none),
-                suffixIcon: ValueListenableBuilder<Color>(
-                  valueListenable: appColor,
-                  builder: (context, color, _) => IconButton(icon: Icon(Icons.search, color: color), onPressed: () => searchVideos(searchController.text)),
-                ),
+                suffixIcon: ValueListenableBuilder<Color>(valueListenable: appColor, builder: (context, color, _) => IconButton(icon: Icon(Icons.search, color: color), onPressed: () => searchVideos(searchController.text))),
               ),
               onSubmitted: searchVideos,
             ),
@@ -463,17 +444,9 @@ class _SearchScreenState extends State<SearchScreen> {
               valueListenable: appColor,
               builder: (context, color, _) {
                 return Row(
-                  children: ['Todos', 'Podcasts', 'Música de Moda', 'Rock 90s'].map((filter) {
+                  children: ['Todos', 'Podcasts', 'Moda', 'Rock'].map((filter) {
                     final isSelected = selectedFilter == filter;
-                    return Padding(
-                      padding: const EdgeInsets.only(right: 8.0),
-                      child: ChoiceChip(
-                        label: Text(filter, style: TextStyle(color: isSelected ? Colors.white : Colors.grey)),
-                        selected: isSelected, selectedColor: color, backgroundColor: const Color(0xFF2A2A2A),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                        onSelected: (bool selected) => setState(() => selectedFilter = filter),
-                      ),
-                    );
+                    return Padding(padding: const EdgeInsets.only(right: 8.0), child: ChoiceChip(label: Text(filter, style: TextStyle(color: isSelected ? Colors.white : Colors.grey)), selected: isSelected, selectedColor: color, backgroundColor: const Color(0xFF2A2A2A), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)), onSelected: (bool selected) => setState(() => selectedFilter = filter)));
                   }).toList(),
                 );
               }
@@ -491,13 +464,7 @@ class _SearchScreenState extends State<SearchScreen> {
                   leading: ClipRRect(borderRadius: BorderRadius.circular(8), child: Image.network(video.thumbnails.mediumResUrl, width: 55, height: 55, fit: BoxFit.cover)),
                   title: Text(video.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w500)),
                   subtitle: Text(video.author, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.grey, fontSize: 13)),
-                  trailing: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      if (isPlaying) ValueListenableBuilder<Color>(valueListenable: appColor, builder: (context, color, _) => Icon(Icons.equalizer, color: color, size: 24)),
-                      IconButton(icon: const Icon(Icons.more_vert, color: Colors.grey), onPressed: () => _showSongOptions(context, video)),
-                    ],
-                  ),
+                  trailing: Row(mainAxisSize: MainAxisSize.min, children: [if (isPlaying) ValueListenableBuilder<Color>(valueListenable: appColor, builder: (context, color, _) => Icon(Icons.equalizer, color: color, size: 24)), IconButton(icon: const Icon(Icons.more_vert, color: Colors.grey), onPressed: () => _showSongOptions(context, video))]),
                   onTap: () => playVideo(video),
                 );
               },
@@ -509,12 +476,89 @@ class _SearchScreenState extends State<SearchScreen> {
   }
 }
 
-// --- TAB 2 Y 3: BÓVEDA Y DEPORTES ---
-class VaultScreen extends StatelessWidget { const VaultScreen({super.key}); @override Widget build(BuildContext context) => const Scaffold(body: Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [Icon(Icons.lock_outline, size: 80, color: Colors.grey), SizedBox(height: 20), Text('Tu Bóveda Privada', style: TextStyle(color: Colors.white, fontSize: 18))]))); }
+// --- TAB 2: LA BÓVEDA (AHORA CONECTADA A LA BASE DE DATOS) ---
+class VaultScreen extends StatelessWidget {
+  const VaultScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return DefaultTabController(
+      length: 2,
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('La Bóveda', style: TextStyle(fontWeight: FontWeight.bold)),
+          bottom: TabBar(
+            indicatorColor: appColor.value,
+            tabs: const [Tab(icon: Icon(Icons.history), text: "Historial"), Tab(icon: Icon(Icons.favorite), text: "Favoritos")],
+          ),
+        ),
+        body: TabBarView(
+          children: [
+            // PESTAÑA HISTORIAL
+            ValueListenableBuilder(
+              valueListenable: Hive.box('history').listenable(),
+              builder: (context, Box box, _) {
+                if (box.isEmpty) return const Center(child: Text("Sin historial aún", style: TextStyle(color: Colors.grey)));
+                // Ordenar del más reciente al más antiguo
+                final items = box.values.toList().cast<Map>()..sort((a, b) => (b['timestamp'] as int).compareTo(a['timestamp'] as int));
+                return ListView.builder(
+                  itemCount: items.length,
+                  itemBuilder: (context, index) {
+                    final item = items[index];
+                    return ListTile(
+                      leading: ClipRRect(borderRadius: BorderRadius.circular(8), child: Image.network(item['artUri'], width: 50, height: 50, fit: BoxFit.cover)),
+                      title: Text(item['title'], maxLines: 1, overflow: TextOverflow.ellipsis),
+                      subtitle: Text(item['artist'], maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.grey)),
+                      onTap: () async {
+                        final mediaItem = MediaItem(id: item['id'], title: item['title'], artist: item['artist'], artUri: Uri.parse(item['artUri']), duration: Duration(milliseconds: item['duration']));
+                        await audioHandler.updateQueue([mediaItem]);
+                        await audioHandler.playMediaItem(mediaItem);
+                      },
+                    );
+                  },
+                );
+              }
+            ),
+            // PESTAÑA FAVORITOS
+            ValueListenableBuilder(
+              valueListenable: Hive.box('favorites').listenable(),
+              builder: (context, Box box, _) {
+                if (box.isEmpty) return const Center(child: Text("Sin favoritos aún", style: TextStyle(color: Colors.grey)));
+                final items = box.values.toList().cast<Map>();
+                return ListView.builder(
+                  itemCount: items.length,
+                  itemBuilder: (context, index) {
+                    final item = items[index];
+                    return ListTile(
+                      leading: ClipRRect(borderRadius: BorderRadius.circular(8), child: Image.network(item['artUri'], width: 50, height: 50, fit: BoxFit.cover)),
+                      title: Text(item['title'], maxLines: 1, overflow: TextOverflow.ellipsis),
+                      subtitle: Text(item['artist'], maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.grey)),
+                      trailing: IconButton(
+                        icon: const Icon(Icons.favorite, color: Colors.redAccent),
+                        onPressed: () => box.delete(item['id']), // Eliminar de favoritos
+                      ),
+                      onTap: () async {
+                        final mediaItem = MediaItem(id: item['id'], title: item['title'], artist: item['artist'], artUri: Uri.parse(item['artUri']), duration: Duration(milliseconds: item['duration']));
+                        await audioHandler.updateQueue([mediaItem]);
+                        await audioHandler.playMediaItem(mediaItem);
+                      },
+                    );
+                  },
+                );
+              }
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// --- TAB 3: VIP DEPORTES ---
 class SportsScreen extends StatelessWidget { const SportsScreen({super.key}); @override Widget build(BuildContext context) => Scaffold(backgroundColor: const Color(0xFF0A1910), body: Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [Icon(Icons.sports_soccer, size: 80, color: Colors.greenAccent), const SizedBox(height: 20), const Text('Tablero VIP Deportivo', style: TextStyle(color: Colors.white, fontSize: 18))]))); }
 
 // -----------------------------------------------------------------------------
-// REPRODUCTORES 
+// REPRODUCTORES (MINI Y PANTALLA COMPLETA)
 // -----------------------------------------------------------------------------
 class MiniPlayer extends StatelessWidget {
   const MiniPlayer({super.key});
@@ -535,14 +579,7 @@ class MiniPlayer extends StatelessWidget {
                 ClipRRect(borderRadius: BorderRadius.circular(8), child: Image.network(mediaItem.artUri.toString(), width: 45, height: 45, fit: BoxFit.cover)),
                 const SizedBox(width: 12),
                 Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(mediaItem.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
-                      Text(mediaItem.artist ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.grey)),
-                    ],
-                  ),
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [Text(mediaItem.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white)), Text(mediaItem.artist ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.grey))]),
                 ),
                 StreamBuilder<PlaybackState>(
                   stream: audioHandler.playbackState,
@@ -576,8 +613,23 @@ class FullScreenPlayer extends StatelessWidget {
     return "${d.inHours > 0 ? '${d.inHours}:' : ''}$minutes:$seconds";
   }
 
+  // --- LÓGICA DE FAVORITOS EN TIEMPO REAL ---
+  void _toggleFavorite(MediaItem item) {
+    final box = Hive.box('favorites');
+    if (box.containsKey(item.id)) {
+      box.delete(item.id);
+    } else {
+      box.put(item.id, {
+        'id': item.id,
+        'title': item.title,
+        'artist': item.artist,
+        'artUri': item.artUri.toString(),
+        'duration': item.duration?.inMilliseconds ?? 0,
+      });
+    }
+  }
+
   void _showQueueList(BuildContext context) {
-    // ... [Mismo código de Queue List]
     showModalBottomSheet(
       context: context, backgroundColor: const Color(0xFF1A1A1A),
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
@@ -632,7 +684,7 @@ class FullScreenPlayer extends StatelessWidget {
                 ClipRRect(borderRadius: BorderRadius.circular(20), child: Image.network(mediaItem.artUri.toString(), width: MediaQuery.of(context).size.width * 0.85, height: MediaQuery.of(context).size.width * 0.85, fit: BoxFit.cover)),
                 const SizedBox(height: 40),
                 
-                // NUEVO: Fila con el título y el BOTÓN DE FAVORITOS (Corazón)
+                // FILA CON TÍTULO Y BOTÓN CORAZÓN (Conectado a la BD)
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -646,16 +698,20 @@ class FullScreenPlayer extends StatelessWidget {
                         ],
                       ),
                     ),
-                    ValueListenableBuilder<Color>(
-                      valueListenable: appColor,
-                      builder: (context, color, _) {
-                        return IconButton(
-                          icon: const Icon(Icons.favorite_border),
-                          iconSize: 32,
-                          color: color,
-                          onPressed: () {
-                            ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: const Text('Agregado a Favoritos'), backgroundColor: color));
-                          },
+                    ValueListenableBuilder(
+                      valueListenable: Hive.box('favorites').listenable(),
+                      builder: (context, Box box, _) {
+                        final isFav = box.containsKey(mediaItem.id);
+                        return ValueListenableBuilder<Color>(
+                          valueListenable: appColor,
+                          builder: (context, color, _) {
+                            return IconButton(
+                              icon: Icon(isFav ? Icons.favorite : Icons.favorite_border),
+                              iconSize: 32,
+                              color: isFav ? Colors.redAccent : color,
+                              onPressed: () => _toggleFavorite(mediaItem),
+                            );
+                          }
                         );
                       }
                     ),
@@ -702,12 +758,7 @@ class FullScreenPlayer extends StatelessWidget {
                           children: [
                             ValueListenableBuilder<bool>(
                               valueListenable: isHDMode,
-                              builder: (context, isHD, _) {
-                                return IconButton(
-                                  icon: Icon(isHD ? Icons.high_quality : Icons.data_saver_on), color: isHD ? color : Colors.grey,
-                                  onPressed: () { isHDMode.value = !isHD; ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(isHD ? "Ahorro de datos" : "Audio HD"), backgroundColor: color)); },
-                                );
-                              }
+                              builder: (context, isHD, _) => IconButton(icon: Icon(isHD ? Icons.high_quality : Icons.data_saver_on), color: isHD ? color : Colors.grey, onPressed: () { isHDMode.value = !isHD; ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(isHD ? "Ahorro de datos" : "Audio HD"), backgroundColor: color)); }),
                             ),
                             IconButton(icon: const Icon(Icons.skip_previous), iconSize: 48, color: Colors.white, onPressed: audioHandler.skipToPrevious),
                             Container(
@@ -725,7 +776,7 @@ class FullScreenPlayer extends StatelessWidget {
                 const Spacer(),
                 GestureDetector(
                   onTap: () => _showQueueList(context),
-                  child: const Column(children: [Icon(Icons.keyboard_arrow_up, color: Colors.grey, size: 30), Text("Cola de reproducción", style: TextStyle(color: Colors.grey, fontSize: 12)), SizedBox(height: 20)]),
+                  child: const Column(children: [Icon(Icons.keyboard_arrow_up, color: Colors.grey, size: 30), Text("Cola", style: TextStyle(color: Colors.grey, fontSize: 12)), SizedBox(height: 20)]),
                 ),
               ],
             ),
