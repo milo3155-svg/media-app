@@ -4,6 +4,7 @@ import 'package:audio_session/audio_session.dart';
 import 'package:audio_service/audio_service.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
+import 'dart:math' as math;
 
 // Instancia global del AudioHandler
 late MyAudioHandler audioHandler;
@@ -30,6 +31,78 @@ Future<void> main() async {
 
   runApp(const MediaApp());
 }
+
+// -----------------------------------------------------------------------------
+// COMPONENTE: EL LOGO "EL OÍDO QUE TODO LO ESCUCHA"
+// -----------------------------------------------------------------------------
+class ConspiracyLogo extends StatelessWidget {
+  final double size;
+  final Color color;
+
+  const ConspiracyLogo({
+    super.key, 
+    this.size = 100.0, 
+    this.color = Colors.deepPurpleAccent,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: size,
+      height: size,
+      child: CustomPaint(
+        painter: _EarKeyholePainter(color: color),
+      ),
+    );
+  }
+}
+
+class _EarKeyholePainter extends CustomPainter {
+  final Color color;
+  _EarKeyholePainter({required this.color});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2, size.height / 2);
+
+    final earPaint = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = size.width * 0.08
+      ..strokeCap = StrokeCap.round;
+
+    final earPath = Path();
+    earPath.addArc(
+      Rect.fromCenter(center: center, width: size.width * 0.9, height: size.height * 0.9),
+      -math.pi / 2.5, 
+      math.pi * 1.6,
+    );
+    earPath.quadraticBezierTo(
+      size.width * 0.8, size.height * 1.1, 
+      size.width * 0.5, size.height * 0.9,
+    );
+    canvas.drawPath(earPath, earPaint);
+
+    final keyholePaint = Paint()
+      ..color = color
+      ..style = PaintingStyle.fill;
+
+    canvas.drawCircle(Offset(center.dx, center.dy - size.height * 0.05), size.width * 0.12, keyholePaint);
+
+    final keyholeBase = Path();
+    keyholeBase.moveTo(center.dx - size.width * 0.08, center.dy - size.height * 0.05);
+    keyholeBase.lineTo(center.dx + size.width * 0.08, center.dy - size.height * 0.05);
+    keyholeBase.lineTo(center.dx + size.width * 0.15, center.dy + size.height * 0.25);
+    keyholeBase.lineTo(center.dx - size.width * 0.15, center.dy + size.height * 0.25);
+    keyholeBase.close();
+
+    canvas.drawPath(keyholeBase, keyholePaint);
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+// -----------------------------------------------------------------------------
 
 class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
   final _player = AudioPlayer();
@@ -64,7 +137,6 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
       ));
     });
 
-    // NUEVO: Escucha el estado del reproductor para saltar a la siguiente canción al terminar
     _player.processingStateStream.listen((state) {
       if (state == ProcessingState.completed) {
         skipToNext();
@@ -206,6 +278,7 @@ class _SearchScreenState extends State<SearchScreen> {
   List<Video> videos = [];
   bool isLoading = false;
   String? playingVideoId;
+  String selectedFilter = 'Todos'; // Estado para el chip seleccionado
 
   @override
   void initState() {
@@ -251,6 +324,71 @@ class _SearchScreenState extends State<SearchScreen> {
     await audioHandler.playMediaItem(selectedItem);
   }
 
+  // NUEVO: Menú de opciones por canción (3 puntitos)
+  void _showSongOptions(BuildContext context, Video video) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF1A1A1A),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (context) {
+        return Padding(
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: ClipRRect(
+                  borderRadius: BorderRadius.circular(4),
+                  child: Image.network(video.thumbnails.lowResUrl, width: 40, height: 40, fit: BoxFit.cover),
+                ),
+                title: Text(video.title, maxLines: 1, overflow: TextOverflow.ellipsis),
+                subtitle: Text(video.author, style: const TextStyle(color: Colors.grey)),
+              ),
+              const Divider(color: Colors.white24),
+              ListTile(
+                leading: const Icon(Icons.queue_music, color: Colors.white),
+                title: const Text('Agregar a cola de reproducción'),
+                onTap: () {
+                  // Agrega el item al final de la cola actual
+                  final newItem = MediaItem(
+                    id: video.id.value,
+                    title: video.title,
+                    artist: video.author,
+                    duration: video.duration,
+                    artUri: Uri.parse(video.thumbnails.highResUrl),
+                  );
+                  final currentQueue = audioHandler.queue.value.toList();
+                  if (!currentQueue.any((item) => item.id == newItem.id)) {
+                    currentQueue.add(newItem);
+                    audioHandler.updateQueue(currentQueue);
+                  }
+                  Navigator.pop(context);
+                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Agregada a la cola'), backgroundColor: Colors.deepPurpleAccent));
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.favorite_border, color: Colors.white),
+                title: const Text('Agregar a listas / Favoritos'),
+                onTap: () {
+                  Navigator.pop(context);
+                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Próximamente en Fase 2')));
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.download, color: Colors.white),
+                title: const Text('Descargar para escuchar offline'),
+                onTap: () {
+                  Navigator.pop(context);
+                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Próximamente en Fase 2')));
+                },
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   @override
   void dispose() {
     yt.close();
@@ -261,21 +399,75 @@ class _SearchScreenState extends State<SearchScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      // NUEVO: Menú Lateral (Drawer)
+      drawer: Drawer(
+        backgroundColor: const Color(0xFF1A1A1A),
+        child: Column(
+          children: [
+            DrawerHeader(
+              decoration: const BoxDecoration(
+                color: Color(0xFF111111),
+                border: Border(bottom: BorderSide(color: Colors.deepPurpleAccent, width: 2)),
+              ),
+              child: const Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    ConspiracyLogo(size: 60), // EL LOGO EN ACCIÓN
+                    SizedBox(height: 15),
+                    Text('VIP ACCESS', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold, letterSpacing: 3)),
+                  ],
+                ),
+              ),
+            ),
+            ListTile(
+              leading: const Icon(Icons.history, color: Colors.white),
+              title: const Text('Historial', style: TextStyle(color: Colors.white)),
+              onTap: () => Navigator.pop(context),
+            ),
+            ListTile(
+              leading: const Icon(Icons.library_music, color: Colors.white),
+              title: const Text('Mis Listas & Favoritos', style: TextStyle(color: Colors.white)),
+              onTap: () => Navigator.pop(context),
+            ),
+            ListTile(
+              leading: const Icon(Icons.download_done, color: Colors.white),
+              title: const Text('Gestor de Descargas', style: TextStyle(color: Colors.white)),
+              onTap: () => Navigator.pop(context),
+            ),
+            const Divider(color: Colors.white24),
+            ListTile(
+              leading: const Icon(Icons.sports_soccer, color: Colors.deepPurpleAccent),
+              title: const Text('Zona Deportiva (Beta)', style: TextStyle(color: Colors.deepPurpleAccent, fontWeight: FontWeight.bold)),
+              onTap: () => Navigator.pop(context),
+            ),
+            const Spacer(),
+            ListTile(
+              leading: const Icon(Icons.settings, color: Colors.grey),
+              title: const Text('Configuración', style: TextStyle(color: Colors.grey)),
+              onTap: () => Navigator.pop(context),
+            ),
+            const SizedBox(height: 20),
+          ],
+        ),
+      ),
       appBar: AppBar(
-        title: const Text('Spotify Killer VIP'),
+        title: const Text('Spotify Killer', style: TextStyle(fontWeight: FontWeight.bold)),
         backgroundColor: const Color(0xFF1A1A1A),
         elevation: 0,
+        centerTitle: true,
       ),
       body: Column(
         children: [
           Padding(
-            padding: const EdgeInsets.all(16.0),
+            padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
             child: TextField(
               controller: searchController,
               decoration: InputDecoration(
-                hintText: 'Buscar artista o canción...',
+                hintText: 'Buscar música, artistas...',
                 filled: true,
                 fillColor: const Color(0xFF2A2A2A),
+                contentPadding: const EdgeInsets.symmetric(vertical: 0, horizontal: 20),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(30),
                   borderSide: BorderSide.none,
@@ -288,6 +480,31 @@ class _SearchScreenState extends State<SearchScreen> {
               onSubmitted: searchVideos,
             ),
           ),
+          
+          // NUEVO: Chips de Filtros Visuales
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+            child: Row(
+              children: ['Todos', 'Podcasts', 'Música de Moda', 'Rock 90s', 'Electrónica'].map((filter) {
+                final isSelected = selectedFilter == filter;
+                return Padding(
+                  padding: const EdgeInsets.only(right: 8.0),
+                  child: ChoiceChip(
+                    label: Text(filter, style: TextStyle(color: isSelected ? Colors.white : Colors.grey)),
+                    selected: isSelected,
+                    selectedColor: Colors.deepPurpleAccent,
+                    backgroundColor: const Color(0xFF2A2A2A),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                    onSelected: (bool selected) {
+                      setState(() => selectedFilter = filter);
+                    },
+                  ),
+                );
+              }).toList(),
+            ),
+          ),
+
           if (isLoading)
             const Expanded(child: Center(child: CircularProgressIndicator(color: Colors.deepPurpleAccent)))
           else
@@ -298,16 +515,24 @@ class _SearchScreenState extends State<SearchScreen> {
                   final video = videos[index];
                   final isPlaying = playingVideoId == video.id.value;
                   return ListTile(
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
                     leading: ClipRRect(
                       borderRadius: BorderRadius.circular(8),
-                      child: Image.network(video.thumbnails.mediumResUrl, width: 50, height: 50, fit: BoxFit.cover),
+                      child: Image.network(video.thumbnails.mediumResUrl, width: 55, height: 55, fit: BoxFit.cover),
                     ),
-                    title: Text(video.title, maxLines: 1, overflow: TextOverflow.ellipsis),
-                    subtitle: Text(video.author, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.grey)),
-                    trailing: Icon(
-                      isPlaying ? Icons.pause_circle_filled : Icons.play_circle_fill,
-                      color: Colors.deepPurpleAccent,
-                      size: 32,
+                    title: Text(video.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w500)),
+                    subtitle: Text(video.author, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.grey, fontSize: 13)),
+                    // NUEVO: Agrupamos el ícono de Play y los 3 puntitos
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (isPlaying)
+                           const Icon(Icons.equalizer, color: Colors.deepPurpleAccent, size: 24),
+                        IconButton(
+                          icon: const Icon(Icons.more_vert, color: Colors.grey),
+                          onPressed: () => _showSongOptions(context, video),
+                        ),
+                      ],
                     ),
                     onTap: () => playVideo(video),
                   );
@@ -640,7 +865,7 @@ class FullScreenPlayer extends StatelessWidget {
                           onPressed: () {
                             audioHandler.shuffleQueue();
                             ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(content: Text("Lista de reproducción mezclada"), backgroundColor: Colors.deepPurpleAccent)
+                              const SnackBar(content: Text("Lista mezclada"), backgroundColor: Colors.deepPurpleAccent)
                             );
                           },
                         ),
