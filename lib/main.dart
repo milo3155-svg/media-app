@@ -15,10 +15,11 @@ final ValueNotifier<Color> appColor = ValueNotifier<Color>(Colors.deepPurpleAcce
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // 1. INICIALIZAR BASE DE DATOS LOCAL (HIVE)
+  // 1. INICIALIZAR HIVE (Agregamos la caja de búsquedas)
   await Hive.initFlutter();
   await Hive.openBox('favorites');
   await Hive.openBox('history');
+  await Hive.openBox('search_history'); // NUEVA CAJA
 
   // 2. INICIALIZAR AUDIO
   final session = await AudioSession.instance;
@@ -39,20 +40,16 @@ Future<void> main() async {
 }
 
 // -----------------------------------------------------------------------------
-// LOGO V3: "El Sello de Osiris" (Jeroglíficos Trigonométricos)
+// LOGO V3: "El Sello de Osiris" (Jeroglíficos)
 // -----------------------------------------------------------------------------
 class ConspiracyLogo extends StatelessWidget {
   final double size;
   final Color color;
-
   const ConspiracyLogo({super.key, this.size = 150.0, required this.color});
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      width: size, height: size,
-      child: CustomPaint(painter: _OsirisEyePainter(color: color)),
-    );
+    return SizedBox(width: size, height: size, child: CustomPaint(painter: _OsirisEyePainter(color: color)));
   }
 }
 
@@ -61,24 +58,17 @@ class _OsirisEyePainter extends CustomPainter {
   _OsirisEyePainter({required this.color});
 
   void _drawTextOnLine(Canvas canvas, String text, Offset start, Offset end, double fontSize) {
-    // Calcula el punto medio de la línea
     final midPoint = Offset((start.dx + end.dx) / 2, (start.dy + end.dy) / 2);
-    // Calcula el ángulo de inclinación
     final angle = math.atan2(end.dy - start.dy, end.dx - start.dx);
 
     canvas.save();
     canvas.translate(midPoint.dx, midPoint.dy);
     canvas.rotate(angle);
 
-    final textSpan = TextSpan(
-      text: text,
-      style: TextStyle(color: color, fontSize: fontSize, fontWeight: FontWeight.bold, letterSpacing: 3, fontFamily: 'Courier'),
-    );
+    final textSpan = TextSpan(text: text, style: TextStyle(color: color, fontSize: fontSize, fontWeight: FontWeight.bold, letterSpacing: 2, fontFamily: 'Courier'));
     final textPainter = TextPainter(text: textSpan, textDirection: TextDirection.ltr);
     textPainter.layout();
-    
-    // Dibuja el texto centrado, flotando ligeramente por encima de la línea
-    textPainter.paint(canvas, Offset(-textPainter.width / 2, -textPainter.height - 5));
+    textPainter.paint(canvas, Offset(-textPainter.width / 2, -textPainter.height - 2));
     canvas.restore();
   }
 
@@ -86,33 +76,20 @@ class _OsirisEyePainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final w = size.width;
     final h = size.height;
+    final paint = Paint()..color = color..style = PaintingStyle.stroke..strokeWidth = w * 0.05..strokeJoin = StrokeJoin.round..strokeCap = StrokeCap.round;
 
-    final paint = Paint()
-      ..color = color
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = w * 0.05
-      ..strokeJoin = StrokeJoin.round
-      ..strokeCap = StrokeCap.round;
+    final p1 = Offset(w * 0.15, h * 0.15); 
+    final p2 = Offset(w * 0.15, h * 0.85); 
+    final p3 = Offset(w * 0.90, h * 0.50); 
 
-    // Vértices de la Pirámide
-    final p1 = Offset(w * 0.15, h * 0.15); // Arriba Izquierda
-    final p2 = Offset(w * 0.15, h * 0.85); // Abajo Izquierda
-    final p3 = Offset(w * 0.90, h * 0.50); // Punta Derecha
-
-    // Dibujar Pirámide
     final playPath = Path()..moveTo(p1.dx, p1.dy)..lineTo(p2.dx, p2.dy)..lineTo(p3.dx, p3.dy)..close();
     canvas.drawPath(playPath, paint);
 
-    // Textos Místicos en cada cara del triángulo
     final fontSize = w * 0.08;
-    // Línea Izquierda (Caída) -> "Ojo"
     _drawTextOnLine(canvas, "Θ ⅃ Θ", p1, p2, fontSize);
-    // Línea Inferior (Base) -> "De"
     _drawTextOnLine(canvas, "Δ Ξ", p2, p3, fontSize);
-    // Línea Superior (Ascenso) -> "Osiris"
     _drawTextOnLine(canvas, "Θ Ϟ Ι ℟ Ι Ϟ", p3, p1, fontSize);
 
-    // El Ojo Central
     final eyeLeft = w * 0.28;
     final eyeRight = w * 0.62;
     final eyeY = h * 0.50;
@@ -124,7 +101,6 @@ class _OsirisEyePainter extends CustomPainter {
     eyePath.quadraticBezierTo(eyeCenterX, h * 0.68, eyeLeft, eyeY);
     canvas.drawPath(eyePath, paint);
 
-    // La Frecuencia 432 (Ondas centrales)
     final wavePaint = Paint()..color = color..style = PaintingStyle.stroke..strokeWidth = w * 0.03;
     canvas.drawCircle(Offset(eyeCenterX, h * 0.50), w * 0.08, wavePaint);
     canvas.drawCircle(Offset(eyeCenterX, h * 0.50), w * 0.03, wavePaint);
@@ -134,10 +110,9 @@ class _OsirisEyePainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
 }
-// -----------------------------------------------------------------------------
 
 // -----------------------------------------------------------------------------
-// MOTOR DE AUDIO 
+// MOTOR DE AUDIO (CON LÓGICA DE CONTADOR DE REPRODUCCIONES)
 // -----------------------------------------------------------------------------
 class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
   final _player = AudioPlayer();
@@ -170,35 +145,34 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
   Future<void> pause() => _player.pause();
   @override
   Future<void> seek(Duration position) => _player.seek(position);
-
   @override
   Future<void> skipToNext() async {
     final queueList = queue.value;
     if (queueList.isEmpty) return;
     final currentItem = mediaItem.value;
     final currentIndex = queueList.indexWhere((item) => item.id == currentItem?.id);
-    if (currentIndex != -1 && currentIndex < queueList.length - 1) {
-      await playMediaItem(queueList[currentIndex + 1]);
-    }
+    if (currentIndex != -1 && currentIndex < queueList.length - 1) await playMediaItem(queueList[currentIndex + 1]);
   }
-
   @override
   Future<void> skipToPrevious() async {
     final queueList = queue.value;
     if (queueList.isEmpty) return;
     final currentItem = mediaItem.value;
     final currentIndex = queueList.indexWhere((item) => item.id == currentItem?.id);
-    if (currentIndex > 0) {
-      await playMediaItem(queueList[currentIndex - 1]);
-    }
+    if (currentIndex > 0) await playMediaItem(queueList[currentIndex - 1]);
   }
 
   @override
   Future<void> playMediaItem(MediaItem item) async {
     mediaItem.add(item);
     
-    // NUEVO: Guardar en Historial automáticamente
+    // LÓGICA VIP: Guardar en Historial y aumentar contador (+1)
     final historyBox = Hive.box('history');
+    int playCount = 1;
+    if (historyBox.containsKey(item.id)) {
+      playCount = (historyBox.get(item.id)['playCount'] ?? 0) + 1;
+    }
+    
     historyBox.put(item.id, {
       'id': item.id,
       'title': item.title,
@@ -206,6 +180,7 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
       'artUri': item.artUri.toString(),
       'duration': item.duration?.inMilliseconds ?? 0,
       'timestamp': DateTime.now().millisecondsSinceEpoch,
+      'playCount': playCount, // El contador mágico
     });
 
     try {
@@ -234,8 +209,7 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
     } catch (e) {
       debugPrint("Error crítico: $e");
       String errorMsg = e.toString().replaceAll('\n', ' ');
-      if (errorMsg.length > 60) errorMsg = errorMsg.substring(0, 60);
-      mediaItem.add(item.copyWith(artist: "🛑 $errorMsg"));
+      mediaItem.add(item.copyWith(artist: "🛑 ${errorMsg.length > 60 ? errorMsg.substring(0,60) : errorMsg}"));
       playbackState.add(playbackState.value.copyWith(processingState: AudioProcessingState.error, playing: false));
     }
   }
@@ -243,8 +217,7 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
   @override
   Future<void> updateQueue(List<MediaItem> newQueue) async { queue.add(newQueue); }
   void shuffleQueue() {
-    final currentQueue = queue.value.toList();
-    currentQueue.shuffle();
+    final currentQueue = queue.value.toList()..shuffle();
     queue.add(currentQueue);
   }
 }
@@ -267,13 +240,8 @@ class MediaApp extends StatelessWidget {
             scaffoldBackgroundColor: const Color(0xFF1A1A1A),
             primaryColor: color,
             bottomNavigationBarTheme: BottomNavigationBarThemeData(
-              backgroundColor: const Color(0xFF111111),
-              selectedItemColor: color,
-              unselectedItemColor: Colors.grey,
-              type: BottomNavigationBarType.fixed,
-              elevation: 20,
+              backgroundColor: const Color(0xFF111111), selectedItemColor: color, unselectedItemColor: Colors.grey, type: BottomNavigationBarType.fixed, elevation: 20,
             ),
-            floatingActionButtonTheme: FloatingActionButtonThemeData(backgroundColor: color),
             appBarTheme: const AppBarTheme(backgroundColor: Color(0xFF1A1A1A), elevation: 0, centerTitle: true),
           ),
           home: const SuperAppSkeleton(),
@@ -316,44 +284,114 @@ class _SuperAppSkeletonState extends State<SuperAppSkeleton> {
   }
 }
 
-// --- TAB 0: INICIO ---
+// --- TAB 0: INICIO (DASHBOARD INTELIGENTE) ---
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
+
+  Widget _buildHorizontalList(List<Map> items) {
+    return SizedBox(
+      height: 180,
+      child: ListView.builder(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        itemCount: items.length,
+        itemBuilder: (context, index) {
+          final item = items[index];
+          return GestureDetector(
+            onTap: () async {
+              final mediaItem = MediaItem(id: item['id'], title: item['title'], artist: item['artist'], artUri: Uri.parse(item['artUri']), duration: Duration(milliseconds: item['duration']));
+              await audioHandler.updateQueue([mediaItem]);
+              await audioHandler.playMediaItem(mediaItem);
+            },
+            child: Container(
+              width: 120,
+              margin: const EdgeInsets.only(right: 16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  ClipRRect(borderRadius: BorderRadius.circular(12), child: Image.network(item['artUri'], width: 120, height: 120, fit: BoxFit.cover)),
+                  const SizedBox(height: 8),
+                  Text(item['title'], maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.white)),
+                  Text(item['artist'], maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.grey, fontSize: 11)),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final List<Color> themeColors = [Colors.deepPurpleAccent, Colors.redAccent, Colors.greenAccent, Colors.amberAccent, Colors.blueAccent, Colors.white];
     return Scaffold(
-      body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            ValueListenableBuilder<Color>(
-              valueListenable: appColor,
-              builder: (context, color, _) => ConspiracyLogo(size: 200, color: color)
-            ),
-            const SizedBox(height: 50),
-            const Text("PROTOCOLOS DE COLOR", style: TextStyle(color: Colors.grey, fontSize: 12, letterSpacing: 2)),
-            const SizedBox(height: 16),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: themeColors.map((colorOption) {
-                return GestureDetector(
-                  onTap: () => appColor.value = colorOption,
-                  child: Container(
-                    margin: const EdgeInsets.symmetric(horizontal: 8), width: 30, height: 30,
-                    decoration: BoxDecoration(color: colorOption, shape: BoxShape.circle, border: Border.all(color: Colors.white24, width: 2), boxShadow: [BoxShadow(color: colorOption.withOpacity(0.5), blurRadius: 8, spreadRadius: 2)]),
-                  ),
-                );
-              }).toList(),
-            ),
-          ],
+      body: SafeArea(
+        child: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Cabecera VIP
+              Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    ValueListenableBuilder<Color>(
+                      valueListenable: appColor,
+                      builder: (context, color, _) => ConspiracyLogo(size: 60, color: color)
+                    ),
+                    Row(
+                      children: themeColors.map((colorOption) {
+                        return GestureDetector(
+                          onTap: () => appColor.value = colorOption,
+                          child: Container(
+                            margin: const EdgeInsets.only(left: 8), width: 20, height: 20,
+                            decoration: BoxDecoration(color: colorOption, shape: BoxShape.circle, border: Border.all(color: Colors.white24, width: 1)),
+                          ),
+                        );
+                      }).toList(),
+                    ),
+                  ],
+                ),
+              ),
+              
+              ValueListenableBuilder(
+                valueListenable: Hive.box('history').listenable(),
+                builder: (context, Box box, _) {
+                  if (box.isEmpty) return const Padding(padding: EdgeInsets.all(20), child: Text("Comienza a escuchar música para activar el radar.", style: TextStyle(color: Colors.grey)));
+                  
+                  final allItems = box.values.toList().cast<Map>();
+                  
+                  // 1. Escuchado Recientemente (Orden por fecha)
+                  final recentItems = List<Map>.from(allItems)..sort((a, b) => (b['timestamp'] as int? ?? 0).compareTo(a['timestamp'] as int? ?? 0));
+                  
+                  // 2. Frecuencia Máxima - Top 25 (Orden por reproducciones)
+                  final topItems = List<Map>.from(allItems)..sort((a, b) => (b['playCount'] as int? ?? 0).compareTo(a['playCount'] as int? ?? 0));
+                  final top25 = topItems.take(25).toList();
+
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Padding(padding: EdgeInsets.symmetric(horizontal: 16, vertical: 10), child: Text("Escuchado Recientemente", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white))),
+                      _buildHorizontalList(recentItems),
+                      
+                      const Padding(padding: EdgeInsets.symmetric(horizontal: 16, vertical: 10), child: Text("Tu Frecuencia Máxima (Top 25)", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white))),
+                      _buildHorizontalList(top25),
+                      const SizedBox(height: 20),
+                    ],
+                  );
+                }
+              ),
+            ],
+          ),
         ),
       ),
     );
   }
 }
 
-// --- TAB 1: BUSCADOR ---
+// --- TAB 1: BUSCADOR (CON HISTORIAL DE BÚSQUEDAS) ---
 class SearchScreen extends StatefulWidget {
   const SearchScreen({super.key});
   @override
@@ -371,8 +409,22 @@ class _SearchScreenState extends State<SearchScreen> {
   @override
   void initState() { super.initState(); Permission.notification.request(); }
 
+  void _saveSearchHistory(String query) {
+    if (query.trim().isEmpty) return;
+    final box = Hive.box('search_history');
+    List<String> searches = box.values.cast<String>().toList();
+    searches.remove(query); // Si ya existe, lo quitamos para ponerlo al principio
+    searches.insert(0, query);
+    if (searches.length > 15) searches = searches.sublist(0, 15); // Límite 15
+    box.clear();
+    box.addAll(searches);
+  }
+
   void searchVideos(String query) async {
     if (query.isEmpty) return;
+    FocusScope.of(context).unfocus(); // Ocultar teclado
+    _saveSearchHistory(query); // Guardar historial
+    
     setState(() => isLoading = true);
     try {
       var result = await yt.search.search(query);
@@ -389,6 +441,38 @@ class _SearchScreenState extends State<SearchScreen> {
     await audioHandler.updateQueue(queueList);
     final selectedItem = queueList.firstWhere((item) => item.id == video.id.value);
     await audioHandler.playMediaItem(selectedItem);
+  }
+
+  // --- Lógica del Historial de Búsquedas (Visual) ---
+  Widget _buildSearchHistory() {
+    return ValueListenableBuilder(
+      valueListenable: Hive.box('search_history').listenable(),
+      builder: (context, Box box, _) {
+        if (box.isEmpty) return const Center(child: Text("Busca a tu artista favorito", style: TextStyle(color: Colors.grey)));
+        final history = box.values.cast<String>().toList();
+        return ListView.builder(
+          itemCount: history.length,
+          itemBuilder: (context, index) {
+            return ListTile(
+              leading: const Icon(Icons.history, color: Colors.grey),
+              title: Text(history[index], style: const TextStyle(color: Colors.white)),
+              trailing: IconButton(
+                icon: const Icon(Icons.close, color: Colors.grey, size: 18),
+                onPressed: () {
+                  final newHistory = List<String>.from(history)..removeAt(index);
+                  box.clear();
+                  box.addAll(newHistory);
+                },
+              ),
+              onTap: () {
+                searchController.text = history[index];
+                searchVideos(history[index]);
+              },
+            );
+          },
+        );
+      }
+    );
   }
 
   void _showSongOptions(BuildContext context, Video video) {
@@ -429,6 +513,9 @@ class _SearchScreenState extends State<SearchScreen> {
             padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
             child: TextField(
               controller: searchController,
+              onChanged: (val) {
+                if (val.isEmpty) setState(() { videos.clear(); });
+              },
               decoration: InputDecoration(
                 hintText: 'Buscar música...', filled: true, fillColor: const Color(0xFF2A2A2A), contentPadding: const EdgeInsets.symmetric(vertical: 0, horizontal: 20),
                 border: OutlineInputBorder(borderRadius: BorderRadius.circular(30), borderSide: BorderSide.none),
@@ -453,6 +540,7 @@ class _SearchScreenState extends State<SearchScreen> {
             ),
           ),
           if (isLoading) Expanded(child: Center(child: ValueListenableBuilder<Color>(valueListenable: appColor, builder: (context, color, _) => CircularProgressIndicator(color: color))))
+          else if (videos.isEmpty && searchController.text.isEmpty) Expanded(child: _buildSearchHistory()) // Muestra el Historial
           else Expanded(
             child: ListView.builder(
               itemCount: videos.length,
@@ -476,75 +564,27 @@ class _SearchScreenState extends State<SearchScreen> {
   }
 }
 
-// --- TAB 2: LA BÓVEDA (AHORA CONECTADA A LA BASE DE DATOS) ---
+// --- TAB 2 Y 3: BÓVEDA Y DEPORTES (SIN CAMBIOS) ---
 class VaultScreen extends StatelessWidget {
   const VaultScreen({super.key});
-
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
       length: 2,
       child: Scaffold(
-        appBar: AppBar(
-          title: const Text('La Bóveda', style: TextStyle(fontWeight: FontWeight.bold)),
-          bottom: TabBar(
-            indicatorColor: appColor.value,
-            tabs: const [Tab(icon: Icon(Icons.history), text: "Historial"), Tab(icon: Icon(Icons.favorite), text: "Favoritos")],
-          ),
-        ),
+        appBar: AppBar(title: const Text('La Bóveda', style: TextStyle(fontWeight: FontWeight.bold)), bottom: TabBar(indicatorColor: appColor.value, tabs: const [Tab(icon: Icon(Icons.history), text: "Historial Pleno"), Tab(icon: Icon(Icons.favorite), text: "Favoritos")])),
         body: TabBarView(
           children: [
-            // PESTAÑA HISTORIAL
-            ValueListenableBuilder(
-              valueListenable: Hive.box('history').listenable(),
-              builder: (context, Box box, _) {
+            ValueListenableBuilder(valueListenable: Hive.box('history').listenable(), builder: (context, Box box, _) {
                 if (box.isEmpty) return const Center(child: Text("Sin historial aún", style: TextStyle(color: Colors.grey)));
-                // Ordenar del más reciente al más antiguo
                 final items = box.values.toList().cast<Map>()..sort((a, b) => (b['timestamp'] as int).compareTo(a['timestamp'] as int));
-                return ListView.builder(
-                  itemCount: items.length,
-                  itemBuilder: (context, index) {
-                    final item = items[index];
-                    return ListTile(
-                      leading: ClipRRect(borderRadius: BorderRadius.circular(8), child: Image.network(item['artUri'], width: 50, height: 50, fit: BoxFit.cover)),
-                      title: Text(item['title'], maxLines: 1, overflow: TextOverflow.ellipsis),
-                      subtitle: Text(item['artist'], maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.grey)),
-                      onTap: () async {
-                        final mediaItem = MediaItem(id: item['id'], title: item['title'], artist: item['artist'], artUri: Uri.parse(item['artUri']), duration: Duration(milliseconds: item['duration']));
-                        await audioHandler.updateQueue([mediaItem]);
-                        await audioHandler.playMediaItem(mediaItem);
-                      },
-                    );
-                  },
-                );
+                return ListView.builder(itemCount: items.length, itemBuilder: (context, index) { final item = items[index]; return ListTile(leading: ClipRRect(borderRadius: BorderRadius.circular(8), child: Image.network(item['artUri'], width: 50, height: 50, fit: BoxFit.cover)), title: Text(item['title'], maxLines: 1, overflow: TextOverflow.ellipsis), subtitle: Text(item['artist'], maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.grey)), onTap: () async { final mediaItem = MediaItem(id: item['id'], title: item['title'], artist: item['artist'], artUri: Uri.parse(item['artUri']), duration: Duration(milliseconds: item['duration'])); await audioHandler.updateQueue([mediaItem]); await audioHandler.playMediaItem(mediaItem); }); });
               }
             ),
-            // PESTAÑA FAVORITOS
-            ValueListenableBuilder(
-              valueListenable: Hive.box('favorites').listenable(),
-              builder: (context, Box box, _) {
+            ValueListenableBuilder(valueListenable: Hive.box('favorites').listenable(), builder: (context, Box box, _) {
                 if (box.isEmpty) return const Center(child: Text("Sin favoritos aún", style: TextStyle(color: Colors.grey)));
                 final items = box.values.toList().cast<Map>();
-                return ListView.builder(
-                  itemCount: items.length,
-                  itemBuilder: (context, index) {
-                    final item = items[index];
-                    return ListTile(
-                      leading: ClipRRect(borderRadius: BorderRadius.circular(8), child: Image.network(item['artUri'], width: 50, height: 50, fit: BoxFit.cover)),
-                      title: Text(item['title'], maxLines: 1, overflow: TextOverflow.ellipsis),
-                      subtitle: Text(item['artist'], maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.grey)),
-                      trailing: IconButton(
-                        icon: const Icon(Icons.favorite, color: Colors.redAccent),
-                        onPressed: () => box.delete(item['id']), // Eliminar de favoritos
-                      ),
-                      onTap: () async {
-                        final mediaItem = MediaItem(id: item['id'], title: item['title'], artist: item['artist'], artUri: Uri.parse(item['artUri']), duration: Duration(milliseconds: item['duration']));
-                        await audioHandler.updateQueue([mediaItem]);
-                        await audioHandler.playMediaItem(mediaItem);
-                      },
-                    );
-                  },
-                );
+                return ListView.builder(itemCount: items.length, itemBuilder: (context, index) { final item = items[index]; return ListTile(leading: ClipRRect(borderRadius: BorderRadius.circular(8), child: Image.network(item['artUri'], width: 50, height: 50, fit: BoxFit.cover)), title: Text(item['title'], maxLines: 1, overflow: TextOverflow.ellipsis), subtitle: Text(item['artist'], maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.grey)), trailing: IconButton(icon: const Icon(Icons.favorite, color: Colors.redAccent), onPressed: () => box.delete(item['id'])), onTap: () async { final mediaItem = MediaItem(id: item['id'], title: item['title'], artist: item['artist'], artUri: Uri.parse(item['artUri']), duration: Duration(milliseconds: item['duration'])); await audioHandler.updateQueue([mediaItem]); await audioHandler.playMediaItem(mediaItem); }); });
               }
             ),
           ],
@@ -553,12 +593,10 @@ class VaultScreen extends StatelessWidget {
     );
   }
 }
-
-// --- TAB 3: VIP DEPORTES ---
 class SportsScreen extends StatelessWidget { const SportsScreen({super.key}); @override Widget build(BuildContext context) => Scaffold(backgroundColor: const Color(0xFF0A1910), body: Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [Icon(Icons.sports_soccer, size: 80, color: Colors.greenAccent), const SizedBox(height: 20), const Text('Tablero VIP Deportivo', style: TextStyle(color: Colors.white, fontSize: 18))]))); }
 
 // -----------------------------------------------------------------------------
-// REPRODUCTORES (MINI Y PANTALLA COMPLETA)
+// REPRODUCTORES (MINI Y PANTALLA COMPLETA - SIN CAMBIOS ESTRUCTURALES)
 // -----------------------------------------------------------------------------
 class MiniPlayer extends StatelessWidget {
   const MiniPlayer({super.key});
@@ -572,23 +610,15 @@ class MiniPlayer extends StatelessWidget {
         return GestureDetector(
           onTap: () => showModalBottomSheet(context: context, isScrollControlled: true, backgroundColor: Colors.transparent, builder: (context) => const FullScreenPlayer()),
           child: Container(
-            padding: const EdgeInsets.only(left: 16, right: 16, top: 8, bottom: 8),
-            decoration: const BoxDecoration(color: Color(0xFF1A1A1A), border: Border(top: BorderSide(color: Color(0xFF2A2A2A), width: 1))),
+            padding: const EdgeInsets.only(left: 16, right: 16, top: 8, bottom: 8), decoration: const BoxDecoration(color: Color(0xFF1A1A1A), border: Border(top: BorderSide(color: Color(0xFF2A2A2A), width: 1))),
             child: Row(
               children: [
-                ClipRRect(borderRadius: BorderRadius.circular(8), child: Image.network(mediaItem.artUri.toString(), width: 45, height: 45, fit: BoxFit.cover)),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [Text(mediaItem.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white)), Text(mediaItem.artist ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.grey))]),
-                ),
-                StreamBuilder<PlaybackState>(
-                  stream: audioHandler.playbackState,
-                  builder: (context, snapshot) {
+                ClipRRect(borderRadius: BorderRadius.circular(8), child: Image.network(mediaItem.artUri.toString(), width: 45, height: 45, fit: BoxFit.cover)), const SizedBox(width: 12),
+                Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [Text(mediaItem.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white)), Text(mediaItem.artist ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.grey))])),
+                StreamBuilder<PlaybackState>(stream: audioHandler.playbackState, builder: (context, snapshot) {
                     final playing = snapshot.data?.playing ?? false;
                     final isBuffering = snapshot.data?.processingState == AudioProcessingState.buffering || snapshot.data?.processingState == AudioProcessingState.loading;
-                    return ValueListenableBuilder<Color>(
-                      valueListenable: appColor,
-                      builder: (context, color, _) {
+                    return ValueListenableBuilder<Color>(valueListenable: appColor, builder: (context, color, _) {
                         if (isBuffering) return Padding(padding: const EdgeInsets.all(12.0), child: SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2, color: color)));
                         return IconButton(icon: Icon(playing ? Icons.pause_circle_filled : Icons.play_circle_fill), iconSize: 42, color: color, onPressed: () => playing ? audioHandler.pause() : audioHandler.play());
                       }
@@ -613,48 +643,22 @@ class FullScreenPlayer extends StatelessWidget {
     return "${d.inHours > 0 ? '${d.inHours}:' : ''}$minutes:$seconds";
   }
 
-  // --- LÓGICA DE FAVORITOS EN TIEMPO REAL ---
   void _toggleFavorite(MediaItem item) {
     final box = Hive.box('favorites');
-    if (box.containsKey(item.id)) {
-      box.delete(item.id);
-    } else {
-      box.put(item.id, {
-        'id': item.id,
-        'title': item.title,
-        'artist': item.artist,
-        'artUri': item.artUri.toString(),
-        'duration': item.duration?.inMilliseconds ?? 0,
-      });
-    }
+    if (box.containsKey(item.id)) box.delete(item.id); else box.put(item.id, {'id': item.id, 'title': item.title, 'artist': item.artist, 'artUri': item.artUri.toString(), 'duration': item.duration?.inMilliseconds ?? 0});
   }
 
   void _showQueueList(BuildContext context) {
     showModalBottomSheet(
-      context: context, backgroundColor: const Color(0xFF1A1A1A),
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      context: context, backgroundColor: const Color(0xFF1A1A1A), shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (context) {
         return Column(
           children: [
             const Padding(padding: EdgeInsets.symmetric(vertical: 20.0), child: Text("Siguiente en la lista", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white))),
-            Expanded(
-              child: StreamBuilder<List<MediaItem>>(
-                stream: audioHandler.queue,
-                builder: (context, snapshot) {
+            Expanded(child: StreamBuilder<List<MediaItem>>(stream: audioHandler.queue, builder: (context, snapshot) {
                   final queueList = snapshot.data ?? [];
-                  return ListView.builder(
-                    itemCount: queueList.length,
-                    itemBuilder: (context, index) {
-                      final item = queueList[index];
-                      return ListTile(
-                        leading: ClipRRect(borderRadius: BorderRadius.circular(6), child: Image.network(item.artUri.toString(), width: 45, height: 45, fit: BoxFit.cover)),
-                        title: Text(item.title, maxLines: 1, overflow: TextOverflow.ellipsis),
-                        subtitle: Text(item.artist ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.grey)),
-                        onTap: () { audioHandler.playMediaItem(item); Navigator.pop(context); },
-                      );
-                    },
-                  );
-                },
+                  return ListView.builder(itemCount: queueList.length, itemBuilder: (context, index) { final item = queueList[index]; return ListTile(leading: ClipRRect(borderRadius: BorderRadius.circular(6), child: Image.network(item.artUri.toString(), width: 45, height: 45, fit: BoxFit.cover)), title: Text(item.title, maxLines: 1, overflow: TextOverflow.ellipsis), subtitle: Text(item.artist ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.grey)), onTap: () { audioHandler.playMediaItem(item); Navigator.pop(context); }); });
+                }
               ),
             ),
           ],
@@ -666,8 +670,7 @@ class FullScreenPlayer extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      height: MediaQuery.of(context).size.height * 0.95,
-      decoration: const BoxDecoration(color: Color(0xFF111111), borderRadius: BorderRadius.vertical(top: Radius.circular(30))),
+      height: MediaQuery.of(context).size.height * 0.95, decoration: const BoxDecoration(color: Color(0xFF111111), borderRadius: BorderRadius.vertical(top: Radius.circular(30))),
       child: StreamBuilder<MediaItem?>(
         stream: audioHandler.mediaItem,
         builder: (context, snapshot) {
@@ -678,68 +681,31 @@ class FullScreenPlayer extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                const SizedBox(height: 16),
-                Container(width: 40, height: 5, decoration: BoxDecoration(color: Colors.grey[600], borderRadius: BorderRadius.circular(10))),
-                const SizedBox(height: 40),
-                ClipRRect(borderRadius: BorderRadius.circular(20), child: Image.network(mediaItem.artUri.toString(), width: MediaQuery.of(context).size.width * 0.85, height: MediaQuery.of(context).size.width * 0.85, fit: BoxFit.cover)),
-                const SizedBox(height: 40),
+                const SizedBox(height: 16), Container(width: 40, height: 5, decoration: BoxDecoration(color: Colors.grey[600], borderRadius: BorderRadius.circular(10))), const SizedBox(height: 40),
+                ClipRRect(borderRadius: BorderRadius.circular(20), child: Image.network(mediaItem.artUri.toString(), width: MediaQuery.of(context).size.width * 0.85, height: MediaQuery.of(context).size.width * 0.85, fit: BoxFit.cover)), const SizedBox(height: 40),
                 
-                // FILA CON TÍTULO Y BOTÓN CORAZÓN (Conectado a la BD)
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(mediaItem.title, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.white)),
-                          const SizedBox(height: 8),
-                          Text(mediaItem.artist ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 18, color: Colors.grey)),
-                        ],
-                      ),
-                    ),
+                    Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(mediaItem.title, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.white)), const SizedBox(height: 8), Text(mediaItem.artist ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 18, color: Colors.grey))])),
                     ValueListenableBuilder(
                       valueListenable: Hive.box('favorites').listenable(),
                       builder: (context, Box box, _) {
                         final isFav = box.containsKey(mediaItem.id);
-                        return ValueListenableBuilder<Color>(
-                          valueListenable: appColor,
-                          builder: (context, color, _) {
-                            return IconButton(
-                              icon: Icon(isFav ? Icons.favorite : Icons.favorite_border),
-                              iconSize: 32,
-                              color: isFav ? Colors.redAccent : color,
-                              onPressed: () => _toggleFavorite(mediaItem),
-                            );
-                          }
-                        );
+                        return ValueListenableBuilder<Color>(valueListenable: appColor, builder: (context, color, _) => IconButton(icon: Icon(isFav ? Icons.favorite : Icons.favorite_border), iconSize: 32, color: isFav ? Colors.redAccent : color, onPressed: () => _toggleFavorite(mediaItem)));
                       }
                     ),
                   ],
                 ),
                 const SizedBox(height: 24),
-                
                 StreamBuilder<Duration>(
                   stream: AudioService.position,
                   builder: (context, snapshot) {
-                    final position = snapshot.data ?? Duration.zero;
-                    final duration = mediaItem.duration ?? Duration.zero;
-                    double positionValue = position.inMilliseconds.toDouble();
-                    double durationValue = duration.inMilliseconds.toDouble();
-                    if (positionValue > durationValue) positionValue = durationValue;
-                    if (durationValue == 0.0) durationValue = 1.0;
-                    return ValueListenableBuilder<Color>(
-                      valueListenable: appColor,
-                      builder: (context, color, _) {
-                        return Column(
-                          children: [
-                            SliderTheme(
-                              data: SliderTheme.of(context).copyWith(trackHeight: 4, thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 8), overlayShape: const RoundSliderOverlayShape(overlayRadius: 16), activeTrackColor: color, inactiveTrackColor: Colors.grey[800], thumbColor: color),
-                              child: Slider(value: positionValue, max: durationValue, onChanged: (value) => audioHandler.seek(Duration(milliseconds: value.toInt()))),
-                            ),
-                            Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [Text(_formatDuration(position), style: const TextStyle(fontSize: 12, color: Colors.grey)), Text(_formatDuration(duration), style: const TextStyle(fontSize: 12, color: Colors.grey))]),
-                          ],
-                        );
+                    final position = snapshot.data ?? Duration.zero; final duration = mediaItem.duration ?? Duration.zero;
+                    double positionValue = position.inMilliseconds.toDouble(); double durationValue = duration.inMilliseconds.toDouble();
+                    if (positionValue > durationValue) positionValue = durationValue; if (durationValue == 0.0) durationValue = 1.0;
+                    return ValueListenableBuilder<Color>(valueListenable: appColor, builder: (context, color, _) {
+                        return Column(children: [SliderTheme(data: SliderTheme.of(context).copyWith(trackHeight: 4, thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 8), overlayShape: const RoundSliderOverlayShape(overlayRadius: 16), activeTrackColor: color, inactiveTrackColor: Colors.grey[800], thumbColor: color), child: Slider(value: positionValue, max: durationValue, onChanged: (value) => audioHandler.seek(Duration(milliseconds: value.toInt())))), Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [Text(_formatDuration(position), style: const TextStyle(fontSize: 12, color: Colors.grey)), Text(_formatDuration(duration), style: const TextStyle(fontSize: 12, color: Colors.grey))])]);
                       }
                     );
                   }
@@ -748,36 +714,15 @@ class FullScreenPlayer extends StatelessWidget {
                 StreamBuilder<PlaybackState>(
                   stream: audioHandler.playbackState,
                   builder: (context, snapshot) {
-                    final playing = snapshot.data?.playing ?? false;
-                    final isBuffering = snapshot.data?.processingState == AudioProcessingState.buffering || snapshot.data?.processingState == AudioProcessingState.loading;
-                    return ValueListenableBuilder<Color>(
-                      valueListenable: appColor,
-                      builder: (context, color, _) {
-                        return Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                          children: [
-                            ValueListenableBuilder<bool>(
-                              valueListenable: isHDMode,
-                              builder: (context, isHD, _) => IconButton(icon: Icon(isHD ? Icons.high_quality : Icons.data_saver_on), color: isHD ? color : Colors.grey, onPressed: () { isHDMode.value = !isHD; ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(isHD ? "Ahorro de datos" : "Audio HD"), backgroundColor: color)); }),
-                            ),
-                            IconButton(icon: const Icon(Icons.skip_previous), iconSize: 48, color: Colors.white, onPressed: audioHandler.skipToPrevious),
-                            Container(
-                              width: 80, height: 80, decoration: BoxDecoration(shape: BoxShape.circle, color: color),
-                              child: isBuffering ? const Padding(padding: EdgeInsets.all(20.0), child: CircularProgressIndicator(color: Colors.white, strokeWidth: 3)) : IconButton(icon: Icon(playing ? Icons.pause : Icons.play_arrow), iconSize: 48, color: Colors.white, onPressed: () => playing ? audioHandler.pause() : audioHandler.play()),
-                            ),
-                            IconButton(icon: const Icon(Icons.skip_next), iconSize: 48, color: Colors.white, onPressed: audioHandler.skipToNext),
-                            IconButton(icon: const Icon(Icons.shuffle), color: Colors.grey, onPressed: () { audioHandler.shuffleQueue(); ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: const Text("Lista mezclada"), backgroundColor: color)); }),
-                          ],
-                        );
+                    final playing = snapshot.data?.playing ?? false; final isBuffering = snapshot.data?.processingState == AudioProcessingState.buffering || snapshot.data?.processingState == AudioProcessingState.loading;
+                    return ValueListenableBuilder<Color>(valueListenable: appColor, builder: (context, color, _) {
+                        return Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [ValueListenableBuilder<bool>(valueListenable: isHDMode, builder: (context, isHD, _) => IconButton(icon: Icon(isHD ? Icons.high_quality : Icons.data_saver_on), color: isHD ? color : Colors.grey, onPressed: () { isHDMode.value = !isHD; ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(isHD ? "Ahorro de datos" : "Audio HD"), backgroundColor: color)); })), IconButton(icon: const Icon(Icons.skip_previous), iconSize: 48, color: Colors.white, onPressed: audioHandler.skipToPrevious), Container(width: 80, height: 80, decoration: BoxDecoration(shape: BoxShape.circle, color: color), child: isBuffering ? const Padding(padding: EdgeInsets.all(20.0), child: CircularProgressIndicator(color: Colors.white, strokeWidth: 3)) : IconButton(icon: Icon(playing ? Icons.pause : Icons.play_arrow), iconSize: 48, color: Colors.white, onPressed: () => playing ? audioHandler.pause() : audioHandler.play())), IconButton(icon: const Icon(Icons.skip_next), iconSize: 48, color: Colors.white, onPressed: audioHandler.skipToNext), IconButton(icon: const Icon(Icons.shuffle), color: Colors.grey, onPressed: () { audioHandler.shuffleQueue(); ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: const Text("Lista mezclada"), backgroundColor: color)); })]);
                       }
                     );
                   }
                 ),
                 const Spacer(),
-                GestureDetector(
-                  onTap: () => _showQueueList(context),
-                  child: const Column(children: [Icon(Icons.keyboard_arrow_up, color: Colors.grey, size: 30), Text("Cola", style: TextStyle(color: Colors.grey, fontSize: 12)), SizedBox(height: 20)]),
-                ),
+                GestureDetector(onTap: () => _showQueueList(context), child: const Column(children: [Icon(Icons.keyboard_arrow_up, color: Colors.grey, size: 30), Text("Cola", style: TextStyle(color: Colors.grey, fontSize: 12)), SizedBox(height: 20)])),
               ],
             ),
           );
