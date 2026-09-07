@@ -18,7 +18,7 @@ Future<void> main() async {
     builder: () => MyAudioHandler(),
     config: const AudioServiceConfig(
       androidNotificationChannelId: 'com.example.media_app.audio_master_v23',
-      androidNotificationChannelName: 'Spotify Killer Buscador',
+      androidNotificationChannelName: 'Spotify Killer VIP',
       androidNotificationOngoing: true,
       androidShowNotificationBadge: true,
       androidNotificationIcon: 'drawable/ic_notification',
@@ -113,8 +113,6 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
       final videoId = item.id;
       var manifest = await _yt.videos.streamsClient.getManifest(videoId);
       
-      // EL TRUCO MAESTRO: Pedimos el video mezclado (Muxed) para evadir el bloqueo
-      // de "Solo audio". just_audio ignorará la imagen y tocará el sonido perfecto.
       StreamInfo streamInfo;
       if (manifest.muxed.isNotEmpty) {
         streamInfo = manifest.muxed.withHighestBitrate();
@@ -136,13 +134,10 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
 
       await _player.play();
     } catch (e) {
-      debugPrint("Error crítico en playMediaItem: $e");
-      
+      debugPrint("Error crítico: $e");
       String errorMsg = e.toString().replaceAll('\n', ' ');
       if (errorMsg.length > 60) errorMsg = errorMsg.substring(0, 60);
-      
       mediaItem.add(item.copyWith(artist: "🛑 $errorMsg"));
-      
       playbackState.add(playbackState.value.copyWith(
         processingState: AudioProcessingState.error,
         playing: false,
@@ -209,7 +204,7 @@ class _SearchScreenState extends State<SearchScreen> {
     } catch (e) {
       setState(() => isLoading = false);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error al buscar: $e'), backgroundColor: Colors.red),
+        SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
       );
     }
   }
@@ -244,6 +239,7 @@ class _SearchScreenState extends State<SearchScreen> {
       appBar: AppBar(
         title: const Text('Spotify Killer VIP'),
         backgroundColor: const Color(0xFF1A1A1A),
+        elevation: 0,
       ),
       body: Column(
         children: [
@@ -267,7 +263,6 @@ class _SearchScreenState extends State<SearchScreen> {
               onSubmitted: searchVideos,
             ),
           ),
-          const SizedBox(height: 10),
           if (isLoading)
             const Expanded(child: Center(child: CircularProgressIndicator(color: Colors.deepPurpleAccent)))
           else
@@ -301,14 +296,9 @@ class _SearchScreenState extends State<SearchScreen> {
   }
 }
 
+// NUEVO Y MEJORADO: El MiniPlayer que ahora lanza la pantalla completa
 class MiniPlayer extends StatelessWidget {
   const MiniPlayer({super.key});
-
-  String _formatDuration(Duration d) {
-    final minutes = d.inMinutes.remainder(60).toString().padLeft(2, '0');
-    final seconds = d.inSeconds.remainder(60).toString().padLeft(2, '0');
-    return "${d.inHours > 0 ? '${d.inHours}:' : ''}$minutes:$seconds";
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -319,71 +309,155 @@ class MiniPlayer extends StatelessWidget {
         if (mediaItem == null) return const SizedBox.shrink();
 
         return GestureDetector(
-          onTap: () {},
+          onTap: () {
+            showModalBottomSheet(
+              context: context,
+              isScrollControlled: true,
+              backgroundColor: Colors.transparent,
+              builder: (context) => const FullScreenPlayer(),
+            );
+          },
           child: Container(
             padding: const EdgeInsets.only(left: 16, right: 16, top: 12, bottom: 20),
             decoration: const BoxDecoration(
-              color: Color(0xFF111111),
-              borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-              boxShadow: [
-                BoxShadow(color: Colors.black54, blurRadius: 10, offset: Offset(0, -5))
+              color: Color(0xFF1A1A1A),
+              border: Border(top: BorderSide(color: Color(0xFF2A2A2A), width: 1)),
+            ),
+            child: Row(
+              children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: Image.network(
+                    mediaItem.artUri.toString(),
+                    width: 45,
+                    height: 45,
+                    fit: BoxFit.cover,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(mediaItem.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
+                      Text(mediaItem.artist ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.grey)),
+                    ],
+                  ),
+                ),
+                StreamBuilder<PlaybackState>(
+                  stream: audioHandler.playbackState,
+                  builder: (context, snapshot) {
+                    final state = snapshot.data;
+                    final playing = state?.playing ?? false;
+                    final isBuffering = state?.processingState == AudioProcessingState.buffering || state?.processingState == AudioProcessingState.loading;
+                    
+                    if (isBuffering) {
+                      return const Padding(
+                        padding: EdgeInsets.all(12.0),
+                        child: SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.deepPurpleAccent)),
+                      );
+                    }
+
+                    return IconButton(
+                      icon: Icon(playing ? Icons.pause_circle_filled : Icons.play_circle_fill),
+                      iconSize: 42,
+                      color: Colors.deepPurpleAccent,
+                      onPressed: () {
+                        if (playing) {
+                          audioHandler.pause();
+                        } else {
+                          audioHandler.play();
+                        }
+                      },
+                    );
+                  }
+                ),
               ],
             ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Row(
-                  children: [
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(8),
-                      child: Image.network(
-                        mediaItem.artUri.toString(),
-                        width: 45,
-                        height: 45,
-                        fit: BoxFit.cover,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(mediaItem.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
-                          Text(mediaItem.artist ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.grey)),
-                        ],
-                      ),
-                    ),
-                    StreamBuilder<PlaybackState>(
-                      stream: audioHandler.playbackState,
-                      builder: (context, snapshot) {
-                        final state = snapshot.data;
-                        final playing = state?.playing ?? false;
-                        final isBuffering = state?.processingState == AudioProcessingState.buffering || state?.processingState == AudioProcessingState.loading;
-                        
-                        if (isBuffering) {
-                          return const Padding(
-                            padding: EdgeInsets.all(12.0),
-                            child: SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.deepPurpleAccent)),
-                          );
-                        }
+          ),
+        );
+      },
+    );
+  }
+}
 
-                        return IconButton(
-                          icon: Icon(playing ? Icons.pause_circle_filled : Icons.play_circle_fill),
-                          iconSize: 42,
-                          color: Colors.deepPurpleAccent,
-                          onPressed: () {
-                            if (playing) {
-                              audioHandler.pause();
-                            } else {
-                              audioHandler.play();
-                            }
-                          },
-                        );
-                      }
-                    ),
-                  ],
+// NUEVA FASE 2: Pantalla Completa de Reproducción
+class FullScreenPlayer extends StatelessWidget {
+  const FullScreenPlayer({super.key});
+
+  String _formatDuration(Duration d) {
+    final minutes = d.inMinutes.remainder(60).toString().padLeft(2, '0');
+    final seconds = d.inSeconds.remainder(60).toString().padLeft(2, '0');
+    return "${d.inHours > 0 ? '${d.inHours}:' : ''}$minutes:$seconds";
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: MediaQuery.of(context).size.height * 0.95,
+      decoration: const BoxDecoration(
+        color: Color(0xFF111111),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(30)),
+      ),
+      child: StreamBuilder<MediaItem?>(
+        stream: audioHandler.mediaItem,
+        builder: (context, snapshot) {
+          final mediaItem = snapshot.data;
+          if (mediaItem == null) return const SizedBox.shrink();
+
+          return Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                const SizedBox(height: 16),
+                // Indicador de arrastre para cerrar
+                Container(
+                  width: 40,
+                  height: 5,
+                  decoration: BoxDecoration(
+                    color: Colors.grey[600],
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                ),
+                const SizedBox(height: 40),
+                
+                // Arte del álbum gigante
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(20),
+                  child: Image.network(
+                    mediaItem.artUri.toString(),
+                    width: MediaQuery.of(context).size.width * 0.85,
+                    height: MediaQuery.of(context).size.width * 0.85,
+                    fit: BoxFit.cover,
+                  ),
+                ),
+                const SizedBox(height: 40),
+                
+                // Título y Artista
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    mediaItem.title,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.white),
+                  ),
                 ),
                 const SizedBox(height: 8),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    mediaItem.artist ?? '',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 18, color: Colors.grey),
+                  ),
+                ),
+                const SizedBox(height: 24),
+                
+                // Barra de progreso (Slider)
                 StreamBuilder<Duration>(
                   stream: AudioService.position,
                   builder: (context, snapshot) {
@@ -396,38 +470,113 @@ class MiniPlayer extends StatelessWidget {
                     if (positionValue > durationValue) positionValue = durationValue;
                     if (durationValue == 0.0) durationValue = 1.0;
 
-                    return Row(
+                    return Column(
                       children: [
-                        Text(_formatDuration(position), style: const TextStyle(fontSize: 12, color: Colors.grey)),
-                        Expanded(
-                          child: SliderTheme(
-                            data: SliderTheme.of(context).copyWith(
-                              trackHeight: 2,
-                              thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
-                              overlayShape: const RoundSliderOverlayShape(overlayRadius: 14),
-                              activeTrackColor: Colors.deepPurpleAccent,
-                              inactiveTrackColor: Colors.grey[800],
-                              thumbColor: Colors.deepPurpleAccent,
-                            ),
-                            child: Slider(
-                              value: positionValue,
-                              max: durationValue,
-                              onChanged: (value) {
-                                audioHandler.seek(Duration(milliseconds: value.toInt()));
-                              },
-                            ),
+                        SliderTheme(
+                          data: SliderTheme.of(context).copyWith(
+                            trackHeight: 4,
+                            thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 8),
+                            overlayShape: const RoundSliderOverlayShape(overlayRadius: 16),
+                            activeTrackColor: Colors.deepPurpleAccent,
+                            inactiveTrackColor: Colors.grey[800],
+                            thumbColor: Colors.deepPurpleAccent,
+                          ),
+                          child: Slider(
+                            value: positionValue,
+                            max: durationValue,
+                            onChanged: (value) {
+                              audioHandler.seek(Duration(milliseconds: value.toInt()));
+                            },
                           ),
                         ),
-                        Text(_formatDuration(duration), style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(_formatDuration(position), style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                            Text(_formatDuration(duration), style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                          ],
+                        ),
                       ],
                     );
                   }
-                )
+                ),
+                const SizedBox(height: 20),
+                
+                // Controles Principales (Anterior, Play/Pause, Siguiente)
+                StreamBuilder<PlaybackState>(
+                  stream: audioHandler.playbackState,
+                  builder: (context, snapshot) {
+                    final state = snapshot.data;
+                    final playing = state?.playing ?? false;
+                    final isBuffering = state?.processingState == AudioProcessingState.buffering || state?.processingState == AudioProcessingState.loading;
+                    
+                    return Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                      children: [
+                        // Botón Visual de Calidad (No funcional aún, mantiene la estética)
+                        IconButton(
+                          icon: const Icon(Icons.high_quality),
+                          color: Colors.grey,
+                          onPressed: () {
+                            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Audio HD Activado")));
+                          },
+                        ),
+                        
+                        IconButton(
+                          icon: const Icon(Icons.skip_previous),
+                          iconSize: 48,
+                          color: Colors.white,
+                          onPressed: audioHandler.skipToPrevious,
+                        ),
+                        
+                        Container(
+                          width: 80,
+                          height: 80,
+                          decoration: const BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: Colors.deepPurpleAccent,
+                          ),
+                          child: isBuffering 
+                            ? const Padding(
+                                padding: EdgeInsets.all(20.0),
+                                child: CircularProgressIndicator(color: Colors.white, strokeWidth: 3),
+                              )
+                            : IconButton(
+                                icon: Icon(playing ? Icons.pause : Icons.play_arrow),
+                                iconSize: 48,
+                                color: Colors.white,
+                                onPressed: () {
+                                  if (playing) {
+                                    audioHandler.pause();
+                                  } else {
+                                    audioHandler.play();
+                                  }
+                                },
+                              ),
+                        ),
+                        
+                        IconButton(
+                          icon: const Icon(Icons.skip_next),
+                          iconSize: 48,
+                          color: Colors.white,
+                          onPressed: audioHandler.skipToNext,
+                        ),
+                        
+                        // Botón de opciones visual
+                        IconButton(
+                          icon: const Icon(Icons.more_vert),
+                          color: Colors.grey,
+                          onPressed: () {},
+                        ),
+                      ],
+                    );
+                  }
+                ),
               ],
             ),
-          ),
-        );
-      },
+          );
+        },
+      ),
     );
   }
 }
