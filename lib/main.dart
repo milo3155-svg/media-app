@@ -8,7 +8,7 @@ import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 // Instancia global del AudioHandler
 late MyAudioHandler audioHandler;
 
-// NUEVO: Controlador global para la calidad del audio (Ahorro de datos vs HD)
+// Controlador global para la calidad del audio (Ahorro de datos vs HD)
 final ValueNotifier<bool> isHDMode = ValueNotifier<bool>(true);
 
 Future<void> main() async {
@@ -62,6 +62,13 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
         bufferedPosition: _player.bufferedPosition,
         speed: _player.speed,
       ));
+    });
+
+    // NUEVO: Escucha el estado del reproductor para saltar a la siguiente canción al terminar
+    _player.processingStateStream.listen((state) {
+      if (state == ProcessingState.completed) {
+        skipToNext();
+      }
     });
   }
 
@@ -118,12 +125,10 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
       
       StreamInfo streamInfo;
       
-      // NUEVO: Lógica de Ahorro de Datos conectada al botón HD
       if (manifest.muxed.isNotEmpty) {
         if (isHDMode.value) {
           streamInfo = manifest.muxed.withHighestBitrate();
         } else {
-          // Extrae el archivo más pequeño/ligero disponible
           streamInfo = manifest.muxed.reduce((a, b) => a.bitrate.bitsPerSecond < b.bitrate.bitsPerSecond ? a : b);
         }
       } else if (manifest.audioOnly.isNotEmpty) {
@@ -164,7 +169,6 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
     queue.add(newQueue);
   }
 
-  // NUEVO: Método para mezclar la lista actual (Shuffle)
   void shuffleQueue() {
     final currentQueue = queue.value.toList();
     currentQueue.shuffle();
@@ -411,7 +415,6 @@ class FullScreenPlayer extends StatelessWidget {
     return "${d.inHours > 0 ? '${d.inHours}:' : ''}$minutes:$seconds";
   }
 
-  // NUEVO: Función para mostrar la lista de reproducción inferior
   void _showQueueList(BuildContext context) {
     showModalBottomSheet(
       context: context,
@@ -442,7 +445,7 @@ class FullScreenPlayer extends StatelessWidget {
                         subtitle: Text(item.artist ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.grey)),
                         onTap: () {
                           audioHandler.playMediaItem(item);
-                          Navigator.pop(context); // Cierra la lista y empieza a sonar
+                          Navigator.pop(context); 
                         },
                       );
                     },
@@ -572,7 +575,6 @@ class FullScreenPlayer extends StatelessWidget {
                     return Row(
                       mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                       children: [
-                        // BOTÓN HD CONECTADO: Ahorra datos o escucha en calidad máxima
                         ValueListenableBuilder<bool>(
                           valueListenable: isHDMode,
                           builder: (context, isHD, _) {
@@ -632,7 +634,6 @@ class FullScreenPlayer extends StatelessWidget {
                           onPressed: audioHandler.skipToNext,
                         ),
                         
-                        // BOTÓN SHUFFLE CONECTADO: Mezcla la lista
                         IconButton(
                           icon: const Icon(Icons.shuffle),
                           color: Colors.grey,
@@ -648,10 +649,8 @@ class FullScreenPlayer extends StatelessWidget {
                   }
                 ),
                 
-                // NUEVO: Empuja el contenido restante hacia abajo para poner la flecha al fondo
                 const Spacer(),
                 
-                // ÁREA DE LA COLA DE REPRODUCCIÓN (Hasta abajo)
                 GestureDetector(
                   onTap: () => _showQueueList(context),
                   child: const Column(
