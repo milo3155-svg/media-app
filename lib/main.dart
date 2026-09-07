@@ -8,6 +8,9 @@ import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 // Instancia global del AudioHandler
 late MyAudioHandler audioHandler;
 
+// NUEVO: Controlador global para la calidad del audio (Ahorro de datos vs HD)
+final ValueNotifier<bool> isHDMode = ValueNotifier<bool>(true);
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
@@ -114,10 +117,21 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
       var manifest = await _yt.videos.streamsClient.getManifest(videoId);
       
       StreamInfo streamInfo;
+      
+      // NUEVO: Lógica de Ahorro de Datos conectada al botón HD
       if (manifest.muxed.isNotEmpty) {
-        streamInfo = manifest.muxed.withHighestBitrate();
+        if (isHDMode.value) {
+          streamInfo = manifest.muxed.withHighestBitrate();
+        } else {
+          // Extrae el archivo más pequeño/ligero disponible
+          streamInfo = manifest.muxed.reduce((a, b) => a.bitrate.bitsPerSecond < b.bitrate.bitsPerSecond ? a : b);
+        }
       } else if (manifest.audioOnly.isNotEmpty) {
-        streamInfo = manifest.audioOnly.withHighestBitrate();
+        if (isHDMode.value) {
+          streamInfo = manifest.audioOnly.withHighestBitrate();
+        } else {
+          streamInfo = manifest.audioOnly.reduce((a, b) => a.bitrate.bitsPerSecond < b.bitrate.bitsPerSecond ? a : b);
+        }
       } else {
         throw Exception("No hay audios disponibles");
       }
@@ -148,6 +162,13 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
   @override
   Future<void> updateQueue(List<MediaItem> newQueue) async {
     queue.add(newQueue);
+  }
+
+  // NUEVO: Método para mezclar la lista actual (Shuffle)
+  void shuffleQueue() {
+    final currentQueue = queue.value.toList();
+    currentQueue.shuffle();
+    queue.add(currentQueue);
   }
 }
 
@@ -296,7 +317,6 @@ class _SearchScreenState extends State<SearchScreen> {
   }
 }
 
-// NUEVO Y MEJORADO: El MiniPlayer que ahora lanza la pantalla completa
 class MiniPlayer extends StatelessWidget {
   const MiniPlayer({super.key});
 
@@ -382,7 +402,6 @@ class MiniPlayer extends StatelessWidget {
   }
 }
 
-// NUEVA FASE 2: Pantalla Completa de Reproducción
 class FullScreenPlayer extends StatelessWidget {
   const FullScreenPlayer({super.key});
 
@@ -390,6 +409,51 @@ class FullScreenPlayer extends StatelessWidget {
     final minutes = d.inMinutes.remainder(60).toString().padLeft(2, '0');
     final seconds = d.inSeconds.remainder(60).toString().padLeft(2, '0');
     return "${d.inHours > 0 ? '${d.inHours}:' : ''}$minutes:$seconds";
+  }
+
+  // NUEVO: Función para mostrar la lista de reproducción inferior
+  void _showQueueList(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF1A1A1A),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (context) {
+        return Column(
+          children: [
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 20.0),
+              child: Text("Siguiente en la lista", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white)),
+            ),
+            Expanded(
+              child: StreamBuilder<List<MediaItem>>(
+                stream: audioHandler.queue,
+                builder: (context, snapshot) {
+                  final queueList = snapshot.data ?? [];
+                  return ListView.builder(
+                    itemCount: queueList.length,
+                    itemBuilder: (context, index) {
+                      final item = queueList[index];
+                      return ListTile(
+                        leading: ClipRRect(
+                          borderRadius: BorderRadius.circular(6),
+                          child: Image.network(item.artUri.toString(), width: 45, height: 45, fit: BoxFit.cover),
+                        ),
+                        title: Text(item.title, maxLines: 1, overflow: TextOverflow.ellipsis),
+                        subtitle: Text(item.artist ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.grey)),
+                        onTap: () {
+                          audioHandler.playMediaItem(item);
+                          Navigator.pop(context); // Cierra la lista y empieza a sonar
+                        },
+                      );
+                    },
+                  );
+                },
+              ),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   @override
@@ -412,7 +476,6 @@ class FullScreenPlayer extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
                 const SizedBox(height: 16),
-                // Indicador de arrastre para cerrar
                 Container(
                   width: 40,
                   height: 5,
@@ -423,7 +486,6 @@ class FullScreenPlayer extends StatelessWidget {
                 ),
                 const SizedBox(height: 40),
                 
-                // Arte del álbum gigante
                 ClipRRect(
                   borderRadius: BorderRadius.circular(20),
                   child: Image.network(
@@ -435,7 +497,6 @@ class FullScreenPlayer extends StatelessWidget {
                 ),
                 const SizedBox(height: 40),
                 
-                // Título y Artista
                 Align(
                   alignment: Alignment.centerLeft,
                   child: Text(
@@ -457,7 +518,6 @@ class FullScreenPlayer extends StatelessWidget {
                 ),
                 const SizedBox(height: 24),
                 
-                // Barra de progreso (Slider)
                 StreamBuilder<Duration>(
                   stream: AudioService.position,
                   builder: (context, snapshot) {
@@ -502,7 +562,6 @@ class FullScreenPlayer extends StatelessWidget {
                 ),
                 const SizedBox(height: 20),
                 
-                // Controles Principales (Anterior, Play/Pause, Siguiente)
                 StreamBuilder<PlaybackState>(
                   stream: audioHandler.playbackState,
                   builder: (context, snapshot) {
@@ -513,13 +572,24 @@ class FullScreenPlayer extends StatelessWidget {
                     return Row(
                       mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                       children: [
-                        // Botón Visual de Calidad (No funcional aún, mantiene la estética)
-                        IconButton(
-                          icon: const Icon(Icons.high_quality),
-                          color: Colors.grey,
-                          onPressed: () {
-                            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Audio HD Activado")));
-                          },
+                        // BOTÓN HD CONECTADO: Ahorra datos o escucha en calidad máxima
+                        ValueListenableBuilder<bool>(
+                          valueListenable: isHDMode,
+                          builder: (context, isHD, _) {
+                            return IconButton(
+                              icon: Icon(isHD ? Icons.high_quality : Icons.data_saver_on),
+                              color: isHD ? Colors.deepPurpleAccent : Colors.grey,
+                              onPressed: () {
+                                isHDMode.value = !isHD;
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text(isHD ? "Ahorro de datos activado" : "Audio HD Activado (Se aplicará en la siguiente canción)"),
+                                    backgroundColor: isHD ? Colors.orange : Colors.deepPurpleAccent,
+                                  )
+                                );
+                              },
+                            );
+                          }
                         ),
                         
                         IconButton(
@@ -562,15 +632,35 @@ class FullScreenPlayer extends StatelessWidget {
                           onPressed: audioHandler.skipToNext,
                         ),
                         
-                        // Botón de opciones visual
+                        // BOTÓN SHUFFLE CONECTADO: Mezcla la lista
                         IconButton(
-                          icon: const Icon(Icons.more_vert),
+                          icon: const Icon(Icons.shuffle),
                           color: Colors.grey,
-                          onPressed: () {},
+                          onPressed: () {
+                            audioHandler.shuffleQueue();
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text("Lista de reproducción mezclada"), backgroundColor: Colors.deepPurpleAccent)
+                            );
+                          },
                         ),
                       ],
                     );
                   }
+                ),
+                
+                // NUEVO: Empuja el contenido restante hacia abajo para poner la flecha al fondo
+                const Spacer(),
+                
+                // ÁREA DE LA COLA DE REPRODUCCIÓN (Hasta abajo)
+                GestureDetector(
+                  onTap: () => _showQueueList(context),
+                  child: const Column(
+                    children: [
+                      Icon(Icons.keyboard_arrow_up, color: Colors.grey, size: 30),
+                      Text("Cola de reproducción", style: TextStyle(color: Colors.grey, fontSize: 12)),
+                      SizedBox(height: 20),
+                    ],
+                  ),
                 ),
               ],
             ),
