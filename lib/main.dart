@@ -112,14 +112,18 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
 
       final videoId = item.id;
       var manifest = await _yt.videos.streamsClient.getManifest(videoId);
+      
+      if (manifest.audioOnly.isEmpty) {
+        throw Exception("No hay audios disponibles");
+      }
+      
       var streamInfo = manifest.audioOnly.withHighestBitrate();
 
       await _player.setAudioSource(
         AudioSource.uri(
           streamInfo.url,
           tag: item,
-          // EL RESCATE: Los headers originales que evitan el bloqueo de YouTube
-          headers: {
+          headers: const {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36',
           },
         ),
@@ -127,8 +131,8 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
 
       await _player.play();
     } catch (e) {
-      // TRAMPA VISUAL: Si falla, el error se mostrará en lugar del nombre del artista
-      mediaItem.add(item.copyWith(artist: "Error: $e"));
+      debugPrint("Error crítico en playMediaItem: $e");
+      mediaItem.add(item.copyWith(artist: "Error de fuente"));
       playbackState.add(playbackState.value.copyWith(
         processingState: AudioProcessingState.error,
         playing: false,
@@ -305,9 +309,7 @@ class MiniPlayer extends StatelessWidget {
         if (mediaItem == null) return const SizedBox.shrink();
 
         return GestureDetector(
-          onTap: () {
-            // Fase 2 (Pantalla completa) se integrará aquí en el próximo paso
-          },
+          onTap: () {},
           child: Container(
             padding: const EdgeInsets.only(left: 16, right: 16, top: 12, bottom: 20),
             decoration: const BoxDecoration(
@@ -337,7 +339,6 @@ class MiniPlayer extends StatelessWidget {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(mediaItem.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
-                          // El subtítulo mostrará el error si algo falla en la descarga
                           Text(mediaItem.artist ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.grey)),
                         ],
                       ),
