@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart'; // NATIVO: Para el botón de Compartir (Copiar Portapapeles)
+import 'package:flutter/services.dart'; 
 import 'package:just_audio/just_audio.dart';
 import 'package:audio_session/audio_session.dart';
 import 'package:audio_service/audio_service.dart';
@@ -13,7 +13,7 @@ import 'dart:async';
 late MyAudioHandler audioHandler;
 final ValueNotifier<bool> isHDMode = ValueNotifier<bool>(true);
 final ValueNotifier<Color> appColor = ValueNotifier<Color>(Colors.deepPurpleAccent);
-final ValueNotifier<int> sleepTimerRemaining = ValueNotifier<int>(0); // SPRINT 2: Cronómetro Visual
+final ValueNotifier<int> sleepTimerRemaining = ValueNotifier<int>(0); 
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -29,7 +29,7 @@ Future<void> main() async {
   audioHandler = await AudioService.init(
     builder: () => MyAudioHandler(),
     config: const AudioServiceConfig(
-      androidNotificationChannelId: 'com.example.media_app.audio_master_v25',
+      androidNotificationChannelId: 'com.example.media_app.audio_master_v26',
       androidNotificationChannelName: 'Spotify Killer VIP',
       androidNotificationOngoing: true,
       androidShowNotificationBadge: true,
@@ -99,7 +99,7 @@ class _OsirisEyePainter extends CustomPainter {
 class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
   final _player = AudioPlayer();
   late final YoutubeExplode _yt;
-  Timer? _countdownTimer; // SPRINT 2: Cronómetro en vivo
+  Timer? _countdownTimer; 
 
   MyAudioHandler() {
     _yt = YoutubeExplode(); 
@@ -182,17 +182,17 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
       _countdownTimer?.cancel();
       
       if (minutes > 0) {
-        sleepTimerRemaining.value = minutes * 60; // Convertimos a segundos
+        sleepTimerRemaining.value = minutes * 60; 
         _countdownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
           if (sleepTimerRemaining.value > 0) {
-            sleepTimerRemaining.value--; // Restamos un segundo
+            sleepTimerRemaining.value--; 
           } else {
-            pause(); // Apagamos la música
-            timer.cancel(); // Matamos el reloj
+            pause(); 
+            timer.cancel(); 
           }
         });
       } else {
-        sleepTimerRemaining.value = 0; // Desactivado
+        sleepTimerRemaining.value = 0; 
       }
     }
   }
@@ -445,7 +445,7 @@ class _SearchScreenState extends State<SearchScreen> {
   final searchController = TextEditingController();
   final yt = YoutubeExplode();
   List<Video> videos = [];
-  List<String> searchSuggestions = []; // SPRINT 2: Caja para autocompletar
+  List<String> searchSuggestions = []; 
   bool isLoading = false;
   String? playingVideoId;
   String selectedFilter = 'Todos';
@@ -465,7 +465,7 @@ class _SearchScreenState extends State<SearchScreen> {
     if (query.isEmpty) return;
     FocusScope.of(context).unfocus(); 
     _saveSearchHistory(query); 
-    setState(() { isLoading = true; searchSuggestions.clear(); }); // Oculta sugerencias al buscar
+    setState(() { isLoading = true; searchSuggestions.clear(); }); 
     try {
       var result = await yt.search.search(query);
       setState(() { videos = result.toList(); isLoading = false; });
@@ -571,13 +571,13 @@ class _SearchScreenState extends State<SearchScreen> {
             padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
             child: TextField(
               controller: searchController,
-              // SPRINT 2: Activa el buscador en vivo
+              // SPRINT 2: Activa el buscador en vivo (CORREGIDO EL BUILD ERROR)
               onChanged: (val) async { 
                 if (val.isEmpty) {
                   setState(() { videos.clear(); searchSuggestions.clear(); }); 
                 } else {
                   try {
-                    var sugs = await yt.search.getSearchSuggestions(val);
+                    var sugs = await yt.search.getQuerySuggestions(val);
                     setState(() { searchSuggestions = sugs; });
                   } catch(e) { }
                 }
@@ -591,7 +591,7 @@ class _SearchScreenState extends State<SearchScreen> {
             ),
           ),
           if (isLoading) Expanded(child: Center(child: ValueListenableBuilder<Color>(valueListenable: appColor, builder: (context, color, _) => CircularProgressIndicator(color: color))))
-          else if (searchSuggestions.isNotEmpty && videos.isEmpty) Expanded(child: _buildLiveSuggestions()) // SPRINT 2: Muestra sugerencias en vivo
+          else if (searchSuggestions.isNotEmpty && videos.isEmpty) Expanded(child: _buildLiveSuggestions()) 
           else if (videos.isEmpty && searchController.text.isEmpty) Expanded(child: _buildSearchHistory()) 
           else Expanded(
             child: ListView.builder(
