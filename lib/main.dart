@@ -6,6 +6,7 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'dart:math' as math;
+import 'dart:async'; // Necesario para el Timer
 
 // Controladores Globales
 late MyAudioHandler audioHandler;
@@ -15,20 +16,18 @@ final ValueNotifier<Color> appColor = ValueNotifier<Color>(Colors.deepPurpleAcce
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // 1. INICIALIZAR HIVE (Agregamos la caja de búsquedas)
   await Hive.initFlutter();
   await Hive.openBox('favorites');
   await Hive.openBox('history');
-  await Hive.openBox('search_history'); // NUEVA CAJA
+  await Hive.openBox('search_history');
 
-  // 2. INICIALIZAR AUDIO
   final session = await AudioSession.instance;
   await session.configure(const AudioSessionConfiguration.music());
 
   audioHandler = await AudioService.init(
     builder: () => MyAudioHandler(),
     config: const AudioServiceConfig(
-      androidNotificationChannelId: 'com.example.media_app.audio_master_v23',
+      androidNotificationChannelId: 'com.example.media_app.audio_master_v24',
       androidNotificationChannelName: 'Spotify Killer VIP',
       androidNotificationOngoing: true,
       androidShowNotificationBadge: true,
@@ -40,7 +39,7 @@ Future<void> main() async {
 }
 
 // -----------------------------------------------------------------------------
-// LOGO V3: "El Sello de Osiris" (Jeroglíficos)
+// LOGO V3: "El Sello de Osiris" 
 // -----------------------------------------------------------------------------
 class ConspiracyLogo extends StatelessWidget {
   final double size;
@@ -60,11 +59,9 @@ class _OsirisEyePainter extends CustomPainter {
   void _drawTextOnLine(Canvas canvas, String text, Offset start, Offset end, double fontSize) {
     final midPoint = Offset((start.dx + end.dx) / 2, (start.dy + end.dy) / 2);
     final angle = math.atan2(end.dy - start.dy, end.dx - start.dx);
-
     canvas.save();
     canvas.translate(midPoint.dx, midPoint.dy);
     canvas.rotate(angle);
-
     final textSpan = TextSpan(text: text, style: TextStyle(color: color, fontSize: fontSize, fontWeight: FontWeight.bold, letterSpacing: 2, fontFamily: 'Courier'));
     final textPainter = TextPainter(text: textSpan, textDirection: TextDirection.ltr);
     textPainter.layout();
@@ -74,53 +71,47 @@ class _OsirisEyePainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final w = size.width;
-    final h = size.height;
+    final w = size.width; final h = size.height;
     final paint = Paint()..color = color..style = PaintingStyle.stroke..strokeWidth = w * 0.05..strokeJoin = StrokeJoin.round..strokeCap = StrokeCap.round;
 
-    final p1 = Offset(w * 0.15, h * 0.15); 
-    final p2 = Offset(w * 0.15, h * 0.85); 
-    final p3 = Offset(w * 0.90, h * 0.50); 
-
+    final p1 = Offset(w * 0.15, h * 0.15); final p2 = Offset(w * 0.15, h * 0.85); final p3 = Offset(w * 0.90, h * 0.50); 
     final playPath = Path()..moveTo(p1.dx, p1.dy)..lineTo(p2.dx, p2.dy)..lineTo(p3.dx, p3.dy)..close();
     canvas.drawPath(playPath, paint);
 
     final fontSize = w * 0.08;
-    _drawTextOnLine(canvas, "Θ ⅃ Θ", p1, p2, fontSize);
-    _drawTextOnLine(canvas, "Δ Ξ", p2, p3, fontSize);
-    _drawTextOnLine(canvas, "Θ Ϟ Ι ℟ Ι Ϟ", p3, p1, fontSize);
+    _drawTextOnLine(canvas, "Θ ⅃ Θ", p1, p2, fontSize); _drawTextOnLine(canvas, "Δ Ξ", p2, p3, fontSize); _drawTextOnLine(canvas, "Θ Ϟ Ι ℟ Ι Ϟ", p3, p1, fontSize);
 
-    final eyeLeft = w * 0.28;
-    final eyeRight = w * 0.62;
-    final eyeY = h * 0.50;
-    final eyeCenterX = w * 0.45;
-    
-    final eyePath = Path();
-    eyePath.moveTo(eyeLeft, eyeY);
-    eyePath.quadraticBezierTo(eyeCenterX, h * 0.32, eyeRight, eyeY);
-    eyePath.quadraticBezierTo(eyeCenterX, h * 0.68, eyeLeft, eyeY);
+    final eyeLeft = w * 0.28; final eyeRight = w * 0.62; final eyeY = h * 0.50; final eyeCenterX = w * 0.45;
+    final eyePath = Path()..moveTo(eyeLeft, eyeY)..quadraticBezierTo(eyeCenterX, h * 0.32, eyeRight, eyeY)..quadraticBezierTo(eyeCenterX, h * 0.68, eyeLeft, eyeY);
     canvas.drawPath(eyePath, paint);
 
     final wavePaint = Paint()..color = color..style = PaintingStyle.stroke..strokeWidth = w * 0.03;
-    canvas.drawCircle(Offset(eyeCenterX, h * 0.50), w * 0.08, wavePaint);
-    canvas.drawCircle(Offset(eyeCenterX, h * 0.50), w * 0.03, wavePaint);
-    canvas.drawLine(Offset(eyeCenterX - w * 0.12, h * 0.50), Offset(eyeCenterX + w * 0.12, h * 0.50), wavePaint);
+    canvas.drawCircle(Offset(eyeCenterX, h * 0.50), w * 0.08, wavePaint); canvas.drawCircle(Offset(eyeCenterX, h * 0.50), w * 0.03, wavePaint); canvas.drawLine(Offset(eyeCenterX - w * 0.12, h * 0.50), Offset(eyeCenterX + w * 0.12, h * 0.50), wavePaint);
   }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
+  @override bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
 }
 
 // -----------------------------------------------------------------------------
-// MOTOR DE AUDIO (CON LÓGICA DE CONTADOR DE REPRODUCCIONES)
+// MOTOR DE AUDIO VIP (SPRINT 1: RADIO, MARCADORES Y SLEEP TIMER)
 // -----------------------------------------------------------------------------
 class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
   final _player = AudioPlayer();
-  final _yt = YoutubeExplode();
+  late final YoutubeExplode _yt;
+  Timer? _sleepTimer; // TICKET #003: Temporizador
 
   MyAudioHandler() {
+    // TICKET #006: Forzamos el idioma español para evitar auto-traducciones raras
+    // Inicializamos YoutubeExplode con un cliente estándar pero internamente usa el locale del dispositivo o podemos sobreescribir.
+    _yt = YoutubeExplode(); 
+
     _player.playbackEventStream.listen((PlaybackEvent event) {
       final playing = _player.playing;
+      
+      // TICKET #007: Si se pausa, guardamos el marcador temporal exacto en Hive
+      if (!playing && mediaItem.value != null) {
+        _saveResumePosition(mediaItem.value!.id, _player.position.inMilliseconds);
+      }
+
       playbackState.add(playbackState.value.copyWith(
         controls: [MediaControl.skipToPrevious, if (playing) MediaControl.pause else MediaControl.play, MediaControl.skipToNext],
         systemActions: const {MediaAction.seek, MediaAction.seekForward, MediaAction.seekBackward},
@@ -135,26 +126,83 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
     });
 
     _player.processingStateStream.listen((state) {
-      if (state == ProcessingState.completed) skipToNext();
+      // TICKET #001 y #005: Modo Radio. Si termina la canción...
+      if (state == ProcessingState.completed) {
+        _handleAutoPlayRadio();
+      }
     });
   }
 
+  // --- Lógica de Modo Radio ---
+  Future<void> _handleAutoPlayRadio() async {
+    final currentQueue = queue.value;
+    final currentItem = mediaItem.value;
+    
+    if (currentItem == null) return;
+    
+    final currentIndex = currentQueue.indexWhere((item) => item.id == currentItem.id);
+    
+    if (currentIndex != -1 && currentIndex < currentQueue.length - 1) {
+      // Si hay más canciones en la cola normal, pasa a la siguiente
+      skipToNext();
+    } else {
+      // ¡AQUÍ ESTÁ LA MAGIA! Si se acabó la cola, buscamos un video relacionado para continuar (Modo Radio)
+      try {
+        var relatedVideos = await _yt.videos.getRelatedVideos(VideoId(currentItem.id));
+        if (relatedVideos != null && relatedVideos.isNotEmpty) {
+          final nextVideo = relatedVideos.first;
+          final newItem = MediaItem(
+            id: nextVideo.id.value,
+            title: nextVideo.title,
+            artist: nextVideo.author,
+            duration: nextVideo.duration,
+            artUri: Uri.parse(nextVideo.thumbnails.highResUrl),
+          );
+          
+          final newQueue = List<MediaItem>.from(currentQueue)..add(newItem);
+          await updateQueue(newQueue);
+          await playMediaItem(newItem);
+        }
+      } catch (e) {
+        debugPrint("Error buscando radio relacionada: $e");
+      }
+    }
+  }
+
+  void _saveResumePosition(String id, int milliseconds) {
+    final historyBox = Hive.box('history');
+    if (historyBox.containsKey(id)) {
+      final item = Map<String, dynamic>.from(historyBox.get(id));
+      item['savedPosition'] = milliseconds; // Guardamos el minuto exacto
+      historyBox.put(id, item);
+    }
+  }
+
+  // Comandos personalizados (Sleep Timer)
   @override
-  Future<void> play() => _player.play();
-  @override
-  Future<void> pause() => _player.pause();
-  @override
-  Future<void> seek(Duration position) => _player.seek(position);
-  @override
-  Future<void> skipToNext() async {
+  Future<void> customAction(String name, [Map<String, dynamic>? extras]) async {
+    if (name == 'setSleepTimer' && extras != null) {
+      int minutes = extras['minutes'];
+      _sleepTimer?.cancel();
+      if (minutes > 0) {
+        _sleepTimer = Timer(Duration(minutes: minutes), () => pause());
+      }
+    }
+  }
+
+  @override Future<void> play() => _player.play();
+  @override Future<void> pause() => _player.pause();
+  @override Future<void> seek(Duration position) => _player.seek(position);
+  
+  @override Future<void> skipToNext() async {
     final queueList = queue.value;
     if (queueList.isEmpty) return;
     final currentItem = mediaItem.value;
     final currentIndex = queueList.indexWhere((item) => item.id == currentItem?.id);
     if (currentIndex != -1 && currentIndex < queueList.length - 1) await playMediaItem(queueList[currentIndex + 1]);
   }
-  @override
-  Future<void> skipToPrevious() async {
+  
+  @override Future<void> skipToPrevious() async {
     final queueList = queue.value;
     if (queueList.isEmpty) return;
     final currentItem = mediaItem.value;
@@ -166,29 +214,27 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
   Future<void> playMediaItem(MediaItem item) async {
     mediaItem.add(item);
     
-    // LÓGICA VIP: Guardar en Historial y aumentar contador (+1)
     final historyBox = Hive.box('history');
     int playCount = 1;
+    int savedPosition = 0; // Para el Ticket #007
+    
     if (historyBox.containsKey(item.id)) {
-      playCount = (historyBox.get(item.id)['playCount'] ?? 0) + 1;
+      final existingItem = historyBox.get(item.id);
+      playCount = (existingItem['playCount'] ?? 0) + 1;
+      savedPosition = existingItem['savedPosition'] ?? 0;
     }
     
     historyBox.put(item.id, {
-      'id': item.id,
-      'title': item.title,
-      'artist': item.artist,
-      'artUri': item.artUri.toString(),
-      'duration': item.duration?.inMilliseconds ?? 0,
-      'timestamp': DateTime.now().millisecondsSinceEpoch,
-      'playCount': playCount, // El contador mágico
+      'id': item.id, 'title': item.title, 'artist': item.artist, 'artUri': item.artUri.toString(),
+      'duration': item.duration?.inMilliseconds ?? 0, 'timestamp': DateTime.now().millisecondsSinceEpoch,
+      'playCount': playCount, 'savedPosition': 0, // Reiniciamos al reproducir
     });
 
     try {
       playbackState.add(playbackState.value.copyWith(processingState: AudioProcessingState.loading));
       await _player.stop();
 
-      final videoId = item.id;
-      var manifest = await _yt.videos.streamsClient.getManifest(videoId);
+      var manifest = await _yt.videos.streamsClient.getManifest(item.id);
       StreamInfo streamInfo;
       
       if (manifest.muxed.isNotEmpty) {
@@ -196,30 +242,34 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
       } else if (manifest.audioOnly.isNotEmpty) {
         streamInfo = isHDMode.value ? manifest.audioOnly.withHighestBitrate() : manifest.audioOnly.reduce((a, b) => a.bitrate.bitsPerSecond < b.bitrate.bitsPerSecond ? a : b);
       } else {
-        throw Exception("No hay audios disponibles");
+        throw Exception("No streams");
       }
 
       await _player.setAudioSource(
         AudioSource.uri(
           Uri.parse(streamInfo.url.toString()), tag: item,
-          headers: const {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36'},
+          // Cabeceras modificadas para intentar forzar español
+          headers: const {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36',
+            'Accept-Language': 'es-MX,es;q=0.9,en-US;q=0.8,en;q=0.7' 
+          },
         ),
       );
+      
+      // TICKET #007: Si había una posición guardada, saltamos ahí automáticamente
+      if (savedPosition > 0) {
+        await _player.seek(Duration(milliseconds: savedPosition));
+      }
+      
       await _player.play();
     } catch (e) {
       debugPrint("Error crítico: $e");
-      String errorMsg = e.toString().replaceAll('\n', ' ');
-      mediaItem.add(item.copyWith(artist: "🛑 ${errorMsg.length > 60 ? errorMsg.substring(0,60) : errorMsg}"));
       playbackState.add(playbackState.value.copyWith(processingState: AudioProcessingState.error, playing: false));
     }
   }
 
-  @override
-  Future<void> updateQueue(List<MediaItem> newQueue) async { queue.add(newQueue); }
-  void shuffleQueue() {
-    final currentQueue = queue.value.toList()..shuffle();
-    queue.add(currentQueue);
-  }
+  @override Future<void> updateQueue(List<MediaItem> newQueue) async { queue.add(newQueue); }
+  void shuffleQueue() { final currentQueue = queue.value.toList()..shuffle(); queue.add(currentQueue); }
 }
 
 // -----------------------------------------------------------------------------
@@ -331,42 +381,29 @@ class HomeScreen extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Cabecera VIP
               Padding(
                 padding: const EdgeInsets.all(16.0),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    ValueListenableBuilder<Color>(
-                      valueListenable: appColor,
-                      builder: (context, color, _) => ConspiracyLogo(size: 60, color: color)
-                    ),
+                    ValueListenableBuilder<Color>(valueListenable: appColor, builder: (context, color, _) => ConspiracyLogo(size: 60, color: color)),
                     Row(
                       children: themeColors.map((colorOption) {
                         return GestureDetector(
                           onTap: () => appColor.value = colorOption,
-                          child: Container(
-                            margin: const EdgeInsets.only(left: 8), width: 20, height: 20,
-                            decoration: BoxDecoration(color: colorOption, shape: BoxShape.circle, border: Border.all(color: Colors.white24, width: 1)),
-                          ),
+                          child: Container(margin: const EdgeInsets.only(left: 8), width: 20, height: 20, decoration: BoxDecoration(color: colorOption, shape: BoxShape.circle, border: Border.all(color: Colors.white24, width: 1))),
                         );
                       }).toList(),
                     ),
                   ],
                 ),
               ),
-              
               ValueListenableBuilder(
                 valueListenable: Hive.box('history').listenable(),
                 builder: (context, Box box, _) {
                   if (box.isEmpty) return const Padding(padding: EdgeInsets.all(20), child: Text("Comienza a escuchar música para activar el radar.", style: TextStyle(color: Colors.grey)));
-                  
                   final allItems = box.values.toList().cast<Map>();
-                  
-                  // 1. Escuchado Recientemente (Orden por fecha)
                   final recentItems = List<Map>.from(allItems)..sort((a, b) => (b['timestamp'] as int? ?? 0).compareTo(a['timestamp'] as int? ?? 0));
-                  
-                  // 2. Frecuencia Máxima - Top 25 (Orden por reproducciones)
                   final topItems = List<Map>.from(allItems)..sort((a, b) => (b['playCount'] as int? ?? 0).compareTo(a['playCount'] as int? ?? 0));
                   final top25 = topItems.take(25).toList();
 
@@ -375,7 +412,6 @@ class HomeScreen extends StatelessWidget {
                     children: [
                       const Padding(padding: EdgeInsets.symmetric(horizontal: 16, vertical: 10), child: Text("Escuchado Recientemente", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white))),
                       _buildHorizontalList(recentItems),
-                      
                       const Padding(padding: EdgeInsets.symmetric(horizontal: 16, vertical: 10), child: Text("Tu Frecuencia Máxima (Top 25)", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white))),
                       _buildHorizontalList(top25),
                       const SizedBox(height: 20),
@@ -391,11 +427,10 @@ class HomeScreen extends StatelessWidget {
   }
 }
 
-// --- TAB 1: BUSCADOR (CON HISTORIAL DE BÚSQUEDAS) ---
+// --- TAB 1: BUSCADOR ---
 class SearchScreen extends StatefulWidget {
   const SearchScreen({super.key});
-  @override
-  State<SearchScreen> createState() => _SearchScreenState();
+  @override State<SearchScreen> createState() => _SearchScreenState();
 }
 
 class _SearchScreenState extends State<SearchScreen> {
@@ -406,25 +441,21 @@ class _SearchScreenState extends State<SearchScreen> {
   String? playingVideoId;
   String selectedFilter = 'Todos';
 
-  @override
-  void initState() { super.initState(); Permission.notification.request(); }
+  @override void initState() { super.initState(); Permission.notification.request(); }
 
   void _saveSearchHistory(String query) {
     if (query.trim().isEmpty) return;
     final box = Hive.box('search_history');
     List<String> searches = box.values.cast<String>().toList();
-    searches.remove(query); // Si ya existe, lo quitamos para ponerlo al principio
-    searches.insert(0, query);
-    if (searches.length > 15) searches = searches.sublist(0, 15); // Límite 15
-    box.clear();
-    box.addAll(searches);
+    searches.remove(query); searches.insert(0, query);
+    if (searches.length > 15) searches = searches.sublist(0, 15);
+    box.clear(); box.addAll(searches);
   }
 
   void searchVideos(String query) async {
     if (query.isEmpty) return;
-    FocusScope.of(context).unfocus(); // Ocultar teclado
-    _saveSearchHistory(query); // Guardar historial
-    
+    FocusScope.of(context).unfocus(); 
+    _saveSearchHistory(query); 
     setState(() => isLoading = true);
     try {
       var result = await yt.search.search(query);
@@ -443,7 +474,6 @@ class _SearchScreenState extends State<SearchScreen> {
     await audioHandler.playMediaItem(selectedItem);
   }
 
-  // --- Lógica del Historial de Búsquedas (Visual) ---
   Widget _buildSearchHistory() {
     return ValueListenableBuilder(
       valueListenable: Hive.box('search_history').listenable(),
@@ -454,20 +484,9 @@ class _SearchScreenState extends State<SearchScreen> {
           itemCount: history.length,
           itemBuilder: (context, index) {
             return ListTile(
-              leading: const Icon(Icons.history, color: Colors.grey),
-              title: Text(history[index], style: const TextStyle(color: Colors.white)),
-              trailing: IconButton(
-                icon: const Icon(Icons.close, color: Colors.grey, size: 18),
-                onPressed: () {
-                  final newHistory = List<String>.from(history)..removeAt(index);
-                  box.clear();
-                  box.addAll(newHistory);
-                },
-              ),
-              onTap: () {
-                searchController.text = history[index];
-                searchVideos(history[index]);
-              },
+              leading: const Icon(Icons.history, color: Colors.grey), title: Text(history[index], style: const TextStyle(color: Colors.white)),
+              trailing: IconButton(icon: const Icon(Icons.close, color: Colors.grey, size: 18), onPressed: () { final newHistory = List<String>.from(history)..removeAt(index); box.clear(); box.addAll(newHistory); }),
+              onTap: () { searchController.text = history[index]; searchVideos(history[index]); },
             );
           },
         );
@@ -477,8 +496,7 @@ class _SearchScreenState extends State<SearchScreen> {
 
   void _showSongOptions(BuildContext context, Video video) {
     showModalBottomSheet(
-      context: context, backgroundColor: const Color(0xFF1A1A1A),
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      context: context, backgroundColor: const Color(0xFF1A1A1A), shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (context) {
         return Padding(
           padding: const EdgeInsets.symmetric(vertical: 10),
@@ -487,9 +505,7 @@ class _SearchScreenState extends State<SearchScreen> {
             children: [
               ListTile(leading: ClipRRect(borderRadius: BorderRadius.circular(4), child: Image.network(video.thumbnails.lowResUrl, width: 40, height: 40, fit: BoxFit.cover)), title: Text(video.title, maxLines: 1, overflow: TextOverflow.ellipsis), subtitle: Text(video.author, style: const TextStyle(color: Colors.grey))),
               const Divider(color: Colors.white24),
-              ListTile(
-                leading: const Icon(Icons.queue_music, color: Colors.white), title: const Text('Agregar a cola'),
-                onTap: () {
+              ListTile(leading: const Icon(Icons.queue_music, color: Colors.white), title: const Text('Agregar a cola'), onTap: () {
                   final newItem = MediaItem(id: video.id.value, title: video.title, artist: video.author, duration: video.duration, artUri: Uri.parse(video.thumbnails.highResUrl));
                   final currentQueue = audioHandler.queue.value.toList();
                   if (!currentQueue.any((item) => item.id == newItem.id)) { currentQueue.add(newItem); audioHandler.updateQueue(currentQueue); }
@@ -513,9 +529,7 @@ class _SearchScreenState extends State<SearchScreen> {
             padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
             child: TextField(
               controller: searchController,
-              onChanged: (val) {
-                if (val.isEmpty) setState(() { videos.clear(); });
-              },
+              onChanged: (val) { if (val.isEmpty) setState(() { videos.clear(); }); },
               decoration: InputDecoration(
                 hintText: 'Buscar música...', filled: true, fillColor: const Color(0xFF2A2A2A), contentPadding: const EdgeInsets.symmetric(vertical: 0, horizontal: 20),
                 border: OutlineInputBorder(borderRadius: BorderRadius.circular(30), borderSide: BorderSide.none),
@@ -524,29 +538,13 @@ class _SearchScreenState extends State<SearchScreen> {
               onSubmitted: searchVideos,
             ),
           ),
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-            child: ValueListenableBuilder<Color>(
-              valueListenable: appColor,
-              builder: (context, color, _) {
-                return Row(
-                  children: ['Todos', 'Podcasts', 'Moda', 'Rock'].map((filter) {
-                    final isSelected = selectedFilter == filter;
-                    return Padding(padding: const EdgeInsets.only(right: 8.0), child: ChoiceChip(label: Text(filter, style: TextStyle(color: isSelected ? Colors.white : Colors.grey)), selected: isSelected, selectedColor: color, backgroundColor: const Color(0xFF2A2A2A), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)), onSelected: (bool selected) => setState(() => selectedFilter = filter)));
-                  }).toList(),
-                );
-              }
-            ),
-          ),
           if (isLoading) Expanded(child: Center(child: ValueListenableBuilder<Color>(valueListenable: appColor, builder: (context, color, _) => CircularProgressIndicator(color: color))))
-          else if (videos.isEmpty && searchController.text.isEmpty) Expanded(child: _buildSearchHistory()) // Muestra el Historial
+          else if (videos.isEmpty && searchController.text.isEmpty) Expanded(child: _buildSearchHistory()) 
           else Expanded(
             child: ListView.builder(
               itemCount: videos.length,
               itemBuilder: (context, index) {
-                final video = videos[index];
-                final isPlaying = playingVideoId == video.id.value;
+                final video = videos[index]; final isPlaying = playingVideoId == video.id.value;
                 return ListTile(
                   contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
                   leading: ClipRRect(borderRadius: BorderRadius.circular(8), child: Image.network(video.thumbnails.mediumResUrl, width: 55, height: 55, fit: BoxFit.cover)),
@@ -564,7 +562,7 @@ class _SearchScreenState extends State<SearchScreen> {
   }
 }
 
-// --- TAB 2 Y 3: BÓVEDA Y DEPORTES (SIN CAMBIOS) ---
+// --- TAB 2 Y 3: BÓVEDA Y DEPORTES ---
 class VaultScreen extends StatelessWidget {
   const VaultScreen({super.key});
   @override
@@ -596,7 +594,7 @@ class VaultScreen extends StatelessWidget {
 class SportsScreen extends StatelessWidget { const SportsScreen({super.key}); @override Widget build(BuildContext context) => Scaffold(backgroundColor: const Color(0xFF0A1910), body: Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [Icon(Icons.sports_soccer, size: 80, color: Colors.greenAccent), const SizedBox(height: 20), const Text('Tablero VIP Deportivo', style: TextStyle(color: Colors.white, fontSize: 18))]))); }
 
 // -----------------------------------------------------------------------------
-// REPRODUCTORES (MINI Y PANTALLA COMPLETA - SIN CAMBIOS ESTRUCTURALES)
+// REPRODUCTORES
 // -----------------------------------------------------------------------------
 class MiniPlayer extends StatelessWidget {
   const MiniPlayer({super.key});
@@ -643,27 +641,22 @@ class FullScreenPlayer extends StatelessWidget {
     return "${d.inHours > 0 ? '${d.inHours}:' : ''}$minutes:$seconds";
   }
 
-  void _toggleFavorite(MediaItem item) {
-    final box = Hive.box('favorites');
-    if (box.containsKey(item.id)) box.delete(item.id); else box.put(item.id, {'id': item.id, 'title': item.title, 'artist': item.artist, 'artUri': item.artUri.toString(), 'duration': item.duration?.inMilliseconds ?? 0});
-  }
-
-  void _showQueueList(BuildContext context) {
-    showModalBottomSheet(
-      context: context, backgroundColor: const Color(0xFF1A1A1A), shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (context) {
-        return Column(
+  void _showSleepTimerDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: const Color(0xFF1A1A1A),
+        title: const Text("Temporizador de Sueño", style: TextStyle(color: Colors.white)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            const Padding(padding: EdgeInsets.symmetric(vertical: 20.0), child: Text("Siguiente en la lista", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white))),
-            Expanded(child: StreamBuilder<List<MediaItem>>(stream: audioHandler.queue, builder: (context, snapshot) {
-                  final queueList = snapshot.data ?? [];
-                  return ListView.builder(itemCount: queueList.length, itemBuilder: (context, index) { final item = queueList[index]; return ListTile(leading: ClipRRect(borderRadius: BorderRadius.circular(6), child: Image.network(item.artUri.toString(), width: 45, height: 45, fit: BoxFit.cover)), title: Text(item.title, maxLines: 1, overflow: TextOverflow.ellipsis), subtitle: Text(item.artist ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.grey)), onTap: () { audioHandler.playMediaItem(item); Navigator.pop(context); }); });
-                }
-              ),
-            ),
+            ListTile(title: const Text("Apagar en 15 minutos", style: TextStyle(color: Colors.white)), onTap: () { audioHandler.customAction('setSleepTimer', {'minutes': 15}); Navigator.pop(context); ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Temporizador activado (15 min)"))); }),
+            ListTile(title: const Text("Apagar en 30 minutos", style: TextStyle(color: Colors.white)), onTap: () { audioHandler.customAction('setSleepTimer', {'minutes': 30}); Navigator.pop(context); ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Temporizador activado (30 min)"))); }),
+            ListTile(title: const Text("Apagar en 60 minutos", style: TextStyle(color: Colors.white)), onTap: () { audioHandler.customAction('setSleepTimer', {'minutes': 60}); Navigator.pop(context); ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Temporizador activado (60 min)"))); }),
+            ListTile(title: const Text("Desactivar", style: TextStyle(color: Colors.redAccent)), onTap: () { audioHandler.customAction('setSleepTimer', {'minutes': 0}); Navigator.pop(context); ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Temporizador desactivado"))); }),
           ],
-        );
-      },
+        ),
+      ),
     );
   }
 
@@ -681,8 +674,8 @@ class FullScreenPlayer extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                const SizedBox(height: 16), Container(width: 40, height: 5, decoration: BoxDecoration(color: Colors.grey[600], borderRadius: BorderRadius.circular(10))), const SizedBox(height: 40),
-                ClipRRect(borderRadius: BorderRadius.circular(20), child: Image.network(mediaItem.artUri.toString(), width: MediaQuery.of(context).size.width * 0.85, height: MediaQuery.of(context).size.width * 0.85, fit: BoxFit.cover)), const SizedBox(height: 40),
+                const SizedBox(height: 16), Container(width: 40, height: 5, decoration: BoxDecoration(color: Colors.grey[600], borderRadius: BorderRadius.circular(10))), const SizedBox(height: 30),
+                ClipRRect(borderRadius: BorderRadius.circular(20), child: Image.network(mediaItem.artUri.toString(), width: MediaQuery.of(context).size.width * 0.85, height: MediaQuery.of(context).size.width * 0.85, fit: BoxFit.cover)), const SizedBox(height: 30),
                 
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -692,7 +685,7 @@ class FullScreenPlayer extends StatelessWidget {
                       valueListenable: Hive.box('favorites').listenable(),
                       builder: (context, Box box, _) {
                         final isFav = box.containsKey(mediaItem.id);
-                        return ValueListenableBuilder<Color>(valueListenable: appColor, builder: (context, color, _) => IconButton(icon: Icon(isFav ? Icons.favorite : Icons.favorite_border), iconSize: 32, color: isFav ? Colors.redAccent : color, onPressed: () => _toggleFavorite(mediaItem)));
+                        return ValueListenableBuilder<Color>(valueListenable: appColor, builder: (context, color, _) => IconButton(icon: Icon(isFav ? Icons.favorite : Icons.favorite_border), iconSize: 32, color: isFav ? Colors.redAccent : color, onPressed: () { if (isFav) box.delete(mediaItem.id); else box.put(mediaItem.id, {'id': mediaItem.id, 'title': mediaItem.title, 'artist': mediaItem.artist, 'artUri': mediaItem.artUri.toString(), 'duration': mediaItem.duration?.inMilliseconds ?? 0}); }));
                       }
                     ),
                   ],
@@ -716,13 +709,27 @@ class FullScreenPlayer extends StatelessWidget {
                   builder: (context, snapshot) {
                     final playing = snapshot.data?.playing ?? false; final isBuffering = snapshot.data?.processingState == AudioProcessingState.buffering || snapshot.data?.processingState == AudioProcessingState.loading;
                     return ValueListenableBuilder<Color>(valueListenable: appColor, builder: (context, color, _) {
-                        return Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [ValueListenableBuilder<bool>(valueListenable: isHDMode, builder: (context, isHD, _) => IconButton(icon: Icon(isHD ? Icons.high_quality : Icons.data_saver_on), color: isHD ? color : Colors.grey, onPressed: () { isHDMode.value = !isHD; ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(isHD ? "Ahorro de datos" : "Audio HD"), backgroundColor: color)); })), IconButton(icon: const Icon(Icons.skip_previous), iconSize: 48, color: Colors.white, onPressed: audioHandler.skipToPrevious), Container(width: 80, height: 80, decoration: BoxDecoration(shape: BoxShape.circle, color: color), child: isBuffering ? const Padding(padding: EdgeInsets.all(20.0), child: CircularProgressIndicator(color: Colors.white, strokeWidth: 3)) : IconButton(icon: Icon(playing ? Icons.pause : Icons.play_arrow), iconSize: 48, color: Colors.white, onPressed: () => playing ? audioHandler.pause() : audioHandler.play())), IconButton(icon: const Icon(Icons.skip_next), iconSize: 48, color: Colors.white, onPressed: audioHandler.skipToNext), IconButton(icon: const Icon(Icons.shuffle), color: Colors.grey, onPressed: () { audioHandler.shuffleQueue(); ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: const Text("Lista mezclada"), backgroundColor: color)); })]);
+                        return Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [
+                          IconButton(icon: Icon(Icons.timer, color: color), onPressed: () => _showSleepTimerDialog(context)), // Botón de Sleep Timer
+                          IconButton(icon: const Icon(Icons.skip_previous), iconSize: 48, color: Colors.white, onPressed: audioHandler.skipToPrevious), 
+                          Container(width: 80, height: 80, decoration: BoxDecoration(shape: BoxShape.circle, color: color), child: isBuffering ? const Padding(padding: EdgeInsets.all(20.0), child: CircularProgressIndicator(color: Colors.white, strokeWidth: 3)) : IconButton(icon: Icon(playing ? Icons.pause : Icons.play_arrow), iconSize: 48, color: Colors.white, onPressed: () => playing ? audioHandler.pause() : audioHandler.play())), 
+                          IconButton(icon: const Icon(Icons.skip_next), iconSize: 48, color: Colors.white, onPressed: audioHandler.skipToNext), 
+                          IconButton(icon: const Icon(Icons.shuffle), color: Colors.grey, onPressed: () { audioHandler.shuffleQueue(); ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: const Text("Lista mezclada"), backgroundColor: color)); })
+                        ]);
                       }
                     );
                   }
                 ),
                 const Spacer(),
-                GestureDetector(onTap: () => _showQueueList(context), child: const Column(children: [Icon(Icons.keyboard_arrow_up, color: Colors.grey, size: 30), Text("Cola", style: TextStyle(color: Colors.grey, fontSize: 12)), SizedBox(height: 20)])),
+                GestureDetector(
+                  onTap: () {
+                    showModalBottomSheet(
+                      context: context, backgroundColor: const Color(0xFF1A1A1A), shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+                      builder: (context) => Column(children: [const Padding(padding: EdgeInsets.symmetric(vertical: 20.0), child: Text("Siguiente en la lista", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white))), Expanded(child: StreamBuilder<List<MediaItem>>(stream: audioHandler.queue, builder: (context, snapshot) { final queueList = snapshot.data ?? []; return ListView.builder(itemCount: queueList.length, itemBuilder: (context, index) { final item = queueList[index]; return ListTile(leading: ClipRRect(borderRadius: BorderRadius.circular(6), child: Image.network(item.artUri.toString(), width: 45, height: 45, fit: BoxFit.cover)), title: Text(item.title, maxLines: 1, overflow: TextOverflow.ellipsis), subtitle: Text(item.artist ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.grey)), onTap: () { audioHandler.playMediaItem(item); Navigator.pop(context); }); }); }))]),
+                    );
+                  }, 
+                  child: const Column(children: [Icon(Icons.keyboard_arrow_up, color: Colors.grey, size: 30), Text("Cola", style: TextStyle(color: Colors.grey, fontSize: 12)), SizedBox(height: 20)])
+                ),
               ],
             ),
           );
