@@ -6,7 +6,7 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'dart:math' as math;
-import 'dart:async'; // Necesario para el Timer
+import 'dart:async'; 
 
 // Controladores Globales
 late MyAudioHandler audioHandler;
@@ -92,22 +92,19 @@ class _OsirisEyePainter extends CustomPainter {
 }
 
 // -----------------------------------------------------------------------------
-// MOTOR DE AUDIO VIP (SPRINT 1: RADIO, MARCADORES Y SLEEP TIMER)
+// MOTOR DE AUDIO VIP
 // -----------------------------------------------------------------------------
 class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
   final _player = AudioPlayer();
   late final YoutubeExplode _yt;
-  Timer? _sleepTimer; // TICKET #003: Temporizador
+  Timer? _sleepTimer; 
 
   MyAudioHandler() {
-    // TICKET #006: Forzamos el idioma español para evitar auto-traducciones raras
-    // Inicializamos YoutubeExplode con un cliente estándar pero internamente usa el locale del dispositivo o podemos sobreescribir.
     _yt = YoutubeExplode(); 
 
     _player.playbackEventStream.listen((PlaybackEvent event) {
       final playing = _player.playing;
       
-      // TICKET #007: Si se pausa, guardamos el marcador temporal exacto en Hive
       if (!playing && mediaItem.value != null) {
         _saveResumePosition(mediaItem.value!.id, _player.position.inMilliseconds);
       }
@@ -126,14 +123,13 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
     });
 
     _player.processingStateStream.listen((state) {
-      // TICKET #001 y #005: Modo Radio. Si termina la canción...
       if (state == ProcessingState.completed) {
         _handleAutoPlayRadio();
       }
     });
   }
 
-  // --- Lógica de Modo Radio ---
+  // --- Lógica de Modo Radio CORREGIDA ---
   Future<void> _handleAutoPlayRadio() async {
     final currentQueue = queue.value;
     final currentItem = mediaItem.value;
@@ -143,12 +139,13 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
     final currentIndex = currentQueue.indexWhere((item) => item.id == currentItem.id);
     
     if (currentIndex != -1 && currentIndex < currentQueue.length - 1) {
-      // Si hay más canciones en la cola normal, pasa a la siguiente
       skipToNext();
     } else {
-      // ¡AQUÍ ESTÁ LA MAGIA! Si se acabó la cola, buscamos un video relacionado para continuar (Modo Radio)
       try {
-        var relatedVideos = await _yt.videos.getRelatedVideos(VideoId(currentItem.id));
+        // PASO 1 y 2: Obtenemos el objeto Video completo para que getRelatedVideos no falle
+        var currentVideo = await _yt.videos.get(currentItem.id);
+        var relatedVideos = await _yt.videos.getRelatedVideos(currentVideo);
+        
         if (relatedVideos != null && relatedVideos.isNotEmpty) {
           final nextVideo = relatedVideos.first;
           final newItem = MediaItem(
@@ -173,12 +170,11 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
     final historyBox = Hive.box('history');
     if (historyBox.containsKey(id)) {
       final item = Map<String, dynamic>.from(historyBox.get(id));
-      item['savedPosition'] = milliseconds; // Guardamos el minuto exacto
+      item['savedPosition'] = milliseconds; 
       historyBox.put(id, item);
     }
   }
 
-  // Comandos personalizados (Sleep Timer)
   @override
   Future<void> customAction(String name, [Map<String, dynamic>? extras]) async {
     if (name == 'setSleepTimer' && extras != null) {
@@ -216,7 +212,7 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
     
     final historyBox = Hive.box('history');
     int playCount = 1;
-    int savedPosition = 0; // Para el Ticket #007
+    int savedPosition = 0; 
     
     if (historyBox.containsKey(item.id)) {
       final existingItem = historyBox.get(item.id);
@@ -227,7 +223,7 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
     historyBox.put(item.id, {
       'id': item.id, 'title': item.title, 'artist': item.artist, 'artUri': item.artUri.toString(),
       'duration': item.duration?.inMilliseconds ?? 0, 'timestamp': DateTime.now().millisecondsSinceEpoch,
-      'playCount': playCount, 'savedPosition': 0, // Reiniciamos al reproducir
+      'playCount': playCount, 'savedPosition': 0, 
     });
 
     try {
@@ -248,7 +244,6 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
       await _player.setAudioSource(
         AudioSource.uri(
           Uri.parse(streamInfo.url.toString()), tag: item,
-          // Cabeceras modificadas para intentar forzar español
           headers: const {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36',
             'Accept-Language': 'es-MX,es;q=0.9,en-US;q=0.8,en;q=0.7' 
@@ -256,7 +251,6 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
         ),
       );
       
-      // TICKET #007: Si había una posición guardada, saltamos ahí automáticamente
       if (savedPosition > 0) {
         await _player.seek(Duration(milliseconds: savedPosition));
       }
@@ -334,7 +328,7 @@ class _SuperAppSkeletonState extends State<SuperAppSkeleton> {
   }
 }
 
-// --- TAB 0: INICIO (DASHBOARD INTELIGENTE) ---
+// --- TAB 0: INICIO ---
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
 
@@ -710,7 +704,7 @@ class FullScreenPlayer extends StatelessWidget {
                     final playing = snapshot.data?.playing ?? false; final isBuffering = snapshot.data?.processingState == AudioProcessingState.buffering || snapshot.data?.processingState == AudioProcessingState.loading;
                     return ValueListenableBuilder<Color>(valueListenable: appColor, builder: (context, color, _) {
                         return Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [
-                          IconButton(icon: Icon(Icons.timer, color: color), onPressed: () => _showSleepTimerDialog(context)), // Botón de Sleep Timer
+                          IconButton(icon: Icon(Icons.timer, color: color), onPressed: () => _showSleepTimerDialog(context)), 
                           IconButton(icon: const Icon(Icons.skip_previous), iconSize: 48, color: Colors.white, onPressed: audioHandler.skipToPrevious), 
                           Container(width: 80, height: 80, decoration: BoxDecoration(shape: BoxShape.circle, color: color), child: isBuffering ? const Padding(padding: EdgeInsets.all(20.0), child: CircularProgressIndicator(color: Colors.white, strokeWidth: 3)) : IconButton(icon: Icon(playing ? Icons.pause : Icons.play_arrow), iconSize: 48, color: Colors.white, onPressed: () => playing ? audioHandler.pause() : audioHandler.play())), 
                           IconButton(icon: const Icon(Icons.skip_next), iconSize: 48, color: Colors.white, onPressed: audioHandler.skipToNext), 
