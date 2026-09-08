@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart'; // NATIVO: Para el botón de Compartir (Copiar Portapapeles)
 import 'package:just_audio/just_audio.dart';
 import 'package:audio_session/audio_session.dart';
 import 'package:audio_service/audio_service.dart';
@@ -12,6 +13,7 @@ import 'dart:async';
 late MyAudioHandler audioHandler;
 final ValueNotifier<bool> isHDMode = ValueNotifier<bool>(true);
 final ValueNotifier<Color> appColor = ValueNotifier<Color>(Colors.deepPurpleAccent);
+final ValueNotifier<int> sleepTimerRemaining = ValueNotifier<int>(0); // SPRINT 2: Cronómetro Visual
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -27,7 +29,7 @@ Future<void> main() async {
   audioHandler = await AudioService.init(
     builder: () => MyAudioHandler(),
     config: const AudioServiceConfig(
-      androidNotificationChannelId: 'com.example.media_app.audio_master_v24',
+      androidNotificationChannelId: 'com.example.media_app.audio_master_v25',
       androidNotificationChannelName: 'Spotify Killer VIP',
       androidNotificationOngoing: true,
       androidShowNotificationBadge: true,
@@ -97,7 +99,7 @@ class _OsirisEyePainter extends CustomPainter {
 class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
   final _player = AudioPlayer();
   late final YoutubeExplode _yt;
-  Timer? _sleepTimer; 
+  Timer? _countdownTimer; // SPRINT 2: Cronómetro en vivo
 
   MyAudioHandler() {
     _yt = YoutubeExplode(); 
@@ -129,7 +131,6 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
     });
   }
 
-  // --- Lógica de Modo Radio CORREGIDA ---
   Future<void> _handleAutoPlayRadio() async {
     final currentQueue = queue.value;
     final currentItem = mediaItem.value;
@@ -142,7 +143,6 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
       skipToNext();
     } else {
       try {
-        // PASO 1 y 2: Obtenemos el objeto Video completo para que getRelatedVideos no falle
         var currentVideo = await _yt.videos.get(currentItem.id);
         var relatedVideos = await _yt.videos.getRelatedVideos(currentVideo);
         
@@ -179,9 +179,20 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
   Future<void> customAction(String name, [Map<String, dynamic>? extras]) async {
     if (name == 'setSleepTimer' && extras != null) {
       int minutes = extras['minutes'];
-      _sleepTimer?.cancel();
+      _countdownTimer?.cancel();
+      
       if (minutes > 0) {
-        _sleepTimer = Timer(Duration(minutes: minutes), () => pause());
+        sleepTimerRemaining.value = minutes * 60; // Convertimos a segundos
+        _countdownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+          if (sleepTimerRemaining.value > 0) {
+            sleepTimerRemaining.value--; // Restamos un segundo
+          } else {
+            pause(); // Apagamos la música
+            timer.cancel(); // Matamos el reloj
+          }
+        });
+      } else {
+        sleepTimerRemaining.value = 0; // Desactivado
       }
     }
   }
@@ -228,7 +239,10 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
 
     try {
       playbackState.add(playbackState.value.copyWith(processingState: AudioProcessingState.loading));
+      
+      // LA CURA ZOMBIE
       await _player.stop();
+      await _player.seek(Duration.zero); 
 
       var manifest = await _yt.videos.streamsClient.getManifest(item.id);
       StreamInfo streamInfo;
@@ -421,7 +435,7 @@ class HomeScreen extends StatelessWidget {
   }
 }
 
-// --- TAB 1: BUSCADOR ---
+// --- TAB 1: BUSCADOR VIP (AHORA CON PREDICTIVO Y MENÚ EXPANDIDO) ---
 class SearchScreen extends StatefulWidget {
   const SearchScreen({super.key});
   @override State<SearchScreen> createState() => _SearchScreenState();
@@ -431,6 +445,7 @@ class _SearchScreenState extends State<SearchScreen> {
   final searchController = TextEditingController();
   final yt = YoutubeExplode();
   List<Video> videos = [];
+  List<String> searchSuggestions = []; // SPRINT 2: Caja para autocompletar
   bool isLoading = false;
   String? playingVideoId;
   String selectedFilter = 'Todos';
@@ -450,7 +465,7 @@ class _SearchScreenState extends State<SearchScreen> {
     if (query.isEmpty) return;
     FocusScope.of(context).unfocus(); 
     _saveSearchHistory(query); 
-    setState(() => isLoading = true);
+    setState(() { isLoading = true; searchSuggestions.clear(); }); // Oculta sugerencias al buscar
     try {
       var result = await yt.search.search(query);
       setState(() { videos = result.toList(); isLoading = false; });
@@ -488,6 +503,24 @@ class _SearchScreenState extends State<SearchScreen> {
     );
   }
 
+  // SPRINT 2: Interfaz del Autocompletar
+  Widget _buildLiveSuggestions() {
+    return ListView.builder(
+      itemCount: searchSuggestions.length,
+      itemBuilder: (context, index) {
+        return ListTile(
+          leading: const Icon(Icons.search, color: Colors.grey),
+          title: Text(searchSuggestions[index], style: const TextStyle(color: Colors.white)),
+          onTap: () { 
+            searchController.text = searchSuggestions[index]; 
+            searchVideos(searchSuggestions[index]); 
+          },
+        );
+      },
+    );
+  }
+
+  // SPRINT 2: El Menú VIP (3 Puntos Ampliado)
   void _showSongOptions(BuildContext context, Video video) {
     showModalBottomSheet(
       context: context, backgroundColor: const Color(0xFF1A1A1A), shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
@@ -506,6 +539,21 @@ class _SearchScreenState extends State<SearchScreen> {
                   Navigator.pop(context); ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: const Text('Agregada a la cola'), backgroundColor: appColor.value));
                 },
               ),
+              ListTile(leading: const Icon(Icons.person, color: Colors.white), title: const Text('Ir al Artista'), onTap: () {
+                  Navigator.pop(context);
+                  searchController.text = video.author;
+                  searchVideos(video.author);
+              }),
+              ListTile(leading: const Icon(Icons.delete_outline, color: Colors.redAccent), title: const Text('Eliminar del radar de gustos', style: TextStyle(color: Colors.redAccent)), onTap: () {
+                  Hive.box('history').delete(video.id.value);
+                  Navigator.pop(context); 
+                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Eliminado. Ya no se sugerirá.'), backgroundColor: Colors.redAccent));
+              }),
+              ListTile(leading: const Icon(Icons.share, color: Colors.white), title: const Text('Compartir Enlace'), onTap: () {
+                  Clipboard.setData(ClipboardData(text: 'https://youtube.com/watch?v=${video.id.value}'));
+                  Navigator.pop(context);
+                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: const Text('Enlace copiado al portapapeles'), backgroundColor: appColor.value));
+              }),
             ],
           ),
         );
@@ -523,7 +571,17 @@ class _SearchScreenState extends State<SearchScreen> {
             padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
             child: TextField(
               controller: searchController,
-              onChanged: (val) { if (val.isEmpty) setState(() { videos.clear(); }); },
+              // SPRINT 2: Activa el buscador en vivo
+              onChanged: (val) async { 
+                if (val.isEmpty) {
+                  setState(() { videos.clear(); searchSuggestions.clear(); }); 
+                } else {
+                  try {
+                    var sugs = await yt.search.getSearchSuggestions(val);
+                    setState(() { searchSuggestions = sugs; });
+                  } catch(e) { }
+                }
+              },
               decoration: InputDecoration(
                 hintText: 'Buscar música...', filled: true, fillColor: const Color(0xFF2A2A2A), contentPadding: const EdgeInsets.symmetric(vertical: 0, horizontal: 20),
                 border: OutlineInputBorder(borderRadius: BorderRadius.circular(30), borderSide: BorderSide.none),
@@ -533,6 +591,7 @@ class _SearchScreenState extends State<SearchScreen> {
             ),
           ),
           if (isLoading) Expanded(child: Center(child: ValueListenableBuilder<Color>(valueListenable: appColor, builder: (context, color, _) => CircularProgressIndicator(color: color))))
+          else if (searchSuggestions.isNotEmpty && videos.isEmpty) Expanded(child: _buildLiveSuggestions()) // SPRINT 2: Muestra sugerencias en vivo
           else if (videos.isEmpty && searchController.text.isEmpty) Expanded(child: _buildSearchHistory()) 
           else Expanded(
             child: ListView.builder(
@@ -644,9 +703,9 @@ class FullScreenPlayer extends StatelessWidget {
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            ListTile(title: const Text("Apagar en 15 minutos", style: TextStyle(color: Colors.white)), onTap: () { audioHandler.customAction('setSleepTimer', {'minutes': 15}); Navigator.pop(context); ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Temporizador activado (15 min)"))); }),
-            ListTile(title: const Text("Apagar en 30 minutos", style: TextStyle(color: Colors.white)), onTap: () { audioHandler.customAction('setSleepTimer', {'minutes': 30}); Navigator.pop(context); ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Temporizador activado (30 min)"))); }),
-            ListTile(title: const Text("Apagar en 60 minutos", style: TextStyle(color: Colors.white)), onTap: () { audioHandler.customAction('setSleepTimer', {'minutes': 60}); Navigator.pop(context); ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Temporizador activado (60 min)"))); }),
+            ListTile(title: const Text("Apagar en 15 minutos", style: TextStyle(color: Colors.white)), onTap: () { audioHandler.customAction('setSleepTimer', {'minutes': 15}); Navigator.pop(context); ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Temporizador activado"))); }),
+            ListTile(title: const Text("Apagar en 30 minutos", style: TextStyle(color: Colors.white)), onTap: () { audioHandler.customAction('setSleepTimer', {'minutes': 30}); Navigator.pop(context); ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Temporizador activado"))); }),
+            ListTile(title: const Text("Apagar en 60 minutos", style: TextStyle(color: Colors.white)), onTap: () { audioHandler.customAction('setSleepTimer', {'minutes': 60}); Navigator.pop(context); ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Temporizador activado"))); }),
             ListTile(title: const Text("Desactivar", style: TextStyle(color: Colors.redAccent)), onTap: () { audioHandler.customAction('setSleepTimer', {'minutes': 0}); Navigator.pop(context); ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Temporizador desactivado"))); }),
           ],
         ),
@@ -704,7 +763,27 @@ class FullScreenPlayer extends StatelessWidget {
                     final playing = snapshot.data?.playing ?? false; final isBuffering = snapshot.data?.processingState == AudioProcessingState.buffering || snapshot.data?.processingState == AudioProcessingState.loading;
                     return ValueListenableBuilder<Color>(valueListenable: appColor, builder: (context, color, _) {
                         return Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [
-                          IconButton(icon: Icon(Icons.timer, color: color), onPressed: () => _showSleepTimerDialog(context)), 
+                          
+                          // SPRINT 2: EL CRONÓMETRO VISUAL
+                          ValueListenableBuilder<int>(
+                            valueListenable: sleepTimerRemaining,
+                            builder: (context, timeLeft, _) {
+                              if (timeLeft > 0) {
+                                final m = (timeLeft ~/ 60).toString().padLeft(2, '0');
+                                final s = (timeLeft % 60).toString().padLeft(2, '0');
+                                return GestureDetector(
+                                  onTap: () => _showSleepTimerDialog(context),
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                                    decoration: BoxDecoration(color: color.withOpacity(0.2), borderRadius: BorderRadius.circular(15)),
+                                    child: Text("$m:$s", style: TextStyle(color: color, fontWeight: FontWeight.bold, fontSize: 13)),
+                                  ),
+                                );
+                              }
+                              return IconButton(icon: Icon(Icons.timer, color: color), onPressed: () => _showSleepTimerDialog(context));
+                            }
+                          ),
+
                           IconButton(icon: const Icon(Icons.skip_previous), iconSize: 48, color: Colors.white, onPressed: audioHandler.skipToPrevious), 
                           Container(width: 80, height: 80, decoration: BoxDecoration(shape: BoxShape.circle, color: color), child: isBuffering ? const Padding(padding: EdgeInsets.all(20.0), child: CircularProgressIndicator(color: Colors.white, strokeWidth: 3)) : IconButton(icon: Icon(playing ? Icons.pause : Icons.play_arrow), iconSize: 48, color: Colors.white, onPressed: () => playing ? audioHandler.pause() : audioHandler.play())), 
                           IconButton(icon: const Icon(Icons.skip_next), iconSize: 48, color: Colors.white, onPressed: audioHandler.skipToNext), 
