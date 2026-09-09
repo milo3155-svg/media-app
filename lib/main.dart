@@ -19,7 +19,7 @@ Future<void> main() async {
   await Hive.initFlutter();
   await Hive.openBox('favorites'); await Hive.openBox('history'); await Hive.openBox('search_history');
   final session = await AudioSession.instance; await session.configure(const AudioSessionConfiguration.music());
-  audioHandler = await AudioService.init(builder: () => MyAudioHandler(), config: const AudioServiceConfig(androidNotificationChannelId: 'com.example.media_app.audio_master_v31', androidNotificationChannelName: 'Spotify Killer VIP', androidNotificationOngoing: true, androidShowNotificationBadge: true, androidNotificationIcon: 'drawable/ic_notification'));
+  audioHandler = await AudioService.init(builder: () => MyAudioHandler(), config: const AudioServiceConfig(androidNotificationChannelId: 'com.example.media_app.audio_master_v32', androidNotificationChannelName: 'Spotify Killer VIP', androidNotificationOngoing: true, androidShowNotificationBadge: true, androidNotificationIcon: 'drawable/ic_notification'));
   runApp(const MediaApp());
 }
 
@@ -54,11 +54,6 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
   
   MyAudioHandler() {
     _yt = YoutubeExplode(); 
-    // SPRINT 4.0: ESCUDO ANTI-BANEOS EN EL MOTOR
-    _yt.httpClient.headers['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36';
-    _yt.httpClient.headers['Accept-Language'] = 'es-MX,es;q=0.9,en-US;q=0.8';
-    _yt.httpClient.headers['Cookie'] = 'CONSENT=YES+cb.20210328-17-p0.en+FX+478';
-
     _player.playbackEventStream.listen((PlaybackEvent event) {
       final playing = _player.playing; if (!playing && mediaItem.value != null) { _saveResumePosition(mediaItem.value!.id, _player.position.inMilliseconds); }
       playbackState.add(playbackState.value.copyWith(controls: [MediaControl.skipToPrevious, if (playing) MediaControl.pause else MediaControl.play, MediaControl.skipToNext], systemActions: const {MediaAction.seek, MediaAction.seekForward, MediaAction.seekBackward}, androidCompactActionIndices: const [0, 1, 2], processingState: const {ProcessingState.idle: AudioProcessingState.idle, ProcessingState.loading: AudioProcessingState.loading, ProcessingState.buffering: AudioProcessingState.buffering, ProcessingState.ready: AudioProcessingState.ready, ProcessingState.completed: AudioProcessingState.completed}[_player.processingState]!, playing: playing, updatePosition: _player.position, bufferedPosition: _player.bufferedPosition, speed: _player.speed));
@@ -104,7 +99,7 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
       await _player.stop(); await _player.seek(Duration.zero); 
       var manifest = await _yt.videos.streamsClient.getManifest(item.id); StreamInfo streamInfo;
       if (manifest.muxed.isNotEmpty) { streamInfo = isHDMode.value ? manifest.muxed.withHighestBitrate() : manifest.muxed.reduce((a, b) => a.bitrate.bitsPerSecond < b.bitrate.bitsPerSecond ? a : b); } else if (manifest.audioOnly.isNotEmpty) { streamInfo = isHDMode.value ? manifest.audioOnly.withHighestBitrate() : manifest.audioOnly.reduce((a, b) => a.bitrate.bitsPerSecond < b.bitrate.bitsPerSecond ? a : b); } else { throw Exception("No streams"); }
-      await _player.setAudioSource(AudioSource.uri(Uri.parse(streamInfo.url.toString()), tag: item, headers: const {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36', 'Accept-Language': 'es-MX,es;q=0.9,en-US;q=0.8', 'Cookie': 'CONSENT=YES+cb.20210328-17-p0.en+FX+478'}));
+      await _player.setAudioSource(AudioSource.uri(Uri.parse(streamInfo.url.toString()), tag: item, headers: const {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36'}));
       if (savedPosition > 0) { await _player.seek(Duration(milliseconds: savedPosition)); } await _player.play();
     } catch (e) { playbackState.add(playbackState.value.copyWith(processingState: AudioProcessingState.error, playing: false)); }
   }
@@ -147,10 +142,6 @@ class _SearchScreenState extends State<SearchScreen> {
   @override void initState() { 
     super.initState(); 
     yt = YoutubeExplode();
-    // SPRINT 4.0: ESCUDO ANTI-BANEOS EN EL BUSCADOR
-    yt.httpClient.headers['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36';
-    yt.httpClient.headers['Accept-Language'] = 'es-MX,es;q=0.9,en-US;q=0.8';
-    yt.httpClient.headers['Cookie'] = 'CONSENT=YES+cb.20210328-17-p0.en+FX+478';
     Permission.notification.request(); 
   }
   @override void dispose() { _debounce?.cancel(); searchController.dispose(); super.dispose(); }
@@ -161,7 +152,6 @@ class _SearchScreenState extends State<SearchScreen> {
   void playVideo(Video video) async { 
     setState(() => playingVideoId = video.id.value); 
     final newItem = MediaItem(id: video.id.value, title: video.title, artist: video.author, duration: video.duration, artUri: Uri.parse(video.thumbnails.highResUrl)); 
-    // SPRINT 4.0: CORRECCIÓN DE COLA (Ya no borra ni mezcla canciones seleccionadas)
     await audioHandler.updateQueue([newItem]); 
     await audioHandler.playMediaItem(newItem); 
   }
@@ -289,7 +279,6 @@ class FullScreenPlayer extends StatelessWidget {
                           ValueListenableBuilder<int>(valueListenable: sleepTimerRemaining, builder: (context, timeLeft, _) { if (timeLeft > 0) { final m = (timeLeft ~/ 60).toString().padLeft(2, '0'); final s = (timeLeft % 60).toString().padLeft(2, '0'); return GestureDetector(onTap: () => _showSleepTimerDialog(context), child: Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5), decoration: BoxDecoration(color: color.withOpacity(0.2), borderRadius: BorderRadius.circular(15)), child: Text("$m:$s", style: TextStyle(color: color, fontWeight: FontWeight.bold, fontSize: 13)))); } return IconButton(icon: Icon(Icons.timer, color: color), onPressed: () => _showSleepTimerDialog(context)); }),
                           IconButton(icon: const Icon(Icons.skip_previous), iconSize: 48, color: Colors.white, onPressed: audioHandler.skipToPrevious), 
                           
-                          // SPRINT 4.0: CONTRASTE INTELIGENTE PARA EL BOTON PLAY
                           Container(width: 80, height: 80, decoration: BoxDecoration(shape: BoxShape.circle, color: color), child: isBuffering ? Padding(padding: const EdgeInsets.all(20.0), child: CircularProgressIndicator(color: color == Colors.white ? Colors.black : Colors.white, strokeWidth: 3)) : IconButton(icon: Icon(playing ? Icons.pause : Icons.play_arrow), iconSize: 48, color: color == Colors.white ? Colors.black : Colors.white, onPressed: () => playing ? audioHandler.pause() : audioHandler.play())), 
                           
                           IconButton(icon: const Icon(Icons.skip_next), iconSize: 48, color: Colors.white, onPressed: audioHandler.skipToNext), 
