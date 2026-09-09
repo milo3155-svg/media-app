@@ -6,16 +6,8 @@ import 'package:audio_service/audio_service.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 import 'package:hive_flutter/hive_flutter.dart';
-import 'package:http/http.dart' as http; 
 import 'dart:math' as math;
 import 'dart:async'; 
-
-class MexicanPassportClient extends http.BaseClient {
-  final http.Client _inner = http.Client();
-  @override Future<http.StreamedResponse> send(http.BaseRequest request) {
-    request.headers['Accept-Language'] = 'es-MX,es;q=0.9,en-US;q=0.8'; return _inner.send(request);
-  }
-}
 
 late MyAudioHandler audioHandler;
 final ValueNotifier<bool> isHDMode = ValueNotifier<bool>(true);
@@ -27,7 +19,7 @@ Future<void> main() async {
   await Hive.initFlutter();
   await Hive.openBox('favorites'); await Hive.openBox('history'); await Hive.openBox('search_history');
   final session = await AudioSession.instance; await session.configure(const AudioSessionConfiguration.music());
-  audioHandler = await AudioService.init(builder: () => MyAudioHandler(), config: const AudioServiceConfig(androidNotificationChannelId: 'com.example.media_app.audio_master_v29', androidNotificationChannelName: 'Spotify Killer VIP', androidNotificationOngoing: true, androidShowNotificationBadge: true, androidNotificationIcon: 'drawable/ic_notification'));
+  audioHandler = await AudioService.init(builder: () => MyAudioHandler(), config: const AudioServiceConfig(androidNotificationChannelId: 'com.example.media_app.audio_master_v30', androidNotificationChannelName: 'Spotify Killer VIP', androidNotificationOngoing: true, androidShowNotificationBadge: true, androidNotificationIcon: 'drawable/ic_notification'));
   runApp(const MediaApp());
 }
 
@@ -60,7 +52,7 @@ class _OsirisEyePainter extends CustomPainter {
 class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
   final _player = AudioPlayer(); late final YoutubeExplode _yt; Timer? _countdownTimer; 
   MyAudioHandler() {
-    _yt = YoutubeExplode(MexicanPassportClient()); 
+    _yt = YoutubeExplode(); 
     _player.playbackEventStream.listen((PlaybackEvent event) {
       final playing = _player.playing; if (!playing && mediaItem.value != null) { _saveResumePosition(mediaItem.value!.id, _player.position.inMilliseconds); }
       playbackState.add(playbackState.value.copyWith(controls: [MediaControl.skipToPrevious, if (playing) MediaControl.pause else MediaControl.play, MediaControl.skipToNext], systemActions: const {MediaAction.seek, MediaAction.seekForward, MediaAction.seekBackward}, androidCompactActionIndices: const [0, 1, 2], processingState: const {ProcessingState.idle: AudioProcessingState.idle, ProcessingState.loading: AudioProcessingState.loading, ProcessingState.buffering: AudioProcessingState.buffering, ProcessingState.ready: AudioProcessingState.ready, ProcessingState.completed: AudioProcessingState.completed}[_player.processingState]!, playing: playing, updatePosition: _player.position, bufferedPosition: _player.bufferedPosition, speed: _player.speed));
@@ -142,9 +134,9 @@ class HomeScreen extends StatelessWidget {
 
 class SearchScreen extends StatefulWidget { const SearchScreen({super.key}); @override State<SearchScreen> createState() => _SearchScreenState(); }
 class _SearchScreenState extends State<SearchScreen> {
-  final searchController = TextEditingController(); final yt = YoutubeExplode(MexicanPassportClient()); 
+  final searchController = TextEditingController(); final yt = YoutubeExplode(); 
   List<Video> videos = []; List<String> searchSuggestions = []; bool isLoading = false; String? playingVideoId;
-  Timer? _debounce; // SPRINT 3.2: EL FRENO INTELIGENTE DEL TECLADO
+  Timer? _debounce; 
   final List<String> _categories = ['Tendencias', 'Podcasts', 'Música', 'Mixes', 'Rock', 'Live'];
 
   @override void initState() { super.initState(); Permission.notification.request(); }
@@ -154,7 +146,6 @@ class _SearchScreenState extends State<SearchScreen> {
   void searchVideos(String query) async { if (query.isEmpty) return; FocusScope.of(context).unfocus(); _saveSearchHistory(query); setState(() { isLoading = true; searchSuggestions.clear(); }); try { var result = await yt.search.search(query); if(mounted) setState(() { videos = result.toList(); isLoading = false; }); } catch (e) { if(mounted) { setState(() => isLoading = false); ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red)); } } }
   void playVideo(Video video) async { setState(() => playingVideoId = video.id.value); final queueList = videos.map((v) => MediaItem(id: v.id.value, title: v.title, artist: v.author, duration: v.duration, artUri: Uri.parse(v.thumbnails.highResUrl))).toList(); await audioHandler.updateQueue(queueList); final selectedItem = queueList.firstWhere((item) => item.id == video.id.value); await audioHandler.playMediaItem(selectedItem); }
 
-  // SPRINT 3.2: LA FUSIÓN VISUAL DE HISTORIALES (Textos + Canciones Recientes)
   Widget _buildSearchHistory() {
     return ListView(
       children: [
@@ -211,7 +202,6 @@ class _SearchScreenState extends State<SearchScreen> {
             child: TextField(
               controller: searchController,
               onChanged: (val) { 
-                // SPRINT 3.2: EL FRENO. Espera medio segundo antes de buscar en vivo
                 if (_debounce?.isActive ?? false) _debounce!.cancel();
                 _debounce = Timer(const Duration(milliseconds: 500), () async {
                   if (val.isEmpty) { if(mounted) setState(() { videos.clear(); searchSuggestions.clear(); }); } 
