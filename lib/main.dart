@@ -21,23 +21,31 @@ final ValueNotifier<bool> isHDMode = ValueNotifier<bool>(true);
 final ValueNotifier<Color> appColor = ValueNotifier<Color>(Colors.deepPurpleAccent);
 final ValueNotifier<int> sleepTimerRemaining = ValueNotifier<int>(0); 
 
+// SPRINT 6.0: Función global para formatear duración y no repetir código
+String formatGlobalDuration(Duration? d) {
+  if (d == null) return "Live";
+  final minutes = d.inMinutes.remainder(60).toString().padLeft(2, '0');
+  final seconds = d.inSeconds.remainder(60).toString().padLeft(2, '0');
+  return "${d.inHours > 0 ? '${d.inHours}:' : ''}$minutes:$seconds";
+}
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   HttpOverrides.global = VIPHttpOverrides();
   await Hive.initFlutter();
-  await Hive.openBox('favorites'); await Hive.openBox('history'); await Hive.openBox('search_history');
+  await Hive.openBox('favorites'); await Hive.openBox('history'); await Hive.openBox('search_history'); 
+  await Hive.openBox('playlists'); // SPRINT 6.0: Nueva Bóveda de Playlists
   final session = await AudioSession.instance; await session.configure(const AudioSessionConfiguration.music());
   
   audioHandler = await AudioService.init(
     builder: () => MyAudioHandler(), 
     config: const AudioServiceConfig(
-      androidNotificationChannelId: 'com.example.media_app.audio_master_v50', 
+      androidNotificationChannelId: 'com.example.media_app.audio_master_v60', 
       androidNotificationChannelName: 'Spotify Killer VIP', 
-      // CORRECCIÓN: Quitamos el ongoing para que no choque con nuestro escudo anti-llamadas
       androidNotificationOngoing: false, 
       androidShowNotificationBadge: true, 
       androidStopForegroundOnPause: false, 
-      androidNotificationIcon: 'drawable/ic_notification'
+      androidNotificationIcon: 'mipmap/ic_launcher' // SPRINT 6.0: Usar el icono real de la app en lugar del genérico roto
     )
   );
   runApp(const MediaApp());
@@ -130,7 +138,7 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
 
     final currentIndex = currentQueue.indexWhere((item) => item.id == currentItem.id);
     if (currentIndex != -1 && currentIndex < currentQueue.length - 1) { 
-      await skipToNext(); 
+      await skipToNextBase(); // SPRINT 6.0: Usar el salto base para no hacer bucle infinito
       _isTransitioning = false; return;
     }
 
@@ -183,7 +191,24 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
   @override Future<void> play() => _player.play(); 
   @override Future<void> pause() => _player.pause(); 
   @override Future<void> seek(Duration position) => _player.seek(position);
-  @override Future<void> skipToNext() async { final queueList = queue.value; if (queueList.isEmpty) return; final currentItem = mediaItem.value; final currentIndex = queueList.indexWhere((item) => item.id == currentItem?.id); if (currentIndex != -1 && currentIndex < queueList.length - 1) await playMediaItem(queueList[currentIndex + 1]); }
+  
+  // SPRINT 6.0: El Botón Siguiente Inteligente
+  @override Future<void> skipToNext() async { 
+    final queueList = queue.value; 
+    final currentItem = mediaItem.value; 
+    final currentIndex = queueList.indexWhere((item) => item.id == currentItem?.id); 
+    if (currentIndex != -1 && currentIndex < queueList.length - 1) {
+      await playMediaItem(queueList[currentIndex + 1]); 
+    } else {
+      // Si la cola está vacía, activamos la Radio Infinita forzada
+      _onTrackFinished();
+    }
+  }
+
+  Future<void> skipToNextBase() async {
+    final queueList = queue.value; final currentItem = mediaItem.value; final currentIndex = queueList.indexWhere((item) => item.id == currentItem?.id); if (currentIndex != -1 && currentIndex < queueList.length - 1) await playMediaItem(queueList[currentIndex + 1]);
+  }
+
   @override Future<void> skipToPrevious() async { final queueList = queue.value; if (queueList.isEmpty) return; final currentItem = mediaItem.value; final currentIndex = queueList.indexWhere((item) => item.id == currentItem?.id); if (currentIndex > 0) await playMediaItem(queueList[currentIndex - 1]); }
 
   @override
@@ -221,6 +246,174 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
   void shuffleQueue() { final currentQueue = queue.value.toList()..shuffle(); queue.add(currentQueue); }
 }
 
+// SPRINT 6.0: Funciones VIP Globales para no repetir código
+Future<void> globalPlay(MediaItem item) async {
+  await audioHandler.updateQueue([item]); 
+  await audioHandler.playMediaItem(item);
+}
+
+void globalShowOptions(BuildContext context, Video video, Color color) {
+  showModalBottomSheet(
+    context: context, backgroundColor: const Color(0xFF1A1A1A), isScrollControlled: true,
+    shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))), 
+    builder: (context) { 
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 10), 
+        child: Column(
+          mainAxisSize: MainAxisSize.min, 
+          children: [
+            ListTile(
+              leading: ClipRRect(borderRadius: BorderRadius.circular(4), child: Image.network(video.thumbnails.lowResUrl, width: 40, height: 40, fit: BoxFit.cover)), 
+              title: Text(video.title, maxLines: 1, overflow: TextOverflow.ellipsis), 
+              subtitle: Text(video.author, style: const TextStyle(color: Colors.grey))
+            ), 
+            const Divider(color: Colors.white24), 
+            ListTile(
+              leading: const Icon(Icons.radio, color: Colors.white), 
+              title: const Text('Ir a radio de la canción'), 
+              onTap: () async { 
+                Navigator.pop(context);
+                final newItem = MediaItem(id: video.id.value, title: video.title, artist: video.author, duration: video.duration, artUri: Uri.parse(video.thumbnails.highResUrl)); 
+                await globalPlay(newItem);
+                ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Iniciando Radio de ${video.title}'), backgroundColor: color)); 
+              }
+            ),
+            ListTile(
+              leading: const Icon(Icons.playlist_add, color: Colors.white), 
+              title: const Text('Agregar a una playlist'), 
+              onTap: () { 
+                Navigator.pop(context); 
+                _showPlaylistDialog(context, video, color);
+              }
+            ),
+            ListTile(
+              leading: const Icon(Icons.queue_music, color: Colors.white), 
+              title: const Text('Agregar a la fila de reproducción'), 
+              onTap: () { 
+                final newItem = MediaItem(id: video.id.value, title: video.title, artist: video.author, duration: video.duration, artUri: Uri.parse(video.thumbnails.highResUrl)); 
+                final currentQueue = audioHandler.queue.value.toList(); 
+                if (!currentQueue.any((item) => item.id == newItem.id)) { currentQueue.add(newItem); audioHandler.updateQueue(currentQueue); } 
+                Navigator.pop(context); 
+                ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: const Text('Agregada a la cola'), backgroundColor: color)); 
+              }
+            ), 
+            ValueListenableBuilder(
+              valueListenable: Hive.box('favorites').listenable(),
+              builder: (context, Box box, _) {
+                final isFav = box.containsKey(video.id.value);
+                return ListTile(
+                  leading: Icon(isFav ? Icons.favorite : Icons.favorite_border, color: isFav ? Colors.redAccent : Colors.white), 
+                  title: Text(isFav ? 'Eliminar de Tus me gusta' : 'Agregar a Tus me gusta'), 
+                  onTap: () { 
+                    if (isFav) { box.delete(video.id.value); } 
+                    else { box.put(video.id.value, {'id': video.id.value, 'title': video.title, 'artist': video.author, 'artUri': video.thumbnails.highResUrl, 'duration': video.duration?.inMilliseconds ?? 0}); }
+                    Navigator.pop(context); 
+                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(isFav ? 'Eliminado de Favoritos' : 'Agregado a Favoritos'), backgroundColor: color)); 
+                  }
+                );
+              }
+            ),
+            ListTile(
+              leading: const Icon(Icons.person, color: Colors.white), 
+              title: const Text('Ir al artista'), 
+              onTap: () { 
+                Navigator.pop(context); 
+                Navigator.push(context, MaterialPageRoute(builder: (context) => ArtistProfileScreen(artistName: video.author)));
+              }
+            ), 
+            ListTile(
+              leading: const Icon(Icons.share, color: Colors.white), 
+              title: const Text('Compartir'), 
+              onTap: () { 
+                Clipboard.setData(ClipboardData(text: 'https://youtube.com/watch?v=${video.id.value}')); 
+                Navigator.pop(context); 
+                ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: const Text('Enlace copiado al portapapeles'), backgroundColor: color)); 
+              }
+            )
+          ]
+        )
+      ); 
+    }
+  ); 
+}
+
+// SPRINT 6.0: Dialogo para crear/seleccionar Playlist
+void _showPlaylistDialog(BuildContext context, Video video, Color color) {
+  final box = Hive.box('playlists');
+  final songData = {'id': video.id.value, 'title': video.title, 'artist': video.author, 'artUri': video.thumbnails.highResUrl, 'duration': video.duration?.inMilliseconds ?? 0};
+  
+  showDialog(
+    context: context, 
+    builder: (context) => AlertDialog(
+      backgroundColor: const Color(0xFF1A1A1A),
+      title: const Text("Mis Playlists", style: TextStyle(color: Colors.white)),
+      content: SizedBox(
+        width: double.maxFinite,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.add, color: Colors.white),
+              title: const Text("Crear Nueva Playlist", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
+              onTap: () {
+                Navigator.pop(context);
+                _showCreatePlaylistDialog(context, songData, color);
+              }
+            ),
+            const Divider(color: Colors.white24),
+            if (box.isEmpty) const Padding(padding: EdgeInsets.all(16), child: Text("No tienes playlists aún", style: TextStyle(color: Colors.grey)))
+            else ...box.keys.map((key) => ListTile(
+              leading: const Icon(Icons.queue_music, color: Colors.grey),
+              title: Text(key.toString(), style: const TextStyle(color: Colors.white)),
+              onTap: () {
+                List currentList = box.get(key) ?? [];
+                if (!currentList.any((s) => s['id'] == songData['id'])) {
+                  currentList.add(songData);
+                  box.put(key, currentList);
+                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Agregada a $key'), backgroundColor: color)); 
+                } else {
+                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Ya está en esta playlist'), backgroundColor: Colors.redAccent));
+                }
+                Navigator.pop(context);
+              }
+            )).toList()
+          ],
+        ),
+      ),
+    )
+  );
+}
+
+void _showCreatePlaylistDialog(BuildContext context, Map songData, Color color) {
+  final textController = TextEditingController();
+  showDialog(
+    context: context,
+    builder: (context) => AlertDialog(
+      backgroundColor: const Color(0xFF1A1A1A),
+      title: const Text("Nueva Playlist", style: TextStyle(color: Colors.white)),
+      content: TextField(
+        controller: textController,
+        style: const TextStyle(color: Colors.white),
+        decoration: InputDecoration(hintText: "Nombre de la playlist", hintStyle: const TextStyle(color: Colors.grey), enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: color)), focusedBorder: UnderlineInputBorder(borderSide: BorderSide(color: color))),
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context), child: const Text("Cancelar", style: TextStyle(color: Colors.grey))),
+        TextButton(
+          onPressed: () {
+            if (textController.text.trim().isNotEmpty) {
+              Hive.box('playlists').put(textController.text.trim(), [songData]);
+              Navigator.pop(context);
+              ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Playlist creada'), backgroundColor: color));
+            }
+          }, 
+          child: Text("Crear", style: TextStyle(color: color, fontWeight: FontWeight.bold))
+        )
+      ],
+    )
+  );
+}
+
+
 class MediaApp extends StatelessWidget {
   const MediaApp({super.key});
   @override Widget build(BuildContext context) {
@@ -240,13 +433,12 @@ class _SuperAppSkeletonState extends State<SuperAppSkeleton> {
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
-  Widget _buildHorizontalList(List<Map> items) { return SizedBox(height: 180, child: ListView.builder(scrollDirection: Axis.horizontal, padding: const EdgeInsets.symmetric(horizontal: 16), itemCount: items.length, itemBuilder: (context, index) { final item = items[index]; return GestureDetector(onTap: () async { final mediaItem = MediaItem(id: item['id'], title: item['title'], artist: item['artist'], artUri: Uri.parse(item['artUri']), duration: Duration(milliseconds: item['duration'])); await audioHandler.updateQueue([mediaItem]); await audioHandler.playMediaItem(mediaItem); }, child: Container(width: 120, margin: const EdgeInsets.only(right: 16), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [ClipRRect(borderRadius: BorderRadius.circular(12), child: Image.network(item['artUri'], width: 120, height: 120, fit: BoxFit.cover)), const SizedBox(height: 8), Text(item['title'], maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.white)), Text(item['artist'], maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.grey, fontSize: 11))]))); })); }
+  Widget _buildHorizontalList(List<Map> items) { return SizedBox(height: 180, child: ListView.builder(scrollDirection: Axis.horizontal, padding: const EdgeInsets.symmetric(horizontal: 16), itemCount: items.length, itemBuilder: (context, index) { final item = items[index]; return GestureDetector(onTap: () async { final mediaItem = MediaItem(id: item['id'], title: item['title'], artist: item['artist'], artUri: Uri.parse(item['artUri']), duration: Duration(milliseconds: item['duration'])); await globalPlay(mediaItem); }, child: Container(width: 120, margin: const EdgeInsets.only(right: 16), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [ClipRRect(borderRadius: BorderRadius.circular(12), child: Image.network(item['artUri'], width: 120, height: 120, fit: BoxFit.cover)), const SizedBox(height: 8), Text(item['title'], maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.white)), Text(item['artist'], maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.grey, fontSize: 11))]))); })); }
   @override Widget build(BuildContext context) {
-    return Scaffold(body: SafeArea(child: SingleChildScrollView(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Padding(padding: const EdgeInsets.all(16.0), child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [ValueListenableBuilder<Color>(valueListenable: appColor, builder: (context, color, _) => ConspiracyLogo(size: 60, color: color)), IconButton(icon: const Icon(Icons.settings, color: Colors.grey, size: 28), onPressed: () { showModalBottomSheet(context: context, backgroundColor: const Color(0xFF1A1A1A), builder: (context) => Padding(padding: const EdgeInsets.all(20), child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [const Text("Ajustes VIP", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white)), const SizedBox(height: 20), const Text("Color del Tema", style: TextStyle(color: Colors.grey)), const SizedBox(height: 10), Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [Colors.deepPurpleAccent, Colors.redAccent, Colors.greenAccent, Colors.amberAccent, Colors.blueAccent, Colors.white].map((c) => GestureDetector(onTap: () { appColor.value = c; Navigator.pop(context); }, child: Container(width: 40, height: 40, decoration: BoxDecoration(color: c, shape: BoxShape.circle, border: Border.all(color: Colors.white24, width: 2))))).toList()), const SizedBox(height: 40)]))); })])), ValueListenableBuilder(valueListenable: Hive.box('history').listenable(), builder: (context, Box box, _) { if (box.isEmpty) return const Padding(padding: EdgeInsets.all(20), child: Text("Comienza a escuchar música para activar el radar.", style: TextStyle(color: Colors.grey))); final allItems = box.values.toList().cast<Map>(); final recentItems = List<Map>.from(allItems)..sort((a, b) => (b['timestamp'] as int? ?? 0).compareTo(a['timestamp'] as int? ?? 0)); final topItems = List<Map>.from(allItems)..sort((a, b) => (b['playCount'] as int? ?? 0).compareTo(a['playCount'] as int? ?? 0)); return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [const Padding(padding: EdgeInsets.symmetric(horizontal: 16, vertical: 10), child: Text("Escuchado Recientemente", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white))), _buildHorizontalList(recentItems), const Padding(padding: EdgeInsets.symmetric(horizontal: 16, vertical: 10), child: Text("Tu Frecuencia Máxima (Top 25)", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white))), _buildHorizontalList(topItems.take(25).toList()), const SizedBox(height: 20)]); })]))));
+    return Scaffold(body: SafeArea(child: SingleChildScrollView(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Padding(padding: const EdgeInsets.all(16.0), child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [ValueListenableBuilder<Color>(valueListenable: appColor, builder: (context, color, _) => ConspiracyLogo(size: 60, color: color)), IconButton(icon: const Icon(Icons.settings, color: Colors.grey, size: 28), onPressed: () { showModalBottomSheet(context: context, backgroundColor: const Color(0xFF1A1A1A), builder: (context) => Padding(padding: const EdgeInsets.all(20), child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [const Text("Ajustes VIP", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white)), const SizedBox(height: 20), const Text("Color del Tema", style: TextStyle(color: Colors.grey)), const SizedBox(height: 10), Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [Colors.deepPurpleAccent, Colors.redAccent, Colors.greenAccent, Colors.amberAccent, Colors.blueAccent, Colors.white].map((c) => GestureDetector(onTap: () { appColor.value = c; Navigator.pop(context); }, child: Container(width: 40, height: 40, decoration: BoxDecoration(color: c, shape: BoxShape.circle, border: Border.all(color: Colors.white24, width: 2))))).toList()), const SizedBox(height: 20), const Divider(color: Colors.white24), const SizedBox(height: 10), ListTile(leading: const Icon(Icons.delete_forever, color: Colors.redAccent), title: const Text("Botón Nuclear (Borrar Todo)", style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold)), subtitle: const Text("Resetea todo el algoritmo y bóveda", style: TextStyle(color: Colors.grey, fontSize: 12)), onTap: () { Hive.box('history').clear(); Hive.box('favorites').clear(); Hive.box('search_history').clear(); Hive.box('playlists').clear(); audioHandler.updateQueue([]); Navigator.pop(context); ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Memoria de la app borrada. Renacimiento VIP.'), backgroundColor: Colors.redAccent)); })]))); })])), ValueListenableBuilder(valueListenable: Hive.box('history').listenable(), builder: (context, Box box, _) { if (box.isEmpty) return const Padding(padding: EdgeInsets.all(20), child: Text("Comienza a escuchar música para activar el radar.", style: TextStyle(color: Colors.grey))); final allItems = box.values.toList().cast<Map>(); final recentItems = List<Map>.from(allItems)..sort((a, b) => (b['timestamp'] as int? ?? 0).compareTo(a['timestamp'] as int? ?? 0)); final topItems = List<Map>.from(allItems)..sort((a, b) => (b['playCount'] as int? ?? 0).compareTo(a['playCount'] as int? ?? 0)); return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [const Padding(padding: EdgeInsets.symmetric(horizontal: 16, vertical: 10), child: Text("Escuchado Recientemente", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white))), _buildHorizontalList(recentItems), const Padding(padding: EdgeInsets.symmetric(horizontal: 16, vertical: 10), child: Text("Tu Frecuencia Máxima (Top 25)", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white))), _buildHorizontalList(topItems.take(25).toList()), const SizedBox(height: 20)]); })]))));
   }
 }
 
-// SPRINT 5.0: Pantalla de Perfil de Artista VIP
 class ArtistProfileScreen extends StatefulWidget { 
   final String artistName; 
   const ArtistProfileScreen({super.key, required this.artistName}); 
@@ -285,12 +477,18 @@ class _ArtistProfileScreenState extends State<ArtistProfileScreen> {
                 final video = videos[index];
                 return ListTile(
                   contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  leading: ClipRRect(borderRadius: BorderRadius.circular(8), child: Image.network(video.thumbnails.mediumResUrl, width: 60, height: 60, fit: BoxFit.cover)),
+                  leading: Stack(
+                    children: [
+                      ClipRRect(borderRadius: BorderRadius.circular(8), child: Image.network(video.thumbnails.mediumResUrl, width: 60, height: 60, fit: BoxFit.cover)),
+                      Positioned(bottom: 2, right: 2, child: Container(padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2), decoration: BoxDecoration(color: Colors.black87, borderRadius: BorderRadius.circular(4)), child: Text(formatGlobalDuration(video.duration), style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold))))
+                    ]
+                  ),
                   title: Text(video.title, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w500)),
                   subtitle: Text(video.author, style: const TextStyle(color: Colors.grey)),
+                  trailing: IconButton(icon: const Icon(Icons.more_vert, color: Colors.grey), onPressed: () => globalShowOptions(context, video, appColor.value)),
                   onTap: () async {
                     final newItem = MediaItem(id: video.id.value, title: video.title, artist: video.author, duration: video.duration, artUri: Uri.parse(video.thumbnails.highResUrl));
-                    await audioHandler.updateQueue([newItem]); await audioHandler.playMediaItem(newItem);
+                    await globalPlay(newItem);
                   },
                 );
               },
@@ -309,7 +507,6 @@ class _SearchScreenState extends State<SearchScreen> {
   List<Video> videos = []; List<String> searchSuggestions = []; bool isLoading = false; String? playingVideoId;
   Timer? _debounce; 
   
-  // SPRINT 5.0: Filtro Latino (A la vista corto, búsqueda interna enriquecida)
   final Map<String, String> _categories = {
     'Tendencias': 'Tendencias música en español',
     'Podcasts': 'Podcasts en español',
@@ -325,14 +522,8 @@ class _SearchScreenState extends State<SearchScreen> {
   @override void dispose() { _debounce?.cancel(); searchController.dispose(); super.dispose(); }
 
   void _saveSearchHistory(String query) { if (query.trim().isEmpty) return; final box = Hive.box('search_history'); List<String> searches = box.values.cast<String>().toList(); searches.remove(query); searches.insert(0, query); if (searches.length > 15) searches = searches.sublist(0, 15); box.clear(); box.addAll(searches); }
-  void searchVideos(String query) async { if (query.isEmpty) return; FocusScope.of(context).unfocus(); _saveSearchHistory(query); setState(() { isLoading = true; searchSuggestions.clear(); }); try { var result = await yt.search.search(query); if(mounted) setState(() { videos = result.toList(); isLoading = false; }); } catch (e) { if(mounted) { setState(() => isLoading = false); ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error de Red: $e'), backgroundColor: Colors.red)); } } }
+  void searchVideos(String query) async { if (query.isEmpty) return; FocusScope.of(context).unfocus(); _saveSearchHistory(query); setState(() { isLoading = true; searchSuggestions.clear(); }); try { var result = await yt.search.search(query); if(mounted) setState(() { videos = result.toList(); isLoading = false; }); } catch (e) { if(mounted) { setState(() => isLoading = false); } } }
   
-  void playVideo(Video video) async { 
-    setState(() => playingVideoId = video.id.value); 
-    final newItem = MediaItem(id: video.id.value, title: video.title, artist: video.author, duration: video.duration, artUri: Uri.parse(video.thumbnails.highResUrl)); 
-    await audioHandler.updateQueue([newItem]); await audioHandler.playMediaItem(newItem); 
-  }
-
   Widget _buildSearchHistory() {
     return ListView(
       children: [
@@ -367,7 +558,7 @@ class _SearchScreenState extends State<SearchScreen> {
                   contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
                   leading: ClipRRect(borderRadius: BorderRadius.circular(8), child: Image.network(item['artUri'], width: 50, height: 50, fit: BoxFit.cover)),
                   title: Text(item['title'], maxLines: 1, overflow: TextOverflow.ellipsis), subtitle: Text(item['artist'], maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.grey, fontSize: 12)),
-                  onTap: () async { final mediaItem = MediaItem(id: item['id'], title: item['title'], artist: item['artist'], artUri: Uri.parse(item['artUri']), duration: Duration(milliseconds: item['duration'])); await audioHandler.updateQueue([mediaItem]); await audioHandler.playMediaItem(mediaItem); }
+                  onTap: () async { final mediaItem = MediaItem(id: item['id'], title: item['title'], artist: item['artist'], artUri: Uri.parse(item['artUri']), duration: Duration(milliseconds: item['duration'])); await globalPlay(mediaItem); }
                 );
               }).toList(),
             );
@@ -375,87 +566,6 @@ class _SearchScreenState extends State<SearchScreen> {
         ),
       ],
     );
-  }
-
-  // SPRINT 5.0: Menú Expandido de 3 puntos (Estilo VIP)
-  void _showSongOptions(BuildContext context, Video video) { 
-    showModalBottomSheet(
-      context: context, 
-      backgroundColor: const Color(0xFF1A1A1A), 
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))), 
-      builder: (context) { 
-        return Padding(
-          padding: const EdgeInsets.symmetric(vertical: 10), 
-          child: Column(
-            mainAxisSize: MainAxisSize.min, 
-            children: [
-              ListTile(
-                leading: ClipRRect(borderRadius: BorderRadius.circular(4), child: Image.network(video.thumbnails.lowResUrl, width: 40, height: 40, fit: BoxFit.cover)), 
-                title: Text(video.title, maxLines: 1, overflow: TextOverflow.ellipsis), 
-                subtitle: Text(video.author, style: const TextStyle(color: Colors.grey))
-              ), 
-              const Divider(color: Colors.white24), 
-              ListTile(
-                leading: const Icon(Icons.radio, color: Colors.white), 
-                title: const Text('Ir a radio de la canción'), 
-                onTap: () async { 
-                  Navigator.pop(context);
-                  final newItem = MediaItem(id: video.id.value, title: video.title, artist: video.author, duration: video.duration, artUri: Uri.parse(video.thumbnails.highResUrl)); 
-                  await audioHandler.updateQueue([newItem]); // Esto borra la cola y pone esta pista, forzando la radio.
-                  await audioHandler.playMediaItem(newItem);
-                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Iniciando Radio de ${video.title}'), backgroundColor: appColor.value)); 
-                }
-              ),
-              ListTile(
-                leading: const Icon(Icons.playlist_add, color: Colors.white), 
-                title: const Text('Agregar a la fila de reproducción'), 
-                onTap: () { 
-                  final newItem = MediaItem(id: video.id.value, title: video.title, artist: video.author, duration: video.duration, artUri: Uri.parse(video.thumbnails.highResUrl)); 
-                  final currentQueue = audioHandler.queue.value.toList(); 
-                  if (!currentQueue.any((item) => item.id == newItem.id)) { currentQueue.add(newItem); audioHandler.updateQueue(currentQueue); } 
-                  Navigator.pop(context); 
-                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: const Text('Agregada a la cola'), backgroundColor: appColor.value)); 
-                }
-              ), 
-              ValueListenableBuilder(
-                valueListenable: Hive.box('favorites').listenable(),
-                builder: (context, Box box, _) {
-                  final isFav = box.containsKey(video.id.value);
-                  return ListTile(
-                    leading: Icon(isFav ? Icons.favorite : Icons.favorite_border, color: isFav ? Colors.redAccent : Colors.white), 
-                    title: Text(isFav ? 'Eliminar de Tus me gusta' : 'Agregar a Tus me gusta'), 
-                    onTap: () { 
-                      if (isFav) { box.delete(video.id.value); } 
-                      else { box.put(video.id.value, {'id': video.id.value, 'title': video.title, 'artist': video.author, 'artUri': video.thumbnails.highResUrl, 'duration': video.duration?.inMilliseconds ?? 0}); }
-                      Navigator.pop(context); 
-                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(isFav ? 'Eliminado de Favoritos' : 'Agregado a Favoritos'), backgroundColor: appColor.value)); 
-                    }
-                  );
-                }
-              ),
-              ListTile(
-                leading: const Icon(Icons.person, color: Colors.white), 
-                title: const Text('Ir al artista'), 
-                onTap: () { 
-                  Navigator.pop(context); 
-                  Navigator.push(context, MaterialPageRoute(builder: (context) => ArtistProfileScreen(artistName: video.author)));
-                }
-              ), 
-              ListTile(
-                leading: const Icon(Icons.share, color: Colors.white), 
-                title: const Text('Compartir'), 
-                onTap: () { 
-                  Clipboard.setData(ClipboardData(text: 'https://youtube.com/watch?v=${video.id.value}')); 
-                  Navigator.pop(context); 
-                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: const Text('Enlace copiado al portapapeles'), backgroundColor: appColor.value)); 
-                }
-              )
-            ]
-          )
-        ); 
-      }
-    ); 
   }
 
   @override Widget build(BuildContext context) {
@@ -482,9 +592,9 @@ class _SearchScreenState extends State<SearchScreen> {
             String searchQuery = _categories.values.elementAt(index);
             return Padding(padding: const EdgeInsets.symmetric(horizontal: 4.0), child: ValueListenableBuilder<Color>(valueListenable: appColor, builder: (context, color, _) { 
               return ChoiceChip(label: Text(displayLabel, style: const TextStyle(color: Colors.white)), selected: false, backgroundColor: const Color(0xFF2A2A2A), onSelected: (bool selected) { 
-                searchController.text = displayLabel; // Muestra el texto corto
+                searchController.text = displayLabel;
                 searchController.selection = TextSelection.fromPosition(TextPosition(offset: searchController.text.length)); 
-                searchVideos(searchQuery); // Busca usando el filtro enriquecido (Latino)
+                searchVideos(searchQuery); 
               }); 
             })); 
           })),
@@ -492,21 +602,101 @@ class _SearchScreenState extends State<SearchScreen> {
           if (isLoading) Expanded(child: Center(child: ValueListenableBuilder<Color>(valueListenable: appColor, builder: (context, color, _) => CircularProgressIndicator(color: color))))
           else if (searchSuggestions.isNotEmpty && videos.isEmpty) Expanded(child: ListView.builder(itemCount: searchSuggestions.length, itemBuilder: (context, index) { return ListTile(leading: const Icon(Icons.search, color: Colors.grey), title: Text(searchSuggestions[index], style: const TextStyle(color: Colors.white)), onTap: () { searchController.text = searchSuggestions[index]; searchVideos(searchSuggestions[index]); }); }))
           else if (videos.isEmpty && searchController.text.isEmpty) Expanded(child: _buildSearchHistory()) 
-          else Expanded(child: ListView.builder(itemCount: videos.length, itemBuilder: (context, index) { final video = videos[index]; final isPlaying = playingVideoId == video.id.value; return ListTile(contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4), leading: ClipRRect(borderRadius: BorderRadius.circular(8), child: Image.network(video.thumbnails.mediumResUrl, width: 55, height: 55, fit: BoxFit.cover)), title: Text(video.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w500)), subtitle: Text(video.author, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.grey, fontSize: 13)), trailing: Row(mainAxisSize: MainAxisSize.min, children: [if (isPlaying) ValueListenableBuilder<Color>(valueListenable: appColor, builder: (context, color, _) => Icon(Icons.equalizer, color: color, size: 24)), IconButton(icon: const Icon(Icons.more_vert, color: Colors.grey), onPressed: () => _showSongOptions(context, video))]), onTap: () => playVideo(video)); })),
+          else Expanded(child: ListView.builder(itemCount: videos.length, itemBuilder: (context, index) { 
+            final video = videos[index]; 
+            final isPlaying = playingVideoId == video.id.value; 
+            return ListTile(
+              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4), 
+              leading: Stack(
+                children: [
+                  ClipRRect(borderRadius: BorderRadius.circular(8), child: Image.network(video.thumbnails.mediumResUrl, width: 55, height: 55, fit: BoxFit.cover)),
+                  // SPRINT 6.0: Etiqueta de duración visual en búsquedas
+                  Positioned(bottom: 2, right: 2, child: Container(padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2), decoration: BoxDecoration(color: Colors.black87, borderRadius: BorderRadius.circular(4)), child: Text(formatGlobalDuration(video.duration), style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold))))
+                ]
+              ), 
+              title: Text(video.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w500)), 
+              subtitle: Text(video.author, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.grey, fontSize: 13)), 
+              trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+                if (isPlaying) ValueListenableBuilder<Color>(valueListenable: appColor, builder: (context, color, _) => Icon(Icons.equalizer, color: color, size: 24)), 
+                ValueListenableBuilder<Color>(valueListenable: appColor, builder: (context, color, _) => IconButton(icon: const Icon(Icons.more_vert, color: Colors.grey), onPressed: () => globalShowOptions(context, video, color)))
+              ]), 
+              onTap: () async {
+                setState(() => playingVideoId = video.id.value); 
+                final newItem = MediaItem(id: video.id.value, title: video.title, artist: video.author, duration: video.duration, artUri: Uri.parse(video.thumbnails.highResUrl)); 
+                await globalPlay(newItem);
+              }
+            ); 
+          })),
         ],
       ),
     );
   }
 }
 
-class VaultScreen extends StatelessWidget { const VaultScreen({super.key}); @override Widget build(BuildContext context) { return DefaultTabController(length: 2, child: Scaffold(appBar: AppBar(title: const Text('La Bóveda', style: TextStyle(fontWeight: FontWeight.bold)), bottom: TabBar(indicatorColor: appColor.value, tabs: const [Tab(icon: Icon(Icons.history), text: "Historial Pleno"), Tab(icon: Icon(Icons.favorite), text: "Favoritos")])), body: TabBarView(children: [ValueListenableBuilder(valueListenable: Hive.box('history').listenable(), builder: (context, Box box, _) { if (box.isEmpty) return const Center(child: Text("Sin historial aún", style: TextStyle(color: Colors.grey))); final items = box.values.toList().cast<Map>()..sort((a, b) => (b['timestamp'] as int).compareTo(a['timestamp'] as int)); return ListView.builder(itemCount: items.length, itemBuilder: (context, index) { final item = items[index]; return ListTile(leading: ClipRRect(borderRadius: BorderRadius.circular(8), child: Image.network(item['artUri'], width: 50, height: 50, fit: BoxFit.cover)), title: Text(item['title'], maxLines: 1, overflow: TextOverflow.ellipsis), subtitle: Text(item['artist'], maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.grey)), onTap: () async { final mediaItem = MediaItem(id: item['id'], title: item['title'], artist: item['artist'], artUri: Uri.parse(item['artUri']), duration: Duration(milliseconds: item['duration'])); await audioHandler.updateQueue([mediaItem]); await audioHandler.playMediaItem(mediaItem); }); }); }), ValueListenableBuilder(valueListenable: Hive.box('favorites').listenable(), builder: (context, Box box, _) { if (box.isEmpty) return const Center(child: Text("Sin favoritos aún", style: TextStyle(color: Colors.grey))); final items = box.values.toList().cast<Map>(); return ListView.builder(itemCount: items.length, itemBuilder: (context, index) { final item = items[index]; return ListTile(leading: ClipRRect(borderRadius: BorderRadius.circular(8), child: Image.network(item['artUri'], width: 50, height: 50, fit: BoxFit.cover)), title: Text(item['title'], maxLines: 1, overflow: TextOverflow.ellipsis), subtitle: Text(item['artist'], maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.grey)), trailing: IconButton(icon: const Icon(Icons.favorite, color: Colors.redAccent), onPressed: () => box.delete(item['id'])), onTap: () async { final mediaItem = MediaItem(id: item['id'], title: item['title'], artist: item['artist'], artUri: Uri.parse(item['artUri']), duration: Duration(milliseconds: item['duration'])); await audioHandler.updateQueue([mediaItem]); await audioHandler.playMediaItem(mediaItem); }); }); })]))); } }
+class VaultScreen extends StatelessWidget { 
+  const VaultScreen({super.key}); 
+  @override Widget build(BuildContext context) { 
+    return DefaultTabController(length: 3, child: Scaffold( // SPRINT 6.0: Pestaña 3 para Playlists
+      appBar: AppBar(title: const Text('La Bóveda', style: TextStyle(fontWeight: FontWeight.bold)), bottom: TabBar(indicatorColor: appColor.value, tabs: const [Tab(icon: Icon(Icons.history), text: "Historial"), Tab(icon: Icon(Icons.favorite), text: "Favoritos"), Tab(icon: Icon(Icons.queue_music), text: "Playlists")])), 
+      body: TabBarView(children: [
+        ValueListenableBuilder(valueListenable: Hive.box('history').listenable(), builder: (context, Box box, _) { 
+          if (box.isEmpty) return const Center(child: Text("Sin historial aún", style: TextStyle(color: Colors.grey))); 
+          final items = box.values.toList().cast<Map>()..sort((a, b) => (b['timestamp'] as int).compareTo(a['timestamp'] as int)); 
+          return ListView.builder(itemCount: items.length, itemBuilder: (context, index) { 
+            final item = items[index]; 
+            return ListTile(leading: ClipRRect(borderRadius: BorderRadius.circular(8), child: Image.network(item['artUri'], width: 50, height: 50, fit: BoxFit.cover)), title: Text(item['title'], maxLines: 1, overflow: TextOverflow.ellipsis), subtitle: Text(item['artist'], maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.grey)), onTap: () async { final mediaItem = MediaItem(id: item['id'], title: item['title'], artist: item['artist'], artUri: Uri.parse(item['artUri']), duration: Duration(milliseconds: item['duration'])); await globalPlay(mediaItem); }); 
+          }); 
+        }), 
+        ValueListenableBuilder(valueListenable: Hive.box('favorites').listenable(), builder: (context, Box box, _) { 
+          if (box.isEmpty) return const Center(child: Text("Sin favoritos aún", style: TextStyle(color: Colors.grey))); 
+          final items = box.values.toList().cast<Map>(); 
+          return ListView.builder(itemCount: items.length, itemBuilder: (context, index) { 
+            final item = items[index]; 
+            return ListTile(leading: ClipRRect(borderRadius: BorderRadius.circular(8), child: Image.network(item['artUri'], width: 50, height: 50, fit: BoxFit.cover)), title: Text(item['title'], maxLines: 1, overflow: TextOverflow.ellipsis), subtitle: Text(item['artist'], maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.grey)), trailing: IconButton(icon: const Icon(Icons.favorite, color: Colors.redAccent), onPressed: () => box.delete(item['id'])), onTap: () async { final mediaItem = MediaItem(id: item['id'], title: item['title'], artist: item['artist'], artUri: Uri.parse(item['artUri']), duration: Duration(milliseconds: item['duration'])); await globalPlay(mediaItem); }); 
+          }); 
+        }),
+        // SPRINT 6.0: Tab de Mis Playlists
+        ValueListenableBuilder(valueListenable: Hive.box('playlists').listenable(), builder: (context, Box box, _) { 
+          if (box.isEmpty) return const Center(child: Text("Toca los 3 puntitos en una canción para armar listas", style: TextStyle(color: Colors.grey))); 
+          final keys = box.keys.toList(); 
+          return ListView.builder(itemCount: keys.length, itemBuilder: (context, index) { 
+            final playlistName = keys[index].toString();
+            final List tracks = box.get(playlistName) ?? [];
+            return ExpansionTile(
+              leading: Icon(Icons.album, color: appColor.value),
+              title: Text(playlistName, style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
+              subtitle: Text("${tracks.length} pistas", style: const TextStyle(color: Colors.grey)),
+              trailing: IconButton(icon: const Icon(Icons.delete, color: Colors.redAccent), onPressed: () => box.delete(playlistName)),
+              children: tracks.map((t) {
+                final item = t as Map;
+                return ListTile(
+                  contentPadding: const EdgeInsets.only(left: 40, right: 16),
+                  leading: ClipRRect(borderRadius: BorderRadius.circular(4), child: Image.network(item['artUri'], width: 40, height: 40, fit: BoxFit.cover)),
+                  title: Text(item['title'], maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 14)),
+                  subtitle: Text(item['artist'], maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.grey, fontSize: 12)),
+                  trailing: IconButton(icon: const Icon(Icons.remove_circle_outline, color: Colors.grey, size: 20), onPressed: () {
+                    tracks.removeWhere((s) => s['id'] == item['id']);
+                    box.put(playlistName, tracks);
+                  }),
+                  onTap: () async { 
+                    final mediaItem = MediaItem(id: item['id'], title: item['title'], artist: item['artist'], artUri: Uri.parse(item['artUri']), duration: Duration(milliseconds: item['duration'])); 
+                    await globalPlay(mediaItem); 
+                  }
+                );
+              }).toList(),
+            ); 
+          }); 
+        })
+      ]
+    ))); 
+  } 
+}
 class SportsScreen extends StatelessWidget { const SportsScreen({super.key}); @override Widget build(BuildContext context) => Scaffold(backgroundColor: const Color(0xFF0A1910), body: Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [Icon(Icons.sports_soccer, size: 80, color: Colors.greenAccent), const SizedBox(height: 20), const Text('Tablero VIP Deportivo', style: TextStyle(color: Colors.white, fontSize: 18))]))); }
 
 class MiniPlayer extends StatelessWidget { const MiniPlayer({super.key}); @override Widget build(BuildContext context) { return StreamBuilder<MediaItem?>(stream: audioHandler.mediaItem, builder: (context, snapshot) { final mediaItem = snapshot.data; if (mediaItem == null) return const SizedBox.shrink(); return GestureDetector(onTap: () => showModalBottomSheet(context: context, isScrollControlled: true, backgroundColor: Colors.transparent, builder: (context) => const FullScreenPlayer()), child: Container(padding: const EdgeInsets.only(left: 16, right: 16, top: 8, bottom: 8), decoration: const BoxDecoration(color: Color(0xFF1A1A1A), border: Border(top: BorderSide(color: Color(0xFF2A2A2A), width: 1))), child: Row(children: [ClipRRect(borderRadius: BorderRadius.circular(8), child: Image.network(mediaItem.artUri.toString(), width: 45, height: 45, fit: BoxFit.cover)), const SizedBox(width: 12), Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [Text(mediaItem.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white)), Text(mediaItem.artist ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.grey))])), StreamBuilder<PlaybackState>(stream: audioHandler.playbackState, builder: (context, snapshot) { final playing = snapshot.data?.playing ?? false; final isBuffering = snapshot.data?.processingState == AudioProcessingState.buffering || snapshot.data?.processingState == AudioProcessingState.loading; return ValueListenableBuilder<Color>(valueListenable: appColor, builder: (context, color, _) { if (isBuffering) return Padding(padding: const EdgeInsets.all(12.0), child: SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2, color: color))); return IconButton(icon: Icon(playing ? Icons.pause_circle_filled : Icons.play_circle_fill), iconSize: 42, color: color, onPressed: () => playing ? audioHandler.pause() : audioHandler.play()); }); })]))); }); } }
 
 class FullScreenPlayer extends StatelessWidget {
   const FullScreenPlayer({super.key});
-  String _formatDuration(Duration d) { final minutes = d.inMinutes.remainder(60).toString().padLeft(2, '0'); final seconds = d.inSeconds.remainder(60).toString().padLeft(2, '0'); return "${d.inHours > 0 ? '${d.inHours}:' : ''}$minutes:$seconds"; }
   void _showSleepTimerDialog(BuildContext context) { showDialog(context: context, builder: (context) => AlertDialog(backgroundColor: const Color(0xFF1A1A1A), title: const Text("Temporizador de Sueño", style: TextStyle(color: Colors.white)), content: Column(mainAxisSize: MainAxisSize.min, children: [ListTile(title: const Text("Apagar en 15 minutos", style: TextStyle(color: Colors.white)), onTap: () { audioHandler.customAction('setSleepTimer', {'minutes': 15}); Navigator.pop(context); ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Temporizador activado"))); }), ListTile(title: const Text("Apagar en 30 minutos", style: TextStyle(color: Colors.white)), onTap: () { audioHandler.customAction('setSleepTimer', {'minutes': 30}); Navigator.pop(context); ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Temporizador activado"))); }), ListTile(title: const Text("Apagar en 60 minutos", style: TextStyle(color: Colors.white)), onTap: () { audioHandler.customAction('setSleepTimer', {'minutes': 60}); Navigator.pop(context); ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Temporizador activado"))); }), ListTile(title: const Text("Desactivar", style: TextStyle(color: Colors.redAccent)), onTap: () { audioHandler.customAction('setSleepTimer', {'minutes': 0}); Navigator.pop(context); ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Temporizador desactivado"))); })]))); }
 
   @override Widget build(BuildContext context) {
@@ -529,7 +719,7 @@ class FullScreenPlayer extends StatelessWidget {
                       stream: audioHandler.playbackState, builder: (context, snapshotState) {
                         double bufferedValue = snapshotState.data?.bufferedPosition.inMilliseconds.toDouble() ?? 0.0; if (bufferedValue > durationValue) bufferedValue = durationValue;
                         return ValueListenableBuilder<Color>(valueListenable: appColor, builder: (context, color, _) {
-                            return Column(children: [SliderTheme(data: SliderTheme.of(context).copyWith(trackHeight: 4, thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 8), overlayShape: const RoundSliderOverlayShape(overlayRadius: 16), activeTrackColor: color, inactiveTrackColor: Colors.grey[800], secondaryActiveTrackColor: Colors.white30, thumbColor: color), child: Slider(value: positionValue, secondaryTrackValue: bufferedValue, max: durationValue, onChanged: (value) => audioHandler.seek(Duration(milliseconds: value.toInt())))), Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [Text(_formatDuration(position), style: const TextStyle(fontSize: 12, color: Colors.grey)), Text(_formatDuration(duration), style: const TextStyle(fontSize: 12, color: Colors.grey))])]);
+                            return Column(children: [SliderTheme(data: SliderTheme.of(context).copyWith(trackHeight: 4, thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 8), overlayShape: const RoundSliderOverlayShape(overlayRadius: 16), activeTrackColor: color, inactiveTrackColor: Colors.grey[800], secondaryActiveTrackColor: Colors.white30, thumbColor: color), child: Slider(value: positionValue, secondaryTrackValue: bufferedValue, max: durationValue, onChanged: (value) => audioHandler.seek(Duration(milliseconds: value.toInt())))), Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [Text(formatGlobalDuration(position), style: const TextStyle(fontSize: 12, color: Colors.grey)), Text(formatGlobalDuration(duration), style: const TextStyle(fontSize: 12, color: Colors.grey))])]);
                           }
                         );
                       }
@@ -554,7 +744,6 @@ class FullScreenPlayer extends StatelessWidget {
                 ),
                 const Spacer(),
                 GestureDetector(onTap: () { showModalBottomSheet(context: context, backgroundColor: const Color(0xFF1A1A1A), shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))), builder: (context) => Column(children: [const Padding(padding: EdgeInsets.symmetric(vertical: 20.0), child: Text("Siguiente en la lista", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white))), Expanded(child: StreamBuilder<List<MediaItem>>(stream: audioHandler.queue, builder: (context, snapshot) { 
-                  // SPRINT 5.0: Ocultar la pista actual de la cola visual
                   final queueList = (snapshot.data ?? []).where((item) => item.id != mediaItem.id).toList(); 
                   if (queueList.isEmpty) return const Center(child: Text("La Radio Infinita decidirá qué sigue...", style: TextStyle(color: Colors.grey)));
                   return ListView.builder(itemCount: queueList.length, itemBuilder: (context, index) { final item = queueList[index]; return ListTile(leading: ClipRRect(borderRadius: BorderRadius.circular(6), child: Image.network(item.artUri.toString(), width: 45, height: 45, fit: BoxFit.cover)), title: Text(item.title, maxLines: 1, overflow: TextOverflow.ellipsis), subtitle: Text(item.artist ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.grey)), onTap: () { audioHandler.playMediaItem(item); Navigator.pop(context); }); }); }))])); }, child: const Column(children: [Icon(Icons.keyboard_arrow_up, color: Colors.grey, size: 30), Text("Cola", style: TextStyle(color: Colors.grey, fontSize: 12)), SizedBox(height: 20)])),
