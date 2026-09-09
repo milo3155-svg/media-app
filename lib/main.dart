@@ -33,9 +33,9 @@ Future<void> main() async {
     config: const AudioServiceConfig(
       androidNotificationChannelId: 'com.example.media_app.audio_master_v50', 
       androidNotificationChannelName: 'Spotify Killer VIP', 
-      androidNotificationOngoing: true, 
+      // CORRECCIÓN: Quitamos el ongoing para que no choque con nuestro escudo anti-llamadas
+      androidNotificationOngoing: false, 
       androidShowNotificationBadge: true, 
-      // SPRINT 5.0: Inmortalidad en Pausa y Anti-Deep Sleep
       androidStopForegroundOnPause: false, 
       androidNotificationIcon: 'drawable/ic_notification'
     )
