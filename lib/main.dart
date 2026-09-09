@@ -27,7 +27,16 @@ Future<void> main() async {
   await Hive.initFlutter();
   await Hive.openBox('favorites'); await Hive.openBox('history'); await Hive.openBox('search_history');
   final session = await AudioSession.instance; await session.configure(const AudioSessionConfiguration.music());
-  audioHandler = await AudioService.init(builder: () => MyAudioHandler(), config: const AudioServiceConfig(androidNotificationChannelId: 'com.example.media_app.audio_master_v42', androidNotificationChannelName: 'Spotify Killer VIP', androidNotificationOngoing: true, androidShowNotificationBadge: true, androidNotificationIcon: 'drawable/ic_notification'));
+  audioHandler = await AudioService.init(
+    builder: () => MyAudioHandler(), 
+    config: const AudioServiceConfig(
+      androidNotificationChannelId: 'com.example.media_app.audio_master_v45', 
+      androidNotificationChannelName: 'Spotify Killer VIP', 
+      androidNotificationOngoing: true, 
+      androidShowNotificationBadge: true, 
+      androidNotificationIcon: 'drawable/ic_notification'
+    )
+  );
   runApp(const MediaApp());
 }
 
@@ -44,7 +53,7 @@ class _OsirisEyePainter extends CustomPainter {
     final textSpan = TextSpan(text: text, style: TextStyle(color: color, fontSize: fontSize, fontWeight: FontWeight.bold, letterSpacing: 2, fontFamily: 'Courier'));
     final textPainter = TextPainter(text: textSpan, textDirection: TextDirection.ltr); textPainter.layout(); textPainter.paint(canvas, Offset(-textPainter.width / 2, -textPainter.height - 2)); canvas.restore();
   }
-  @override void paint(Canvas canvas, Size size) {
+  @override paint(Canvas canvas, Size size) {
     final w = size.width; final h = size.height;
     final paint = Paint()..color = color..style = PaintingStyle.stroke..strokeWidth = w * 0.05..strokeJoin = StrokeJoin.round..strokeCap = StrokeCap.round;
     final p1 = Offset(w * 0.15, h * 0.15); final p2 = Offset(w * 0.15, h * 0.85); final p3 = Offset(w * 0.90, h * 0.50); 
@@ -58,62 +67,175 @@ class _OsirisEyePainter extends CustomPainter {
 }
 
 class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
-  final _player = AudioPlayer(); late final YoutubeExplode _yt; Timer? _countdownTimer; 
-  
+  final _player = AudioPlayer(); 
+  late final YoutubeExplode _yt; 
+  Timer? _countdownTimer; 
+  bool _isTransitioning = false; // Candado para evitar dobles saltos
+
   MyAudioHandler() {
-    _yt = YoutubeExplode(); 
+    _yt = YoutubeExplode();
+
     _player.playbackEventStream.listen((PlaybackEvent event) {
-      final playing = _player.playing; if (!playing && mediaItem.value != null) { _saveResumePosition(mediaItem.value!.id, _player.position.inMilliseconds); }
-      playbackState.add(playbackState.value.copyWith(controls: [MediaControl.skipToPrevious, if (playing) MediaControl.pause else MediaControl.play, MediaControl.skipToNext], systemActions: const {MediaAction.seek, MediaAction.seekForward, MediaAction.seekBackward}, androidCompactActionIndices: const [0, 1, 2], processingState: const {ProcessingState.idle: AudioProcessingState.idle, ProcessingState.loading: AudioProcessingState.loading, ProcessingState.buffering: AudioProcessingState.buffering, ProcessingState.ready: AudioProcessingState.ready, ProcessingState.completed: AudioProcessingState.completed}[_player.processingState]!, playing: playing, updatePosition: _player.position, bufferedPosition: _player.bufferedPosition, speed: _player.speed));
+      final playing = _player.playing; 
+      if (!playing && mediaItem.value != null) { 
+        _saveResumePosition(mediaItem.value!.id, _player.position.inMilliseconds); 
+      }
+      playbackState.add(playbackState.value.copyWith(
+        controls: [MediaControl.skipToPrevious, if (playing) MediaControl.pause else MediaControl.play, MediaControl.skipToNext], 
+        systemActions: const {MediaAction.seek, MediaAction.seekForward, MediaAction.seekBackward}, 
+        androidCompactActionIndices: const [0, 1, 2], 
+        processingState: const {
+          ProcessingState.idle: AudioProcessingState.idle, 
+          ProcessingState.loading: AudioProcessingState.loading, 
+          ProcessingState.buffering: AudioProcessingState.buffering, 
+          ProcessingState.ready: AudioProcessingState.ready, 
+          ProcessingState.completed: AudioProcessingState.completed
+        }[_player.processingState]!, 
+        playing: playing, 
+        updatePosition: _player.position, 
+        bufferedPosition: _player.bufferedPosition, 
+        speed: _player.speed
+      ));
     });
-    
-    // RESTAURACIÓN TÁCTICA: Búsqueda segura solo al terminar la canción.
+
+    // DISPARADOR 1: Por estado completed nativo
     _player.processingStateStream.listen((state) { 
-      if (state == ProcessingState.completed) { _handleAutoPlayRadio(); } 
+      if (state == ProcessingState.completed) { 
+        _onTrackFinished(); 
+      } 
+    });
+
+    // DISPARADOR 2: Por proximidad de tiempo (Mata el congelamiento en el último segundo)
+    _player.positionStream.listen((pos) {
+      final dur = _player.duration;
+      if (dur != null && dur.inSeconds > 10) {
+        // Si faltan menos de 800ms para el fin y seguimos reproduciendo
+        if (dur.inMilliseconds - pos.inMilliseconds <= 800 && !_isTransitioning) {
+          _onTrackFinished();
+        }
+      }
     });
   }
 
+  void _onTrackFinished() {
+    if (_isTransitioning) return;
+    _isTransitioning = true;
+    _handleAutoPlayRadio();
+  }
+
   Future<void> _handleAutoPlayRadio() async {
-    final currentQueue = queue.value; final currentItem = mediaItem.value; if (currentItem == null) return;
+    final currentQueue = queue.value; 
+    final currentItem = mediaItem.value; 
+    if (currentItem == null) {
+      _isTransitioning = false;
+      return;
+    }
+
     final currentIndex = currentQueue.indexWhere((item) => item.id == currentItem.id);
-    if (currentIndex != -1 && currentIndex < currentQueue.length - 1) { skipToNext(); } else {
+    // Si hay más canciones en la cola manual del usuario, avanzamos
+    if (currentIndex != -1 && currentIndex < currentQueue.length - 1) { 
+      await skipToNext(); 
+      _isTransitioning = false;
+      return;
+    }
+
+    // Si la cola terminó, la Radio Infinita toma el relevo
+    try {
+      Video? nextVideo;
+      // Intento 1: Videos relacionados
       try {
-        var currentVideo = await _yt.videos.get(currentItem.id); var relatedVideos = await _yt.videos.getRelatedVideos(currentVideo);
+        var currentVideo = await _yt.videos.get(currentItem.id);
+        var relatedVideos = await _yt.videos.getRelatedVideos(currentVideo);
         if (relatedVideos != null && relatedVideos.isNotEmpty) {
-          Video? nextVideo;
-          String clean1 = currentItem.title.toLowerCase().replaceAll(RegExp(r'[^a-z0-9áéíóúñ\s]'), ''); Set<String> words1 = clean1.split(' ').where((w) => w.length > 2).toSet();
+          String clean1 = currentItem.title.toLowerCase().replaceAll(RegExp(r'[^a-z0-9áéíóúñ\s]'), ''); 
+          Set<String> words1 = clean1.split(' ').where((w) => w.length > 2).toSet();
           for (var v in relatedVideos) {
-            bool isClone = false; String clean2 = v.title.toLowerCase().replaceAll(RegExp(r'[^a-z0-9áéíóúñ\s]'), ''); Set<String> words2 = clean2.split(' ').where((w) => w.length > 2).toSet();
-            if (words1.isNotEmpty && words2.isNotEmpty) { int matches = words1.intersection(words2).length; double similarity = matches / math.min(words1.length, words2.length); if (similarity >= 0.5) isClone = true; }
-            if (isClone) continue; nextVideo = v; break; 
+            bool isClone = false; 
+            String clean2 = v.title.toLowerCase().replaceAll(RegExp(r'[^a-z0-9áéíóúñ\s]'), ''); 
+            Set<String> words2 = clean2.split(' ').where((w) => w.length > 2).toSet();
+            if (words1.isNotEmpty && words2.isNotEmpty) { 
+              int matches = words1.intersection(words2).length; 
+              double similarity = matches / math.min(words1.length, words2.length); 
+              if (similarity >= 0.5) isClone = true; 
+            }
+            if (isClone) continue; 
+            nextVideo = v; 
+            break; 
           }
           nextVideo ??= relatedVideos.first;
-          final newItem = MediaItem(id: nextVideo.id.value, title: nextVideo.title, artist: nextVideo.author, duration: nextVideo.duration, artUri: Uri.parse(nextVideo.thumbnails.highResUrl));
-          final newQueue = List<MediaItem>.from(currentQueue)..add(newItem); await updateQueue(newQueue); await playMediaItem(newItem);
         }
-      } catch (e) { debugPrint("Radio Error: $e"); }
+      } catch (_) {}
+
+      // Intento 2 (FALLBACK): Búsqueda por artista si los relacionados fallaron
+      if (nextVideo == null) {
+        final query = "${currentItem.artist} mix";
+        final searchResults = await _yt.search.search(query);
+        final list = searchResults.where((v) => v.id.value != currentItem.id).toList();
+        if (list.isNotEmpty) {
+          nextVideo = list.first;
+        }
+      }
+
+      if (nextVideo != null) {
+        final newItem = MediaItem(
+          id: nextVideo.id.value, 
+          title: nextVideo.title, 
+          artist: nextVideo.author, 
+          duration: nextVideo.duration, 
+          artUri: Uri.parse(nextVideo.thumbnails.highResUrl)
+        );
+        final newQueue = List<MediaItem>.from(currentQueue)..add(newItem); 
+        await updateQueue(newQueue); 
+        await playMediaItem(newItem);
+      }
+    } catch (e) { 
+      debugPrint("Fallo total de Radio: $e");
+    } finally {
+      _isTransitioning = false;
     }
   }
 
   void _saveResumePosition(String id, int milliseconds) { final historyBox = Hive.box('history'); if (historyBox.containsKey(id)) { final item = Map<String, dynamic>.from(historyBox.get(id)); item['savedPosition'] = milliseconds; historyBox.put(id, item); } }
   @override Future<void> customAction(String name, [Map<String, dynamic>? extras]) async { if (name == 'setSleepTimer' && extras != null) { int minutes = extras['minutes']; _countdownTimer?.cancel(); if (minutes > 0) { sleepTimerRemaining.value = minutes * 60; _countdownTimer = Timer.periodic(const Duration(seconds: 1), (timer) { if (sleepTimerRemaining.value > 0) { sleepTimerRemaining.value--; } else { pause(); timer.cancel(); } }); } else { sleepTimerRemaining.value = 0; } } }
-  @override Future<void> play() => _player.play(); @override Future<void> pause() => _player.pause(); @override Future<void> seek(Duration position) => _player.seek(position);
+  @override Future<void> play() => _player.play(); 
+  @override Future<void> pause() => _player.pause(); 
+  @override Future<void> seek(Duration position) => _player.seek(position);
   @override Future<void> skipToNext() async { final queueList = queue.value; if (queueList.isEmpty) return; final currentItem = mediaItem.value; final currentIndex = queueList.indexWhere((item) => item.id == currentItem?.id); if (currentIndex != -1 && currentIndex < queueList.length - 1) await playMediaItem(queueList[currentIndex + 1]); }
   @override Future<void> skipToPrevious() async { final queueList = queue.value; if (queueList.isEmpty) return; final currentItem = mediaItem.value; final currentIndex = queueList.indexWhere((item) => item.id == currentItem?.id); if (currentIndex > 0) await playMediaItem(queueList[currentIndex - 1]); }
 
   @override
   Future<void> playMediaItem(MediaItem item) async {
-    mediaItem.add(item); final historyBox = Hive.box('history'); int playCount = 1; int savedPosition = 0; 
-    if (historyBox.containsKey(item.id)) { final existingItem = historyBox.get(item.id); playCount = (existingItem['playCount'] ?? 0) + 1; savedPosition = existingItem['savedPosition'] ?? 0; }
+    mediaItem.add(item); 
+    final historyBox = Hive.box('history'); 
+    int playCount = 1; 
+    int savedPosition = 0; 
+    if (historyBox.containsKey(item.id)) { 
+      final existingItem = historyBox.get(item.id); 
+      playCount = (existingItem['playCount'] ?? 0) + 1; 
+      savedPosition = existingItem['savedPosition'] ?? 0; 
+    }
     historyBox.put(item.id, {'id': item.id, 'title': item.title, 'artist': item.artist, 'artUri': item.artUri.toString(), 'duration': item.duration?.inMilliseconds ?? 0, 'timestamp': DateTime.now().millisecondsSinceEpoch, 'playCount': playCount, 'savedPosition': 0});
     try {
       playbackState.add(playbackState.value.copyWith(processingState: AudioProcessingState.loading, playing: true));
-      await _player.stop(); await _player.seek(Duration.zero); 
-      var manifest = await _yt.videos.streamsClient.getManifest(item.id); StreamInfo streamInfo;
-      if (manifest.muxed.isNotEmpty) { streamInfo = isHDMode.value ? manifest.muxed.withHighestBitrate() : manifest.muxed.reduce((a, b) => a.bitrate.bitsPerSecond < b.bitrate.bitsPerSecond ? a : b); } else if (manifest.audioOnly.isNotEmpty) { streamInfo = isHDMode.value ? manifest.audioOnly.withHighestBitrate() : manifest.audioOnly.reduce((a, b) => a.bitrate.bitsPerSecond < b.bitrate.bitsPerSecond ? a : b); } else { throw Exception("No streams"); }
+      await _player.stop(); 
+      await _player.seek(Duration.zero); 
+      var manifest = await _yt.videos.streamsClient.getManifest(item.id); 
+      StreamInfo streamInfo;
+      if (manifest.muxed.isNotEmpty) { 
+        streamInfo = isHDMode.value ? manifest.muxed.withHighestBitrate() : manifest.muxed.reduce((a, b) => a.bitrate.bitsPerSecond < b.bitrate.bitsPerSecond ? a : b); 
+      } else if (manifest.audioOnly.isNotEmpty) { 
+        streamInfo = isHDMode.value ? manifest.audioOnly.withHighestBitrate() : manifest.audioOnly.reduce((a, b) => a.bitrate.bitsPerSecond < b.bitrate.bitsPerSecond ? a : b); 
+      } else { 
+        throw Exception("No streams"); 
+      }
       await _player.setAudioSource(AudioSource.uri(Uri.parse(streamInfo.url.toString()), tag: item));
-      if (savedPosition > 0) { await _player.seek(Duration(milliseconds: savedPosition)); } await _player.play();
-    } catch (e) { playbackState.add(playbackState.value.copyWith(processingState: AudioProcessingState.error, playing: false)); }
+      if (savedPosition > 0) { 
+        await _player.seek(Duration(milliseconds: savedPosition)); 
+      } 
+      await _player.play();
+    } catch (e) { 
+      playbackState.add(playbackState.value.copyWith(processingState: AudioProcessingState.error, playing: false)); 
+    }
   }
   @override Future<void> updateQueue(List<MediaItem> newQueue) async { queue.add(newQueue); }
   void shuffleQueue() { final currentQueue = queue.value.toList()..shuffle(); queue.add(currentQueue); }
