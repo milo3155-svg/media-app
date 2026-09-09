@@ -10,7 +10,6 @@ import 'package:hive_flutter/hive_flutter.dart';
 import 'dart:math' as math;
 import 'dart:async'; 
 
-// SPRINT 4.1: EL ESCUDO GLOBAL ANTI-BANEOS
 class VIPHttpOverrides extends HttpOverrides {
   @override HttpClient createHttpClient(SecurityContext? context) {
     return super.createHttpClient(context)..userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36';
@@ -24,11 +23,11 @@ final ValueNotifier<int> sleepTimerRemaining = ValueNotifier<int>(0);
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  HttpOverrides.global = VIPHttpOverrides(); // Activa el Escudo Global
+  HttpOverrides.global = VIPHttpOverrides();
   await Hive.initFlutter();
   await Hive.openBox('favorites'); await Hive.openBox('history'); await Hive.openBox('search_history');
   final session = await AudioSession.instance; await session.configure(const AudioSessionConfiguration.music());
-  audioHandler = await AudioService.init(builder: () => MyAudioHandler(), config: const AudioServiceConfig(androidNotificationChannelId: 'com.example.media_app.audio_master_v41', androidNotificationChannelName: 'Spotify Killer VIP', androidNotificationOngoing: true, androidShowNotificationBadge: true, androidNotificationIcon: 'drawable/ic_notification'));
+  audioHandler = await AudioService.init(builder: () => MyAudioHandler(), config: const AudioServiceConfig(androidNotificationChannelId: 'com.example.media_app.audio_master_v42', androidNotificationChannelName: 'Spotify Killer VIP', androidNotificationOngoing: true, androidShowNotificationBadge: true, androidNotificationIcon: 'drawable/ic_notification'));
   runApp(const MediaApp());
 }
 
@@ -60,7 +59,6 @@ class _OsirisEyePainter extends CustomPainter {
 
 class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
   final _player = AudioPlayer(); late final YoutubeExplode _yt; Timer? _countdownTimer; 
-  bool _isFetchingNext = false; String? _lastFetchedRadioId;
   
   MyAudioHandler() {
     _yt = YoutubeExplode(); 
@@ -69,31 +67,16 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
       playbackState.add(playbackState.value.copyWith(controls: [MediaControl.skipToPrevious, if (playing) MediaControl.pause else MediaControl.play, MediaControl.skipToNext], systemActions: const {MediaAction.seek, MediaAction.seekForward, MediaAction.seekBackward}, androidCompactActionIndices: const [0, 1, 2], processingState: const {ProcessingState.idle: AudioProcessingState.idle, ProcessingState.loading: AudioProcessingState.loading, ProcessingState.buffering: AudioProcessingState.buffering, ProcessingState.ready: AudioProcessingState.ready, ProcessingState.completed: AudioProcessingState.completed}[_player.processingState]!, playing: playing, updatePosition: _player.position, bufferedPosition: _player.bufferedPosition, speed: _player.speed));
     });
     
-    // SPRINT 4.1: VIGILANTE DE PRE-CARGA (15 Segundos antes de terminar)
-    _player.positionStream.listen((position) {
-      final duration = _player.duration;
-      if (duration != null && duration.inSeconds > 0) {
-        if (duration.inSeconds - position.inSeconds <= 15) { _preloadNextInRadio(); }
-      }
-    });
-
+    // RESTAURACIÓN TÁCTICA: Búsqueda segura solo al terminar la canción.
     _player.processingStateStream.listen((state) { 
-      if (state == ProcessingState.completed) { 
-        final currentQueue = queue.value; final currentItem = mediaItem.value;
-        if (currentItem != null) {
-          final currentIndex = currentQueue.indexWhere((item) => item.id == currentItem.id);
-          if (currentIndex != -1 && currentIndex < currentQueue.length - 1) skipToNext(); 
-        }
-      } 
+      if (state == ProcessingState.completed) { _handleAutoPlayRadio(); } 
     });
   }
 
-  Future<void> _preloadNextInRadio() async {
-    if (_isFetchingNext) return;
+  Future<void> _handleAutoPlayRadio() async {
     final currentQueue = queue.value; final currentItem = mediaItem.value; if (currentItem == null) return;
     final currentIndex = currentQueue.indexWhere((item) => item.id == currentItem.id);
-    if (currentIndex == currentQueue.length - 1 && _lastFetchedRadioId != currentItem.id) {
-      _isFetchingNext = true; _lastFetchedRadioId = currentItem.id;
+    if (currentIndex != -1 && currentIndex < currentQueue.length - 1) { skipToNext(); } else {
       try {
         var currentVideo = await _yt.videos.get(currentItem.id); var relatedVideos = await _yt.videos.getRelatedVideos(currentVideo);
         if (relatedVideos != null && relatedVideos.isNotEmpty) {
@@ -106,10 +89,9 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
           }
           nextVideo ??= relatedVideos.first;
           final newItem = MediaItem(id: nextVideo.id.value, title: nextVideo.title, artist: nextVideo.author, duration: nextVideo.duration, artUri: Uri.parse(nextVideo.thumbnails.highResUrl));
-          final newQueue = List<MediaItem>.from(currentQueue)..add(newItem); await updateQueue(newQueue);
+          final newQueue = List<MediaItem>.from(currentQueue)..add(newItem); await updateQueue(newQueue); await playMediaItem(newItem);
         }
       } catch (e) { debugPrint("Radio Error: $e"); }
-      _isFetchingNext = false;
     }
   }
 
@@ -125,7 +107,6 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
     if (historyBox.containsKey(item.id)) { final existingItem = historyBox.get(item.id); playCount = (existingItem['playCount'] ?? 0) + 1; savedPosition = existingItem['savedPosition'] ?? 0; }
     historyBox.put(item.id, {'id': item.id, 'title': item.title, 'artist': item.artist, 'artUri': item.artUri.toString(), 'duration': item.duration?.inMilliseconds ?? 0, 'timestamp': DateTime.now().millisecondsSinceEpoch, 'playCount': playCount, 'savedPosition': 0});
     try {
-      // SPRINT 4.1: ANCLAJE DEL WIDGET (Forzar estado de buffering)
       playbackState.add(playbackState.value.copyWith(processingState: AudioProcessingState.loading, playing: true));
       await _player.stop(); await _player.seek(Duration.zero); 
       var manifest = await _yt.videos.streamsClient.getManifest(item.id); StreamInfo streamInfo;
