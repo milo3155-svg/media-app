@@ -21,7 +21,6 @@ final ValueNotifier<bool> isHDMode = ValueNotifier<bool>(true);
 final ValueNotifier<Color> appColor = ValueNotifier<Color>(Colors.deepPurpleAccent);
 final ValueNotifier<int> sleepTimerRemaining = ValueNotifier<int>(0); 
 
-// SPRINT 6.0: Función global para formatear duración y no repetir código
 String formatGlobalDuration(Duration? d) {
   if (d == null) return "Live";
   final minutes = d.inMinutes.remainder(60).toString().padLeft(2, '0');
@@ -34,18 +33,19 @@ Future<void> main() async {
   HttpOverrides.global = VIPHttpOverrides();
   await Hive.initFlutter();
   await Hive.openBox('favorites'); await Hive.openBox('history'); await Hive.openBox('search_history'); 
-  await Hive.openBox('playlists'); // SPRINT 6.0: Nueva Bóveda de Playlists
+  await Hive.openBox('playlists'); 
   final session = await AudioSession.instance; await session.configure(const AudioSessionConfiguration.music());
   
   audioHandler = await AudioService.init(
     builder: () => MyAudioHandler(), 
     config: const AudioServiceConfig(
-      androidNotificationChannelId: 'com.example.media_app.audio_master_v60', 
+      androidNotificationChannelId: 'com.example.media_app.audio_master_v61', 
       androidNotificationChannelName: 'Spotify Killer VIP', 
       androidNotificationOngoing: false, 
       androidShowNotificationBadge: true, 
       androidStopForegroundOnPause: false, 
-      androidNotificationIcon: 'mipmap/ic_launcher' // SPRINT 6.0: Usar el icono real de la app en lugar del genérico roto
+      // CORRECCIÓN 6.1: Regresamos al ícono seguro de Android para evitar el crasheo
+      androidNotificationIcon: 'drawable/ic_notification' 
     )
   );
   runApp(const MediaApp());
@@ -138,7 +138,7 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
 
     final currentIndex = currentQueue.indexWhere((item) => item.id == currentItem.id);
     if (currentIndex != -1 && currentIndex < currentQueue.length - 1) { 
-      await skipToNextBase(); // SPRINT 6.0: Usar el salto base para no hacer bucle infinito
+      await skipToNextBase(); 
       _isTransitioning = false; return;
     }
 
@@ -192,7 +192,6 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
   @override Future<void> pause() => _player.pause(); 
   @override Future<void> seek(Duration position) => _player.seek(position);
   
-  // SPRINT 6.0: El Botón Siguiente Inteligente
   @override Future<void> skipToNext() async { 
     final queueList = queue.value; 
     final currentItem = mediaItem.value; 
@@ -200,7 +199,6 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
     if (currentIndex != -1 && currentIndex < queueList.length - 1) {
       await playMediaItem(queueList[currentIndex + 1]); 
     } else {
-      // Si la cola está vacía, activamos la Radio Infinita forzada
       _onTrackFinished();
     }
   }
@@ -246,7 +244,6 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
   void shuffleQueue() { final currentQueue = queue.value.toList()..shuffle(); queue.add(currentQueue); }
 }
 
-// SPRINT 6.0: Funciones VIP Globales para no repetir código
 Future<void> globalPlay(MediaItem item) async {
   await audioHandler.updateQueue([item]); 
   await audioHandler.playMediaItem(item);
@@ -337,7 +334,6 @@ void globalShowOptions(BuildContext context, Video video, Color color) {
   ); 
 }
 
-// SPRINT 6.0: Dialogo para crear/seleccionar Playlist
 void _showPlaylistDialog(BuildContext context, Video video, Color color) {
   final box = Hive.box('playlists');
   final songData = {'id': video.id.value, 'title': video.title, 'artist': video.author, 'artUri': video.thumbnails.highResUrl, 'duration': video.duration?.inMilliseconds ?? 0};
@@ -412,7 +408,6 @@ void _showCreatePlaylistDialog(BuildContext context, Map songData, Color color) 
     )
   );
 }
-
 
 class MediaApp extends StatelessWidget {
   const MediaApp({super.key});
@@ -610,7 +605,6 @@ class _SearchScreenState extends State<SearchScreen> {
               leading: Stack(
                 children: [
                   ClipRRect(borderRadius: BorderRadius.circular(8), child: Image.network(video.thumbnails.mediumResUrl, width: 55, height: 55, fit: BoxFit.cover)),
-                  // SPRINT 6.0: Etiqueta de duración visual en búsquedas
                   Positioned(bottom: 2, right: 2, child: Container(padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2), decoration: BoxDecoration(color: Colors.black87, borderRadius: BorderRadius.circular(4)), child: Text(formatGlobalDuration(video.duration), style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold))))
                 ]
               ), 
@@ -636,7 +630,7 @@ class _SearchScreenState extends State<SearchScreen> {
 class VaultScreen extends StatelessWidget { 
   const VaultScreen({super.key}); 
   @override Widget build(BuildContext context) { 
-    return DefaultTabController(length: 3, child: Scaffold( // SPRINT 6.0: Pestaña 3 para Playlists
+    return DefaultTabController(length: 3, child: Scaffold(
       appBar: AppBar(title: const Text('La Bóveda', style: TextStyle(fontWeight: FontWeight.bold)), bottom: TabBar(indicatorColor: appColor.value, tabs: const [Tab(icon: Icon(Icons.history), text: "Historial"), Tab(icon: Icon(Icons.favorite), text: "Favoritos"), Tab(icon: Icon(Icons.queue_music), text: "Playlists")])), 
       body: TabBarView(children: [
         ValueListenableBuilder(valueListenable: Hive.box('history').listenable(), builder: (context, Box box, _) { 
@@ -655,7 +649,6 @@ class VaultScreen extends StatelessWidget {
             return ListTile(leading: ClipRRect(borderRadius: BorderRadius.circular(8), child: Image.network(item['artUri'], width: 50, height: 50, fit: BoxFit.cover)), title: Text(item['title'], maxLines: 1, overflow: TextOverflow.ellipsis), subtitle: Text(item['artist'], maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.grey)), trailing: IconButton(icon: const Icon(Icons.favorite, color: Colors.redAccent), onPressed: () => box.delete(item['id'])), onTap: () async { final mediaItem = MediaItem(id: item['id'], title: item['title'], artist: item['artist'], artUri: Uri.parse(item['artUri']), duration: Duration(milliseconds: item['duration'])); await globalPlay(mediaItem); }); 
           }); 
         }),
-        // SPRINT 6.0: Tab de Mis Playlists
         ValueListenableBuilder(valueListenable: Hive.box('playlists').listenable(), builder: (context, Box box, _) { 
           if (box.isEmpty) return const Center(child: Text("Toca los 3 puntitos en una canción para armar listas", style: TextStyle(color: Colors.grey))); 
           final keys = box.keys.toList(); 
