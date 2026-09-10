@@ -1,5 +1,5 @@
 import 'dart:io';
-import 'dart:ui'; // SPRINT 6.2: Requerido para el efecto de cristal (Blur)
+import 'dart:ui'; 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart'; 
 import 'package:just_audio/just_audio.dart';
@@ -19,7 +19,7 @@ class VIPHttpOverrides extends HttpOverrides {
 
 late MyAudioHandler audioHandler;
 final ValueNotifier<bool> isHDMode = ValueNotifier<bool>(true);
-final ValueNotifier<Color> appColor = ValueNotifier<Color>(Colors.cyanAccent); // SPRINT 6.2: Cyan por defecto para que luzca el neón
+final ValueNotifier<Color> appColor = ValueNotifier<Color>(Colors.cyanAccent); 
 final ValueNotifier<int> sleepTimerRemaining = ValueNotifier<int>(0); 
 
 String formatGlobalDuration(Duration? d) {
@@ -45,7 +45,7 @@ Future<void> main() async {
       androidNotificationOngoing: false, 
       androidShowNotificationBadge: true, 
       androidStopForegroundOnPause: false, 
-      androidNotificationIcon: 'mipmap/ic_launcher'
+      androidNotificationIcon: 'mipmap/sym_def_app_icon' 
     )
   );
   runApp(const MediaApp());
@@ -167,7 +167,6 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
   void _saveResumePosition(String id, int milliseconds) { final historyBox = Hive.box('history'); if (historyBox.containsKey(id)) { final item = Map<String, dynamic>.from(historyBox.get(id)); item['savedPosition'] = milliseconds; historyBox.put(id, item); } }
   
   @override Future<void> customAction(String name, [Map<String, dynamic>? extras]) async { 
-    // SPRINT 6.2: Kill Switch (Detiene todo y limpia la UI)
     if (name == 'kill') {
       await _player.stop();
       mediaItem.add(null);
@@ -229,7 +228,6 @@ Future<void> globalPlay(MediaItem item) async {
   await audioHandler.playMediaItem(item);
 }
 
-// SPRINT 6.2: INYECTOR DE COLA MASIVA (Para Playlists y Favoritos)
 Future<void> globalPlayQueue(List<MediaItem> items, int startIndex) async {
   await audioHandler.updateQueue(items);
   await audioHandler.playMediaItem(items[startIndex]);
@@ -301,7 +299,7 @@ class MediaApp extends StatelessWidget {
         return MaterialApp(
           title: 'Spotify Killer VIP', debugShowCheckedModeBanner: false, 
           theme: ThemeData.dark().copyWith(
-            scaffoldBackgroundColor: const Color(0xFF0D0D0D), // Más oscuro para que resalte el neón
+            scaffoldBackgroundColor: const Color(0xFF0D0D0D), 
             primaryColor: color, 
             bottomNavigationBarTheme: BottomNavigationBarThemeData(backgroundColor: Colors.transparent, selectedItemColor: color, unselectedItemColor: Colors.grey, type: BottomNavigationBarType.fixed, elevation: 0), 
             appBarTheme: const AppBarTheme(backgroundColor: Color(0xFF0D0D0D), elevation: 0, centerTitle: true)
@@ -318,15 +316,13 @@ class _SuperAppSkeletonState extends State<SuperAppSkeleton> {
   int _currentIndex = 0; final List<Widget> _screens = [const HomeScreen(), const SearchScreen(), const VaultScreen(), const SportsScreen()];
   @override Widget build(BuildContext context) { 
     return Scaffold(
-      extendBody: true, // SPRINT 6.2: Permite que la lista pase POR DEBAJO de la barra translúcida
+      extendBody: true, 
       body: Stack(
         children: [
           IndexedStack(index: _currentIndex, children: _screens),
-          // SPRINT 6.2: El MiniReproductor ahora flota y es un Kill-Switch
           const Positioned(left: 0, right: 0, bottom: 65, child: MiniPlayer()), 
         ],
       ), 
-      // SPRINT 6.2: Barra Inferior Glassmorphism
       bottomNavigationBar: ClipRRect(
         child: BackdropFilter(
           filter: ImageFilter.blur(sigmaX: 15.0, sigmaY: 15.0),
@@ -378,7 +374,6 @@ class _SearchScreenState extends State<SearchScreen> {
             );
           }
         ),
-        // SPRINT 6.2: Texto corregido y botón eliminar agregado
         const Padding(padding: EdgeInsets.symmetric(horizontal: 16, vertical: 10), child: Text("Escuchado Recientemente", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 16))),
         ValueListenableBuilder(
           valueListenable: Hive.box('history').listenable(),
@@ -415,7 +410,6 @@ class _SearchScreenState extends State<SearchScreen> {
           else if (searchSuggestions.isNotEmpty && videos.isEmpty) Expanded(child: ListView.builder(itemCount: searchSuggestions.length, itemBuilder: (context, index) { return ListTile(leading: const Icon(Icons.search, color: Colors.grey), title: Text(searchSuggestions[index], style: const TextStyle(color: Colors.white)), onTap: () { searchController.text = searchSuggestions[index]; searchVideos(searchSuggestions[index]); }); }))
           else if (videos.isEmpty && searchController.text.isEmpty) Expanded(child: _buildSearchHistory()) 
           else Expanded(
-            // SPRINT 6.2: Sincronización Real del Ecualizador
             child: StreamBuilder<MediaItem?>(
               stream: audioHandler.mediaItem,
               builder: (context, snapshot) {
@@ -463,7 +457,7 @@ class VaultScreen extends StatelessWidget {
             return ListTile(
               leading: ClipRRect(borderRadius: BorderRadius.circular(8), child: Image.network(item['artUri'], width: 50, height: 50, fit: BoxFit.cover)), 
               title: Text(item['title'], maxLines: 1, overflow: TextOverflow.ellipsis), subtitle: Text(item['artist'], maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.grey)), 
-              trailing: IconButton(icon: const Icon(Icons.close, color: Colors.grey, size: 20), onPressed: () => box.delete(item['id'])), // SPRINT 6.2: Botón eliminar Historial
+              trailing: IconButton(icon: const Icon(Icons.close, color: Colors.grey, size: 20), onPressed: () => box.delete(item['id'])), 
               onTap: () async { final mediaItem = MediaItem(id: item['id'], title: item['title'], artist: item['artist'], artUri: Uri.parse(item['artUri']), duration: Duration(milliseconds: item['duration'])); await globalPlay(mediaItem); }
             ); 
           }); 
@@ -478,7 +472,6 @@ class VaultScreen extends StatelessWidget {
               title: Text(item['title'], maxLines: 1, overflow: TextOverflow.ellipsis), subtitle: Text(item['artist'], maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.grey)), 
               trailing: IconButton(icon: const Icon(Icons.favorite, color: Colors.redAccent), onPressed: () => box.delete(item['id'])), 
               onTap: () async { 
-                // SPRINT 6.2: Carga Masiva para Favoritos
                 List<MediaItem> allFavs = items.map((e) => MediaItem(id: e['id'], title: e['title'], artist: e['artist'], artUri: Uri.parse(e['artUri']), duration: Duration(milliseconds: e['duration']))).toList();
                 await globalPlayQueue(allFavs, index); 
               }
@@ -496,7 +489,6 @@ class VaultScreen extends StatelessWidget {
               title: Row(
                 children: [
                   Expanded(child: Text(playlistName, style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white))),
-                  // SPRINT 6.2: Botón Maestro Reproducir Todo
                   ValueListenableBuilder<Color>(valueListenable: appColor, builder: (context, color, _) => IconButton(icon: Icon(Icons.play_circle_fill, color: color, size: 28), onPressed: () async {
                     if (tracks.isEmpty) return;
                     List<MediaItem> allTracks = tracks.map((e) => MediaItem(id: e['id'], title: e['title'], artist: e['artist'], artUri: Uri.parse(e['artUri']), duration: Duration(milliseconds: e['duration']))).toList();
@@ -515,7 +507,6 @@ class VaultScreen extends StatelessWidget {
                   title: Text(item['title'], maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 14)), subtitle: Text(item['artist'], maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.grey, fontSize: 12)),
                   trailing: IconButton(icon: const Icon(Icons.remove_circle_outline, color: Colors.grey, size: 20), onPressed: () { tracks.removeWhere((s) => s['id'] == item['id']); box.put(playlistName, tracks); }),
                   onTap: () async { 
-                    // SPRINT 6.2: Carga Masiva para Playlists al tocar una individual
                     List<MediaItem> allTracks = tracks.map((e) => MediaItem(id: e['id'], title: e['title'], artist: e['artist'], artUri: Uri.parse(e['artUri']), duration: Duration(milliseconds: e['duration']))).toList();
                     await globalPlayQueue(allTracks, trackIndex); 
                   }
@@ -536,7 +527,6 @@ class MiniPlayer extends StatelessWidget {
   @override Widget build(BuildContext context) { 
     return StreamBuilder<MediaItem?>(stream: audioHandler.mediaItem, builder: (context, snapshot) { 
       final mediaItem = snapshot.data; if (mediaItem == null) return const SizedBox.shrink(); 
-      // SPRINT 6.2: Swipe to Dismiss (Kill Switch) y Diseño de Isla Glassmorphism
       return Dismissible(
         key: const Key('miniplayer_dismiss'),
         direction: DismissDirection.down,
@@ -549,9 +539,9 @@ class MiniPlayer extends StatelessWidget {
                 margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: color, width: 1.5), // Borde Neón
-                  boxShadow: [BoxShadow(color: color.withOpacity(0.3), blurRadius: 12, spreadRadius: 1)], // Resplandor Neón
-                  color: Colors.black.withOpacity(0.5), // Oscurecer el cristal
+                  border: Border.all(color: color, width: 1.5),
+                  boxShadow: [BoxShadow(color: color.withOpacity(0.3), blurRadius: 12, spreadRadius: 1)],
+                  color: Colors.black.withOpacity(0.5), 
                 ),
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(16),
