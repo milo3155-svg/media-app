@@ -45,7 +45,7 @@ Future<void> main() async {
       androidNotificationOngoing: false, 
       androidShowNotificationBadge: true, 
       androidStopForegroundOnPause: false, 
-      androidNotificationIcon: '@mipmap/ic_launcher'
+      androidNotificationIcon: 'mipmap/ic_launcher'
     )
   );
   runApp(const MediaApp());
