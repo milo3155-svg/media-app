@@ -45,7 +45,7 @@ Future<void> main() async {
       androidNotificationOngoing: false, 
       androidShowNotificationBadge: true, 
       androidStopForegroundOnPause: false, 
-      androidNotificationIcon: 'drawable/ic_notification' // ¡REQUIERE EL ARCHIVO FÍSICO!
+      androidNotificationIcon: '@mipmap/ic_launcher'
     )
   );
   runApp(const MediaApp());
