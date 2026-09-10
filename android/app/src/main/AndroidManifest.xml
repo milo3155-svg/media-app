@@ -16,7 +16,7 @@
         android:usesCleartextTraffic="true">
         
         <!-- GUARDAMOS EL ICONO PARA QUE CODEMAGIC NO LO BORRE -->
-        <meta-data android:name="keep_icon" android:resource="@drawable/ic_notification" />
+        <meta-data android:name="keep_icon" android:resource="@mipmap/ic_launcher" />
         
         <!-- EL CAMBIO MAESTRO: Entregamos el control del Activity a AudioService -->
         <activity
