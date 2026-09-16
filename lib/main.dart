@@ -55,13 +55,13 @@ class ConspiracyLogo extends StatelessWidget {
   final double size; final Color color; const ConspiracyLogo({super.key, this.size = 150.0, required this.color});
   @override Widget build(BuildContext context) { return SizedBox(width: size, height: size, child: CustomPaint(painter: _OsirisEyePainter(color: color))); }
 }
+
 class _OsirisEyePainter extends CustomPainter {
   final Color color; _OsirisEyePainter({required this.color});
   void _drawTextOnLine(Canvas canvas, String text, Offset start, Offset end, double fontSize) {
     final midPoint = Offset((start.dx + end.dx) / 2, (start.dy + end.dy) / 2); final angle = math.atan2(end.dy - start.dy, end.dx - start.dx);
     canvas.save(); canvas.translate(midPoint.dx, midPoint.dy); canvas.rotate(angle);
     final textSpan = TextSpan(text: text, style: TextStyle(color: color, fontSize: fontSize, fontWeight: FontWeight.bold, letterSpacing: 2, fontFamily: 'Courier'));
-    // EL PARCHE ESTÁ AQUÍ: Regresamos el parámetro 'text:' que rompí por error
     final textPainter = TextPainter(text: textSpan, textDirection: TextDirection.ltr); textPainter.layout(); textPainter.paint(canvas, Offset(-textPainter.width / 2, -textPainter.height - 2)); canvas.restore();
   }
   @override void paint(Canvas canvas, Size size) {
@@ -74,9 +74,6 @@ class _OsirisEyePainter extends CustomPainter {
     final eyePath = Path()..moveTo(eyeLeft, eyeY)..quadraticBezierTo(eyeCenterX, h * 0.32, eyeRight, eyeY)..quadraticBezierTo(eyeCenterX, h * 0.68, eyeLeft, eyeY); canvas.drawPath(eyePath, paint);
     final wavePaint = Paint()..color = color..style = PaintingStyle.stroke..strokeWidth = w * 0.03; canvas.drawCircle(Offset(eyeCenterX, h * 0.50), w * 0.08, wavePaint); canvas.drawCircle(Offset(eyeCenterX, h * 0.50), w * 0.03, wavePaint); canvas.drawLine(Offset(eyeCenterX - w * 0.12, h * 0.50), Offset(eyeCenterX + w * 0.12, h * 0.50), wavePaint);
   }
-  @override bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
-}
-class 
   @override bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
 }
 
