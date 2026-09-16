@@ -1,25 +1,24 @@
-# 🎧 Media App VIP (Spotify Killer)
+# 🎧 Spotify Killer VIP (Media App)
 
-Aplicación móvil de streaming musical de alto rendimiento desarrollada en Flutter. Este proyecto funciona como un motor de extracción de audio que permite la reproducción en segundo plano y gestión de listas de reproducción sin interrupciones, ofreciendo una experiencia premium y ultra ligera.
+Aplicación móvil personalizada de streaming y reproducción de audio construida en Flutter, diseñada para operar de forma independiente con rendimiento optimizado en dispositivos móviles.
 
-## 🚀 Características Principales
+## ✨ Características Principales
 
-* **Reproducción en Segundo Plano:** Integración nativa con los controles de medios del sistema operativo (pantalla de bloqueo y notificaciones).
-* **Motor Ultra Ligero:** Extracción exclusiva de los fragmentos de audio puro (`manifest.audioOnly`) para reducir drásticamente el uso de ancho de banda.
-* **Ahorro de Datos VIP:** Interruptor integrado para alternar en tiempo real entre resoluciones HD (~160 kbps) y SD (~48 kbps).
-* **Bóveda Local Autónoma:** Gestión de historiales, listas personalizadas y métricas de reproducción directamente en el dispositivo sin depender de servidores externos.
-* **Interfaz Neón Dinámica:** Interfaz reactiva con diseño *Glassmorphism*, modo bucle y un "latido" visual para el seguimiento de la pista.
+* **Bóveda de Caché Local (`LockCachingAudioSource`):** Descarga y almacena en caché localmente cada pista reproducida, permitiendo la reproducción fluida incluso ante interrupciones de red o en modo avión.
+* **Eliminador de Silencios Activo:** Integración con `just_audio` para omitir automáticamente los espacios muertos y baches de audio en tiempo real.
+* **Metadatos Blindados:** Sincronización estricta de duración y títulos para evitar el error de visualización en "Live" o tiempos en `00:00`.
+* **Gestión de Historial y Favoritos:** Almacenamiento local ultrarrápido mediante Hive para conservar el historial de reproducción y pistas favoritas.
+* **Sistema de Playlists y Búsqueda:** Exploración de contenido impulsada por `youtube_explode_dart` con creación de listas personalizadas y categorías temáticas.
+* **Temporizador de Apagado (Sleep Timer):** Control configurable para pausar automáticamente la reproducción tras un tiempo determinado.
 
 ## 🛠️ Stack Tecnológico
 
-* **Core & UI:** Flutter y Dart.
-* **Motor Multimedia:** `just_audio` orquestado mediante `audio_service` para persistencia en *foreground*.
-* **Extracción de Datos:** `youtube_explode_dart` para el parseo seguro de *streams*.
-* **Base de Datos Local:** `hive_flutter` (Base de datos NoSQL clave-valor de ultra alta velocidad).
+* **Framework:** Flutter (Dart)
+* **Reproductor de Audio:** `just_audio` & `audio_service`
+* **Extracción de Contenido:** `youtube_explode_dart`
+* **Base de Datos NoSQL:** `hive` & `hive_flutter`
+* **CI/CD:** Automatización de despliegue y compilación mediante Codemagic.
 
-## ⚙️ Arquitectura y Despliegue
+## 📱 Despliegue
 
-La aplicación sigue una arquitectura orientada a la eficiencia de recursos móviles. No utiliza un *backend* centralizado tradicional, sino que delega el procesamiento de la información al lado del cliente mediante una conexión segura. El empaquetado y la integración continua (CI/CD) se gestionan directamente a través de Codemagic para compilar los artefactos APK (Android) listos para su distribución directa.
-
----
-*Desarrollado y mantenido por Osiris Aramis Alvarez Silva.*
+El proyecto está configurado para compilación directa en entornos de integración continua (Codemagic) orientados a la plataforma Android.
