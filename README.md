@@ -49,3 +49,10 @@ media-app/
 ├── codemagic.yaml                   # Automatización de CI/CD para compilación de APKs
 ├── pubspec.yaml                     # Dependencias, paquetes externos y versiones
 └── README.md                        # Documentación técnica del proyecto
+Stack Tecnológico y Dependencias Clave
+Framework: Flutter / Dart (>=3.0.0 <4.0.0)
+Audio y Notificaciones: just_audio (^0.9.36), audio_service (^0.18.13), audio_session (^0.1.18)
+Extracción Multimedia: youtube_explode_dart (any)
+Persistencia Local (NoSQL): hive (^2.2.3), hive_flutter (^1.1.0)
+Utilidades: permission_handler (^11.3.1)
+CI/CD: Codemagic
