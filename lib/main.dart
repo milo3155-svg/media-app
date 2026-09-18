@@ -595,6 +595,7 @@ class MiniPlayer extends StatelessWidget {
     }); 
   } 
 }
+}
 
 class FullScreenPlayer extends StatelessWidget {
   const FullScreenPlayer({super.key});
