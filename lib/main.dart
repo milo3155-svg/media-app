@@ -267,6 +267,27 @@ void globalShowOptions(BuildContext context, Video video, Color color) {
             const Divider(color: Colors.white24), 
             ListTile(leading: const Icon(Icons.radio, color: Colors.white), title: const Text('Ir a radio de la canción'), onTap: () async { Navigator.pop(context); final newItem = MediaItem(id: video.id.value, title: video.title, artist: video.author, duration: video.duration, artUri: Uri.parse(video.thumbnails.highResUrl)); await globalPlay(newItem); ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Iniciando Radio de ${video.title}'), backgroundColor: color)); }),
             ListTile(leading: const Icon(Icons.playlist_add, color: Colors.white), title: const Text('Agregar a una playlist'), onTap: () { Navigator.pop(context); _showPlaylistDialog(context, video, color); }),
+            ListTile(
+  leading: const Icon(Icons.queue_music, color: Colors.white),
+  title: const Text('Agregar a la cola', style: TextStyle(color: Colors.white)),
+  onTap: () async {
+    Navigator.pop(context);
+    
+    final itemToQueue = MediaItem(
+      id: video.id.value,
+      title: video.title,
+      artist: video.author,
+      duration: video.duration,
+      artUri: Uri.parse(video.thumbnails.highResUrl),
+    );
+    
+    await audioHandler.addQueueItem(itemToQueue);
+    
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Canción agregada a la cola')),
+    );
+  },
+),
             ValueListenableBuilder(
               valueListenable: Hive.box('favorites').listenable(),
               builder: (context, Box box, _) {
@@ -463,8 +484,18 @@ class _SearchScreenState extends State<SearchScreen> {
                       ValueListenableBuilder<Color>(valueListenable: appColor, builder: (context, color, _) => IconButton(icon: const Icon(Icons.more_vert, color: Colors.grey), onPressed: () => globalShowOptions(context, video, color)))
                     ]), 
                     onTap: () async {
-                      final newItem = MediaItem(id: video.id.value, title: video.title, artist: video.author, duration: video.duration, artUri: Uri.parse(video.thumbnails.highResUrl)); 
-                      await globalPlay(newItem);
+  // Convertimos toda la lista de resultados actuales al formato del reproductor
+  final queueItems = videos.map((vid) => MediaItem(
+    id: vid.id.value,
+    title: vid.title,
+    artist: vid.author,
+    duration: vid.duration,
+    artUri: Uri.parse(vid.thumbnails.highResUrl),
+  )).toList();
+  
+  // Cargamos la lista completa y le indicamos qué canción tocaste
+  await globalPlayQueue(queueItems, index);
+},
                     }
                   ); 
                 });
