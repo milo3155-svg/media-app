@@ -338,7 +338,7 @@ class MediaApp extends StatelessWidget {
               centerTitle: true
             )
           ),
-          home: accesoConcedido ? const SuperAppSkeleton() : const CerrojoScreen(),
+          home: accesoConcedido ? SuperAppSkeleton() : CerrojoScreen(),
         );
       }
     );
@@ -594,7 +594,6 @@ class MiniPlayer extends StatelessWidget {
       ); 
     }); 
   } 
-}
 }
 
 class FullScreenPlayer extends StatelessWidget {
