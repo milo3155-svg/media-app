@@ -32,8 +32,8 @@ String formatGlobalDuration(Duration? d) {
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   HttpOverrides.global = VIPHttpOverrides();
-  await Hive.openBox('cerrojo_box');
   await Hive.initFlutter();
+  await Hive.openBox('cerrojo_box');
   await Hive.openBox('favorites'); await Hive.openBox('history'); await Hive.openBox('search_history'); 
   await Hive.openBox('playlists'); 
   final session = await AudioSession.instance; await session.configure(const AudioSessionConfiguration.music());
