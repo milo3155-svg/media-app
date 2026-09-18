@@ -309,7 +309,7 @@ void _showCreatePlaylistDialog(BuildContext context, Map songData, Color color) 
         TextButton(onPressed: () => Navigator.pop(context), child: const Text("Cancelar", style: TextStyle(color: Colors.grey))),
         TextButton(onPressed: () { if (textController.text.trim().isNotEmpty) { Hive.box('playlists').put(textController.text.trim(), [songData]); Navigator.pop(context); ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Playlist creada'), backgroundColor: color)); } }, child: Text("Crear", style: TextStyle(color: color, fontWeight: FontWeight.bold)))
       ]));
-
+}
 class MediaApp extends StatelessWidget {
   const MediaApp({super.key});
   
