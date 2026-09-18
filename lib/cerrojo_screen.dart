@@ -1,0 +1,1 @@
+await Hive.openBox('cerrojo_box');
