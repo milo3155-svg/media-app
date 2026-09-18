@@ -1,4 +1,3 @@
-import 'cerrojo_screen.dart';
 import 'dart:io';
 import 'dart:ui'; 
 import 'package:flutter/material.dart';
@@ -627,6 +626,42 @@ class FullScreenPlayer extends StatelessWidget {
           );
         },
       ),
+    );
+  }
+}
+class MediaApp extends StatelessWidget {
+  const MediaApp({super.key});
+  
+  @override 
+  Widget build(BuildContext context) {
+    // 1. Leemos silenciosamente si el dispositivo ya fue autorizado antes
+    final bool accesoConcedido = Hive.box('cerrojo_box').get('acceso_concedido', defaultValue: false);
+
+    return ValueListenableBuilder<Color>(
+      valueListenable: appColor, 
+      builder: (context, color, _) {
+        return MaterialApp(
+          title: 'Spotify Killer VIP',
+          debugShowCheckedModeBanner: false,
+          theme: ThemeData.dark().copyWith(
+            scaffoldBackgroundColor: const Color(0xFF0D0D0D),
+            primaryColor: color,
+            bottomNavigationBarTheme: BottomNavigationBarThemeData(
+              backgroundColor: Colors.transparent, 
+              selectedItemColor: color, 
+              unselectedItemColor: Colors.grey, 
+              type: BottomNavigationBarType.fixed
+            ),
+            appBarTheme: const AppBarTheme(
+              backgroundColor: Color(0xFF0D0D0D), 
+              elevation: 0, 
+              centerTitle: true
+            )
+          ),
+          // 2. EL CERROJO: Si tiene acceso, pasa a SuperAppSkeleton. Si no, al CerrojoScreen.
+          home: accesoConcedido ? const SuperAppSkeleton() : const CerrojoScreen(),
+        );
+      }
     );
   }
 }
