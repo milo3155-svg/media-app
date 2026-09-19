@@ -727,23 +727,23 @@ class FullScreenPlayer extends StatelessWidget {
 
             return Column(
               children: [
-                // BARRA SUPERIOR (Se agregó top: 24.0 para bajar los botones del Notch)
+                // BARRA SUPERIOR (Empujón de 60.0 para esquivar el notch del celular)
                 Padding(
-                  padding: const EdgeInsets.only(top: 24.0, left: 4.0, right: 4.0, bottom: 8.0),
+                  padding: const EdgeInsets.only(top: 60.0, left: 12.0, right: 12.0, bottom: 8.0),
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      IconButton(icon: const Icon(Icons.keyboard_arrow_down, color: Colors.white, size: 32), onPressed: () => Navigator.pop(context)),
+                      IconButton(icon: const Icon(Icons.keyboard_arrow_down, color: Colors.white, size: 36), onPressed: () => Navigator.pop(context)),
                       Row(
                         children: [
-                          IconButton(icon: const Icon(Icons.download, color: Colors.white), onPressed: () => downloadAudio(context, mediaItem)),
-                          IconButton(icon: const Icon(Icons.timer_outlined, color: Colors.white), onPressed: () => _showSleepTimerDialog(context)),
+                          IconButton(icon: const Icon(Icons.download, color: Colors.white, size: 28), onPressed: () => downloadAudio(context, mediaItem)),
+                          IconButton(icon: const Icon(Icons.timer_outlined, color: Colors.white, size: 28), onPressed: () => _showSleepTimerDialog(context)),
                           ValueListenableBuilder(
                             valueListenable: Hive.box('favorites').listenable(),
                             builder: (context, Box box, _) {
                               final isFav = box.containsKey(mediaItem.id);
                               return IconButton(
-                                icon: Icon(isFav ? Icons.favorite : Icons.favorite_border, color: isFav ? Colors.redAccent : Colors.white),
+                                icon: Icon(isFav ? Icons.favorite : Icons.favorite_border, color: isFav ? Colors.redAccent : Colors.white, size: 28),
                                 onPressed: () {
                                   if (isFav) { box.delete(mediaItem.id); } 
                                   else { box.put(mediaItem.id, {'id': mediaItem.id, 'title': mediaItem.title, 'artist': mediaItem.artist, 'artUri': mediaItem.artUri?.toString(), 'duration': mediaItem.duration?.inMilliseconds ?? 0}); }
@@ -751,7 +751,7 @@ class FullScreenPlayer extends StatelessWidget {
                               );
                             }
                           ),
-                          IconButton(icon: const Icon(Icons.more_vert, color: Colors.white), onPressed: () {}),
+                          IconButton(icon: const Icon(Icons.more_vert, color: Colors.white, size: 28), onPressed: () {}),
                         ]
                       )
                     ]
@@ -1003,7 +1003,7 @@ Future<void> downloadAudio(BuildContext context, dynamic item) async {
     final String videoId = isMediaItem ? item.id : item.id.value;
     final String videoTitle = item.title;
     
-    // Variables seguras para evitar el NoSuchMethodError
+    // Variables seguras para evitar el error rojo de NoSuchMethodError
     String artist = 'Desconocido';
     String artUri = '';
     int duration = 0;
