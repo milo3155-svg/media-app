@@ -845,6 +845,7 @@ class FullScreenPlayer extends StatelessWidget {
                         ),
                 
                 // PANEL INFERIOR "REPRODUCIENDO AHORA" CON MODAL RESTAURADO
+                const SizedBox(height:20),
                 StreamBuilder<List<MediaItem>>(
                   stream: audioHandler.queue,
                   builder: (context, queueSnapshot) {
