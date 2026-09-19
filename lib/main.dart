@@ -274,7 +274,6 @@ void globalShowOptions(BuildContext context, Video video, Color color) {
   title: const Text('Agregar a la cola', style: TextStyle(color: Colors.white)),
   onTap: () async {
     Navigator.pop(context);
-    
     final itemToQueue = MediaItem(
       id: video.id.value,
       title: video.title,
@@ -282,12 +281,17 @@ void globalShowOptions(BuildContext context, Video video, Color color) {
       duration: video.duration,
       artUri: Uri.parse(video.thumbnails.highResUrl),
     );
-    ListTile(
+    await audioHandler.addQueueItem(itemToQueue);
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Cancion agregada a la cola')),
+    );
+  },
+            ),
+                ListTile(
   leading: const Icon(Icons.download, color: Colors.white),
   title: const Text('Descargar', style: TextStyle(color: Colors.white)),
   onTap: () {
     Navigator.pop(context); 
-    
     downloadAudio(context, video.thumbnails.highResUrl, video.title);
   },
 ),
@@ -500,7 +504,7 @@ else Expanded(
                               child: Container(
                                 padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
                                 decoration: BoxDecoration(color: Colors.black87, borderRadius: BorderRadius.circular(4)),
-                                child: Text(video.duration, style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold)),
+                                child: Text(formatGlobalDuration(video.duration), style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold)),
                               ),
                             ),
                           ],
@@ -804,30 +808,31 @@ class _CerrojoScreenState extends State<CerrojoScreen> {
     );
   }
 }
-Future<void> downloadAudio(BuildContext context, String url, String title) async {
+Future<void> downloadAudio(BuildContext context, Video video) async {
   try {
-    // Le avisamos al usuario que inició
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Iniciando descarga: $title...')),
+      SnackBar(content: Text('Obteniendo audio: ${video.title}...')),
     );
 
-    // 1. Encontramos la carpeta interna de tu celular
+    final yt = YoutubeExplode();
+    final manifest = await yt.videos.streamsClient.getManifest(video.id);
+    final streamInfo = manifest.audioOnly.withHighestBitrate();
+    final audioUrl = streamInfo.url.toString();
+
     final directory = await getApplicationDocumentsDirectory();
-    
-    // 2. Limpiamos el título para que Android lo acepte como archivo
-    final cleanTitle = title.replaceAll(RegExp(r'[^\w\s]+'), '');
+    final cleanTitle = video.title.replaceAll(RegExp(r'[^\w\s]+'), '');
     final savePath = '${directory.path}/$cleanTitle.m4a';
 
-    // 3. ¡Descargamos el archivo!
-    await Dio().download(url, savePath);
-    
-    // 4. Aviso de éxito
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('¡Descarga completada!'), backgroundColor: Colors.green),
+      SnackBar(content: Text('Descargando: ${video.title}...')),
     );
+    await Dio().download(audioUrl, savePath);
     
-    // (En el siguiente paso conectaremos Hive aquí para guardar la ruta)
-    
+    yt.close();
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('¡Descarga completada!'), backgroundColor: Colors.green),
+    );
   } catch (e) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('Error al descargar: $e'), backgroundColor: Colors.red),
