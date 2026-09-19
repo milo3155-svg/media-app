@@ -474,38 +474,56 @@ class _SearchScreenState extends State<SearchScreen> {
           if (isLoading) Expanded(child: Center(child: ValueListenableBuilder<Color>(valueListenable: appColor, builder: (context, color, _) => CircularProgressIndicator(color: color))))
           else if (searchSuggestions.isNotEmpty && videos.isEmpty) Expanded(child: ListView.builder(itemCount: searchSuggestions.length, itemBuilder: (context, index) { return ListTile(leading: const Icon(Icons.search, color: Colors.grey), title: Text(searchSuggestions[index], style: const TextStyle(color: Colors.white)), onTap: () { searchController.text = searchSuggestions[index]; searchVideos(searchSuggestions[index]); }); }))
           else if (videos.isEmpty && searchController.text.isEmpty) Expanded(child: _buildSearchHistory()) 
-          else Expanded(
-            child: StreamBuilder<MediaItem?>(
-              stream: audioHandler.mediaItem,
-              builder: (context, snapshot) {
-                final currentId = snapshot.data?.id;
-                return ListView.builder(
-                  padding: const EdgeInsets.only(bottom: 100),
-                  itemCount: videos.length, itemBuilder: (context, index) { 
-                  final video = videos[index]; 
-                  final isPlaying = currentId == video.id.value; 
-                  return ListTile(
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4), 
-                    leading: Stack(children: [ClipRRect(borderRadius: BorderRadius.circular(8), child: Image.network(video.thumbnails.mediumResUrl, width: 55, height: 55, fit: BoxFit.cover)), Positioned(bottom: 2, right: 2, child: Container(padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2), decoration: BoxDecoration(color: Colors.black87, borderRadius: BorderRadius.circular(4)), child: Text(formatGlobalDuration(video.duration), style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold))))]), 
-                    title: Text(video.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w500)), 
-                    subtitle: Text(video.author, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.grey, fontSize: 13)), 
-                    trailing: Row(mainAxisSize: MainAxisSize.min, children: [
-                      if (isPlaying) ValueListenableBuilder<Color>(valueListenable: appColor, builder: (context, color, _) => Icon(Icons.equalizer, color: color, size: 24)), 
-                      ValueListenableBuilder<Color>(valueListenable: appColor, builder: (context, color, _) => IconButton(icon: const Icon(Icons.more_vert, color: Colors.grey), onPressed: () => globalShowOptions(context, video, color)))
-                    ]), 
-                    onTap: () async {
-  // Convertimos toda la lista de resultados actuales al formato del reproductor
-  final queueItems = videos.map((vid) => MediaItem(
-    id: vid.id.value,
-    title: vid.title,
-    artist: vid.author,
-    duration: vid.duration,
-    artUri: Uri.parse(vid.thumbnails.highResUrl),
-  )).toList();
-  
-  // Cargamos la lista completa y le indicamos qué canción tocaste
-  await globalPlayQueue(queueItems, index);
-},
+return ListTile(
+              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+              leading: Stack(
+                children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: Image.network(video.thumbnails.mediumResUrl, width: 55, height: 55, fit: BoxFit.cover),
+                  ),
+                  Positioned(
+                    bottom: 2,
+                    right: 2,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                      decoration: BoxDecoration(color: Colors.black87, borderRadius: BorderRadius.circular(4)),
+                      child: Text(video.duration, style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold)),
+                    ),
+                  ),
+                ],
+              ),
+              title: Text(video.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w500)),
+              subtitle: Text(video.author, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.grey, fontSize: 13)),
+              trailing: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (isPlaying) ValueListenableBuilder<Color>(
+                    valueListenable: appColor, 
+                    builder: (context, color, _) => Icon(Icons.equalizer, color: color, size: 24)
+                  ),
+                  ValueListenableBuilder<Color>(
+                    valueListenable: appColor, 
+                    builder: (context, color, _) => IconButton(
+                      icon: const Icon(Icons.more_vert, color: Colors.grey), 
+                      onPressed: () => globalShowOptions(context, video, color)
+                    )
+                  ),
+                ],
+              ),
+              onTap: () async {
+                // Convertimos la lista de resultados y cerramos bien los paréntesis
+                final queueItems = videos.map((vid) => MediaItem(
+                  id: vid.id.value,
+                  title: vid.title,
+                  artist: vid.author,
+                  duration: vid.duration,
+                  artUri: Uri.parse(vid.thumbnails.highResUrl),
+                )).toList();
+                
+                await globalPlayQueue(queueItems, index);
+              },
+            );
                     }
                   ); 
                 });
