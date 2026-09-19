@@ -56,3 +56,9 @@ Extracción Multimedia: youtube_explode_dart (any)
 Persistencia Local (NoSQL): hive (^2.2.3), hive_flutter (^1.1.0)
 Utilidades: permission_handler (^11.3.1)
 CI/CD: Codemagic
+## Estado del Proyecto
+* *CI/CD:* Pipeline de Codemagic configurado y compilando exitosamente el APK en Android (Release).
+* *Refactorización:* Estructura de clases de main.dart saneada para aislar la pantalla de búsqueda, el MiniPlayer y el FullScreenPlayer.
+* *Próximos pasos (Pendientes):* 
+  * Reubicación de la interfaz del reproductor (contador de cola "1/20", botón de favoritos).
+  * Redirección de descargas .m4a de la ruta interna al almacenamiento público de Android
