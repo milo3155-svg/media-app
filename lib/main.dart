@@ -663,21 +663,7 @@ class MiniPlayer extends StatelessWidget {
             }
           )
         )
-      ); 
-    }); 
-  } 
-}
-
-class FullScreenPlayer extends StatelessWidget {
-  const FullScreenPlayer({super.key});
-  void _showSleepTimerDialog(BuildContext context) { showDialog(context: context, builder: (context) => AlertDialog(backgroundColor: const Color(0xFF1A1A1A), title: const Text("Temporizador de Sueño", style: TextStyle(color: Colors.white)), content: Column(mainAxisSize: MainAxisSize.min, children: [ListTile(title: const Text("Apagar en 15 minutos", style: TextStyle(color: Colors.white)), onTap: () { audioHandler.customAction('setSleepTimer', {'minutes': 15}); Navigator.pop(context); ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Temporizador activado"))); }), ListTile(title: const Text("Apagar en 30 minutos", style: TextStyle(color: Colors.white)), onTap: () { audioHandler.customAction('setSleepTimer', {'minutes': 30}); Navigator.pop(context); ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Temporizador activado"))); }), ListTile(title: const Text("Apagar en 60 minutos", style: TextStyle(color: Colors.white)), onTap: () { audioHandler.customAction('setSleepTimer', {'minutes': 60}); Navigator.pop(context); ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Temporizador activado"))); }), ListTile(title: const Text("Desactivar", style: TextStyle(color: Colors.redAccent)), onTap: () { audioHandler.customAction('setSleepTimer', {'minutes': 0}); Navigator.pop(context); ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Temporizador desactivado"))); })]))); }
-
-  @override Widget build(BuildContext context) {
-    return Container(
-      height: MediaQuery.of(context).size.height * 0.95, decoration: const BoxDecoration(color: Color(0xFF0D0D0D), borderRadius: BorderRadius.vertical(top: Radius.circular(30))),
-      child: StreamBuilder<MediaItem?>(
-        stream: audioHandler.mediaItem, builder: (context, snapshot) {
-          final mediaItem = snapshot.data; if (mediaItem == null) return const SizedBox.shrink();
+  
           return Padding(
             padding: const EdgeInsets.symmetric(horizontal: 24.0),
             child: Column(
