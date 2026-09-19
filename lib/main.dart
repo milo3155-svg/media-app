@@ -843,6 +843,10 @@ class FullScreenPlayer extends StatelessWidget {
                             );
                           }
                         ),
+                      ],
+                    )
+                  )
+                ),    
                 
                 // PANEL INFERIOR "REPRODUCIENDO AHORA" CON MODAL RESTAURADO
                 const SizedBox(height:20),
