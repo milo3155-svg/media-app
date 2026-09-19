@@ -546,10 +546,15 @@ else Expanded(
                 )).toList();
                 
                 await globalPlayQueue(queueItems, index);
-              },
-            );
-                          
-class VaultScreen extends StatelessWidget { 
+            ),
+          );
+        }
+      ),
+    );
+  }
+}
+
+class VaultScreen extends StatelessWidget {          
   const VaultScreen({super.key}); 
   @override Widget build(BuildContext context) { 
     return DefaultTabController(length: 3, child: Scaffold(
