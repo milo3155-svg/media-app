@@ -10,6 +10,8 @@ import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'dart:math' as math;
 import 'dart:async'; 
+import 'package:dio/dio.dart';
+import 'package:path_provider/path_provider.dart';
 
 class VIPHttpOverrides extends HttpOverrides {
   @override HttpClient createHttpClient(SecurityContext? context) {
@@ -280,7 +282,15 @@ void globalShowOptions(BuildContext context, Video video, Color color) {
       duration: video.duration,
       artUri: Uri.parse(video.thumbnails.highResUrl),
     );
+    ListTile(
+  leading: const Icon(Icons.download, color: Colors.white),
+  title: const Text('Descargar', style: TextStyle(color: Colors.white)),
+  onTap: () {
+    Navigator.pop(context); 
     
+    downloadAudio(context, video.thumbnails.highResUrl, video.title);
+  },
+),
     await audioHandler.addQueueItem(itemToQueue);
     
     ScaffoldMessenger.of(context).showSnackBar(
@@ -744,6 +754,36 @@ class _CerrojoScreenState extends State<CerrojoScreen> {
           ],
         ),
       ),
+    );
+  }
+}
+Future<void> downloadAudio(BuildContext context, String url, String title) async {
+  try {
+    // Le avisamos al usuario que inició
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Iniciando descarga: $title...')),
+    );
+
+    // 1. Encontramos la carpeta interna de tu celular
+    final directory = await getApplicationDocumentsDirectory();
+    
+    // 2. Limpiamos el título para que Android lo acepte como archivo
+    final cleanTitle = title.replaceAll(RegExp(r'[^\w\s]+'), '');
+    final savePath = '${directory.path}/$cleanTitle.m4a';
+
+    // 3. ¡Descargamos el archivo!
+    await Dio().download(url, savePath);
+    
+    // 4. Aviso de éxito
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('¡Descarga completada!'), backgroundColor: Colors.green),
+    );
+    
+    // (En el siguiente paso conectaremos Hive aquí para guardar la ruta)
+    
+  } catch (e) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Error al descargar: $e'), backgroundColor: Colors.red),
     );
   }
 }

@@ -12,6 +12,8 @@ dependencies:
     sdk: flutter
   hive: ^2.2.3
   hive_flutter: ^1.1.0
+  path_provider: ^2.1.2
+  dio: ^5.4.0
   
   # ... tus otros paquetes ...
   permission_handler: ^11.3.1
