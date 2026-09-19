@@ -731,7 +731,38 @@ class FullScreenPlayer extends StatelessWidget {
               children: [
                 const SizedBox(height: 16),
                 Container(width: 40, height: 5, decoration: BoxDecoration(color: Colors.grey[800], borderRadius: BorderRadius.circular(10))),
-                const SizedBox(height: 30),
+                const SizedBox(height: 10),
+                
+                // TOP BAR: Botón de bajar, Descargar y Favoritos
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    IconButton(icon: const Icon(Icons.keyboard_arrow_down, color: Colors.white, size: 32), onPressed: () => Navigator.pop(context)),
+                    Row(
+                      children: [
+                        IconButton(
+                          icon: const Icon(Icons.download_rounded, color: Colors.white, size: 28),
+                          onPressed: () => downloadAudio(context, mediaItem)
+                        ),
+                        ValueListenableBuilder(
+                          valueListenable: Hive.box('favorites').listenable(),
+                          builder: (context, Box box, _) {
+                            final isFav = box.containsKey(mediaItem.id);
+                            return IconButton(
+                              icon: Icon(isFav ? Icons.favorite : Icons.favorite_border, color: isFav ? Colors.redAccent : Colors.white, size: 28),
+                              onPressed: () {
+                                if (isFav) { box.delete(mediaItem.id); } 
+                                else { box.put(mediaItem.id, {'id': mediaItem.id, 'title': mediaItem.title, 'artist': mediaItem.artist, 'artUri': mediaItem.artUri?.toString(), 'duration': mediaItem.duration?.inMilliseconds ?? 0}); }
+                              }
+                            );
+                          }
+                        )
+                      ]
+                    )
+                  ]
+                ),
+                
+                const SizedBox(height: 15),
                 ValueListenableBuilder<Color>(
                   valueListenable: appColor,
                   builder: (context, color, _) {
@@ -741,14 +772,16 @@ class FullScreenPlayer extends StatelessWidget {
                       ),
                       child: ClipRRect(
                         borderRadius: BorderRadius.circular(20),
-                        child: Image.network(mediaItem.artUri.toString(), width: MediaQuery.of(context).size.width * 0.8, height: MediaQuery.of(context).size.width * 0.8, fit: BoxFit.cover)
+                        child: Image.network(mediaItem.artUri.toString(), width: MediaQuery.of(context).size.width * 0.75, height: MediaQuery.of(context).size.width * 0.75, fit: BoxFit.cover)
                       )
                     );
                   }
                 ),
                 const SizedBox(height: 30),
+                
+                // INFO DE PISTA Y CONTADOR DE COLA
                 Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                  crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
                     Expanded(
                       child: Column(
@@ -759,10 +792,25 @@ class FullScreenPlayer extends StatelessWidget {
                           Text(mediaItem.artist ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.grey, fontSize: 18))
                         ]
                       )
+                    ),
+                    StreamBuilder<List<MediaItem>>(
+                      stream: audioHandler.queue,
+                      builder: (context, queueSnapshot) {
+                        final queue = queueSnapshot.data ?? [];
+                        final index = queue.indexWhere((item) => item.id == mediaItem.id);
+                        final displayIndex = index >= 0 ? index + 1 : 0;
+                        return Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                          decoration: BoxDecoration(color: Colors.white12, borderRadius: BorderRadius.circular(10)),
+                          child: Text("$displayIndex / ${queue.length}", style: const TextStyle(color: Colors.white70, fontSize: 13, fontWeight: FontWeight.bold))
+                        );
+                      }
                     )
                   ]
                 ),
                 const SizedBox(height: 20),
+                
+                // SLIDER DE REPRODUCCIÓN
                 StreamBuilder<Duration>(
                   stream: AudioService.position,
                   builder: (context, snapshotDuration) {
@@ -799,7 +847,10 @@ class FullScreenPlayer extends StatelessWidget {
                     );
                   }
                 ),
+                
                 const Spacer(),
+                
+                // CONTROLES PRINCIPALES
                 StreamBuilder<PlaybackState>(
                   stream: audioHandler.playbackState,
                   builder: (context, snapshot) {
@@ -940,26 +991,28 @@ class _CerrojoScreenState extends State<CerrojoScreen> {
   }
 }
 
-Future<void> downloadAudio(BuildContext context, Video video) async {
+Future<void> downloadAudio(BuildContext context, dynamic item) async {
   try {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Obteniendo audio: ${video.title}...')));
+    final String videoId = item is MediaItem ? item.id : item.id.value;
+    final String videoTitle = item.title;
+    
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Obteniendo audio: $videoTitle...')));
     final yt = YoutubeExplode();
-    final manifest = await yt.videos.streamsClient.getManifest(video.id);
+    final manifest = await yt.videos.streamsClient.getManifest(videoId);
     final streamInfo = manifest.audioOnly.withHighestBitrate();
     final audioUrl = streamInfo.url.toString();
     
-    final directory = await getApplicationDocumentsDirectory();
-    final cleanTitle = video.title.replaceAll(RegExp(r'[^\w\s]+'), '');
-    final savePath = '${directory.path}/$cleanTitle.m4a';
+    // Nueva ruta: Se guarda directo en la carpeta pública de Descargas de Android
+    final cleanTitle = videoTitle.replaceAll(RegExp(r'[^\w\s]+'), '');
+    final savePath = '/storage/emulated/0/Download/$cleanTitle.m4a';
     
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Descargando: $cleanTitle...')));
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Descargando en carpeta Descargas...')));
     
     await Dio().download(audioUrl, savePath);
     yt.close();
     
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('¡Descarga completada!'), backgroundColor: Colors.green));
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('¡Guardado en Descargas!'), backgroundColor: Colors.green));
   } catch (e) {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error al descargar: $e'), backgroundColor: Colors.red));
   }
 }
-                    
