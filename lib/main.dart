@@ -285,43 +285,32 @@ void globalShowOptions(BuildContext context, Video video, Color color) {
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Cancion agregada a la cola')),
     );
-  },
-            ),
-                ListTile(
-  leading: const Icon(Icons.download, color: Colors.white),
-  title: const Text('Descargar', style: TextStyle(color: Colors.white)),
-  onTap: () {
-    Navigator.pop(context); 
-    downloadAudio(context, video.thumbnails.highResUrl, video.title);
-  },
-),
-    await audioHandler.addQueueItem(itemToQueue);
-    
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Canción agregada a la cola')),
-    );
-  },
-),
-            ValueListenableBuilder(
-              valueListenable: Hive.box('favorites').listenable(),
-              builder: (context, Box box, _) {
-                final isFav = box.containsKey(video.id.value);
-                return ListTile(
-                  leading: Icon(isFav ? Icons.favorite : Icons.favorite_border, color: isFav ? Colors.redAccent : Colors.white), 
-                  title: Text(isFav ? 'Eliminar de Tus me gusta' : 'Agregar a Tus me gusta'), 
-                  onTap: () { 
-                    if (isFav) { box.delete(video.id.value); } else { box.put(video.id.value, {'id': video.id.value, 'title': video.title, 'artist': video.author, 'artUri': video.thumbnails.highResUrl, 'duration': video.duration?.inMilliseconds ?? 0}); }
-                    Navigator.pop(context); ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(isFav ? 'Eliminado de Favoritos' : 'Agregado a Favoritos'), backgroundColor: color)); 
-                  }
+            ListTile(
+              leading: const Icon(Icons.queue_music, color: Colors.white),
+              title: const Text('Agregar a la cola', style: TextStyle(color: Colors.white)),
+              onTap: () async {
+                Navigator.pop(context);
+                final itemToQueue = MediaItem(
+                  id: video.id.value,
+                  title: video.title,
+                  artist: video.author,
+                  duration: video.duration,
+                  artUri: Uri.parse(video.thumbnails.highResUrl),
                 );
-              }
+                await audioHandler.addQueueItem(itemToQueue);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Canción agregada a la cola')),
+                );
+              },
             ),
-          ]
-        )
-      ); 
-    }
-  ); 
-}
+            ListTile(
+              leading: const Icon(Icons.download, color: Colors.white),
+              title: const Text('Descargar', style: TextStyle(color: Colors.white)),
+              onTap: () {
+                Navigator.pop(context); 
+                downloadAudio(context, video);
+              },
+            ),  
 
 void _showPlaylistDialog(BuildContext context, Video video, Color color) {
   final box = Hive.box('playlists');
