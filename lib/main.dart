@@ -516,25 +516,7 @@ else Expanded(
                             ),
                           ],
                         ),
-                        onTap: () async {
-                          final queueItems = videos.map((vid) => MediaItem(
-                            id: vid.id.value,
-                            title: vid.title,
-                            artist: vid.author,
-                            duration: vid.duration,
-                            artUri: Uri.parse(vid.thumbnails.highResUrl),
-                          )).toList();
-                          
-                          await globalPlayQueue(queueItems, index);
-                        },
-                      );
-                    },
-                  );
-                },
-              ),
-            ),
-              onTap: () async {
-                // Convertimos la lista de resultados y cerramos bien los paréntesis
+                                      onTap: () async {
                 final queueItems = videos.map((vid) => MediaItem(
                   id: vid.id.value,
                   title: vid.title,
@@ -546,18 +528,7 @@ else Expanded(
                 await globalPlayQueue(queueItems, index);
               },
             );
-                    }
-                  ); 
-                });
-              }
-            )
-          ),
-        ],
-      ),
-    );
-  }
-}
-
+                          
 class VaultScreen extends StatelessWidget { 
   const VaultScreen({super.key}); 
   @override Widget build(BuildContext context) { 
@@ -730,7 +701,7 @@ class _CerrojoScreenState extends State<CerrojoScreen> {
 
       Navigator.pushReplacement(
         context,
-        MaterialPageRoute(builder: (context) => const SuperAppSkeleton()),
+        MaterialPageRoute(builder: (context) => SuperAppSkeleton()),
       );
     } else {
       setState(() {
