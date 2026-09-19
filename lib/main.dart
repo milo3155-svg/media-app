@@ -727,9 +727,9 @@ class FullScreenPlayer extends StatelessWidget {
 
             return Column(
               children: [
-                // BARRA SUPERIOR
+                // BARRA SUPERIOR (Se agregó top: 24.0 para bajar los botones del Notch)
                 Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 4.0, vertical: 8.0),
+                  padding: const EdgeInsets.only(top: 24.0, left: 4.0, right: 4.0, bottom: 8.0),
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
@@ -815,13 +815,12 @@ class FullScreenPlayer extends StatelessWidget {
                         
                         const SizedBox(height: 20),
                         
-                        // BOTONES DE REPRODUCCIÓN (Corregidos)
+                        // BOTONES DE REPRODUCCIÓN
                         StreamBuilder<PlaybackState>(
                           stream: audioHandler.playbackState,
                           builder: (context, snapshot) {
                             final playing = snapshot.data?.playing ?? false;
                             final isBuffering = snapshot.data?.processingState == AudioProcessingState.buffering || snapshot.data?.processingState == AudioProcessingState.loading;
-                            // Obtenemos la posición actual de forma segura sin usar .value
                             final currentPosition = snapshot.data?.position ?? Duration.zero;
                             
                             return Row(
@@ -846,10 +845,9 @@ class FullScreenPlayer extends StatelessWidget {
                       ],
                     )
                   )
-                ),    
+                ),
                 
-                // PANEL INFERIOR "REPRODUCIENDO AHORA" CON MODAL RESTAURADO
-                const SizedBox(height:20),
+                // PANEL INFERIOR "REPRODUCIENDO AHORA" CON IMÁGENES ACTIVAS
                 StreamBuilder<List<MediaItem>>(
                   stream: audioHandler.queue,
                   builder: (context, queueSnapshot) {
@@ -876,9 +874,15 @@ class FullScreenPlayer extends StatelessWidget {
                                     final qItem = queue[i];
                                     final isCurrent = qItem.id == mediaItem.id;
                                     return ListTile(
-                                      leading: isCurrent ? const Icon(Icons.bar_chart, color: Colors.blueAccent) : const Icon(Icons.music_note, color: Colors.grey),
+                                      leading: ClipRRect(
+                                        borderRadius: BorderRadius.circular(4.0),
+                                        child: qItem.artUri != null
+                                            ? Image.network(qItem.artUri.toString(), width: 48, height: 48, fit: BoxFit.cover)
+                                            : Container(width: 48, height: 48, color: Colors.grey[900], child: const Icon(Icons.music_note, color: Colors.grey)),
+                                      ),
                                       title: Text(qItem.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: isCurrent ? Colors.blueAccent : Colors.white)),
                                       subtitle: Text(qItem.artist ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.grey)),
+                                      trailing: isCurrent ? const Icon(Icons.bar_chart, color: Colors.blueAccent) : null,
                                       onTap: () {
                                         audioHandler.skipToQueueItem(i);
                                         Navigator.pop(context);
@@ -893,7 +897,7 @@ class FullScreenPlayer extends StatelessWidget {
                       },
                       child: Container(
                         padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
-                        color: Colors.transparent, // Asegura que toda el área sea táctil
+                        color: Colors.transparent,
                         child: Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
@@ -995,11 +999,24 @@ class _CerrojoScreenState extends State<CerrojoScreen> {
 
 Future<void> downloadAudio(BuildContext context, dynamic item) async {
   try {
-    final String videoId = item is MediaItem ? item.id : item.id.value;
+    final isMediaItem = item is MediaItem;
+    final String videoId = isMediaItem ? item.id : item.id.value;
     final String videoTitle = item.title;
-    final String artist = item.artist ?? 'Desconocido';
-    final String artUri = item.artUri?.toString() ?? '';
-    final int duration = item.duration?.inMilliseconds ?? 0;
+    
+    // Variables seguras para evitar el NoSuchMethodError
+    String artist = 'Desconocido';
+    String artUri = '';
+    int duration = 0;
+
+    if (isMediaItem) {
+      artist = item.artist ?? 'Desconocido';
+      artUri = item.artUri?.toString() ?? '';
+      duration = item.duration?.inMilliseconds ?? 0;
+    } else {
+      try { artist = item.author; } catch(_) {}
+      try { artUri = item.thumbnails.highResUrl; } catch(_) {}
+      try { duration = item.duration?.inMilliseconds ?? 0; } catch(_) {}
+    }
     
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Preparando descarga: $videoTitle...')));
     
@@ -1007,7 +1024,6 @@ Future<void> downloadAudio(BuildContext context, dynamic item) async {
     final manifest = await yt.videos.streamsClient.getManifest(videoId);
     final streamInfo = manifest.audioOnly.withHighestBitrate();
     
-    // MAGIA OFFLINE: Obtenemos la ruta interna y segura de la aplicación
     final directory = await getApplicationDocumentsDirectory();
     final cleanTitle = videoTitle.replaceAll(RegExp(r'[^\w\s]+'), '');
     final savePath = '${directory.path}/$cleanTitle.m4a';
@@ -1023,7 +1039,6 @@ Future<void> downloadAudio(BuildContext context, dynamic item) async {
     await fileStream.close();
     yt.close();
     
-    // Guardamos la referencia en Hive para usarla en el Gestor de Descargas
     final downloadsBox = Hive.box('downloads');
     downloadsBox.put(videoId, {
       'id': videoId,
@@ -1031,7 +1046,7 @@ Future<void> downloadAudio(BuildContext context, dynamic item) async {
       'artist': artist,
       'artUri': artUri,
       'duration': duration,
-      'localPath': savePath, // Esta es la llave maestra para reproducirlo sin internet
+      'localPath': savePath,
     });
     
     ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('¡Descarga Offline completada!'), backgroundColor: Colors.green));
