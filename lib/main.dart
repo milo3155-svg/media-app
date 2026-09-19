@@ -38,7 +38,7 @@ Future<void> main() async {
   await Hive.openBox('cerrojo_box');
   await Hive.openBox('favorites'); await Hive.openBox('history'); await Hive.openBox('search_history'); 
   await Hive.openBox('playlists'); 
-  await Hive.openBox('downloads);
+  await Hive.openBox('downloads');
   final session = await AudioSession.instance; await session.configure(const AudioSessionConfiguration.music());
   
   audioHandler = await AudioService.init(
@@ -815,17 +815,19 @@ class FullScreenPlayer extends StatelessWidget {
                         
                         const SizedBox(height: 20),
                         
-                        // BOTONES DE REPRODUCCIÓN
+                        // BOTONES DE REPRODUCCIÓN (Corregidos)
                         StreamBuilder<PlaybackState>(
                           stream: audioHandler.playbackState,
                           builder: (context, snapshot) {
                             final playing = snapshot.data?.playing ?? false;
                             final isBuffering = snapshot.data?.processingState == AudioProcessingState.buffering || snapshot.data?.processingState == AudioProcessingState.loading;
+                            // Obtenemos la posición actual de forma segura sin usar .value
+                            final currentPosition = snapshot.data?.position ?? Duration.zero;
                             
                             return Row(
                               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                               children: [
-                                IconButton(icon: const Icon(Icons.fast_rewind, color: Colors.white, size: 28), onPressed: () => audioHandler.seek((AudioService.position.value ?? Duration.zero) - const Duration(seconds: 10))),
+                                IconButton(icon: const Icon(Icons.fast_rewind, color: Colors.white, size: 28), onPressed: () => audioHandler.seek(currentPosition - const Duration(seconds: 10))),
                                 IconButton(icon: const Icon(Icons.skip_previous, color: Colors.white, size: 36), onPressed: () => audioHandler.skipToPrevious()),
                                 
                                 isBuffering 
@@ -836,15 +838,11 @@ class FullScreenPlayer extends StatelessWidget {
                                     ),
                                     
                                 IconButton(icon: const Icon(Icons.skip_next, color: Colors.white, size: 36), onPressed: () => audioHandler.skipToNext()),
-                                IconButton(icon: const Icon(Icons.fast_forward, color: Colors.white, size: 28), onPressed: () => audioHandler.seek((AudioService.position.value ?? Duration.zero) + const Duration(seconds: 10))),
+                                IconButton(icon: const Icon(Icons.fast_forward, color: Colors.white, size: 28), onPressed: () => audioHandler.seek(currentPosition + const Duration(seconds: 10))),
                               ]
                             );
                           }
                         ),
-                      ],
-                    )
-                  )
-                ),
                 
                 // PANEL INFERIOR "REPRODUCIENDO AHORA" CON MODAL RESTAURADO
                 StreamBuilder<List<MediaItem>>(
