@@ -38,6 +38,7 @@ Future<void> main() async {
   await Hive.openBox('cerrojo_box');
   await Hive.openBox('favorites'); await Hive.openBox('history'); await Hive.openBox('search_history'); 
   await Hive.openBox('playlists'); 
+  await Hive.openBox('downloads);
   final session = await AudioSession.instance; await session.configure(const AudioSessionConfiguration.music());
   
   audioHandler = await AudioService.init(
@@ -715,208 +716,206 @@ class FullScreenPlayer extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      height: MediaQuery.of(context).size.height * 0.95,
-      decoration: const BoxDecoration(color: Color(0xFF000000), borderRadius: BorderRadius.vertical(top: Radius.circular(30))),
-      child: StreamBuilder<MediaItem?>(
-        stream: audioHandler.mediaItem,
-        builder: (context, snapshot) {
-          final mediaItem = snapshot.data;
-          if (mediaItem == null) return const SizedBox.shrink();
+    return Scaffold(
+      backgroundColor: Colors.black,
+      body: SafeArea(
+        child: StreamBuilder<MediaItem?>(
+          stream: audioHandler.mediaItem,
+          builder: (context, snapshot) {
+            final mediaItem = snapshot.data;
+            if (mediaItem == null) return const SizedBox.shrink();
 
-          return Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 24.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.center,
+            return Column(
               children: [
-                const SizedBox(height: 16),
-                Container(width: 40, height: 5, decoration: BoxDecoration(color: Colors.grey[800], borderRadius: BorderRadius.circular(10))),
-                const SizedBox(height: 10),
-                
-                // TOP BAR: Botón de bajar, Descargar y Favoritos
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    IconButton(icon: const Icon(Icons.keyboard_arrow_down, color: Colors.white, size: 32), onPressed: () => Navigator.pop(context)),
-                    Row(
-                      children: [
-                        IconButton(
-                          icon: const Icon(Icons.download_rounded, color: Colors.white, size: 28),
-                          onPressed: () => downloadAudio(context, mediaItem)
-                        ),
-                        ValueListenableBuilder(
-                          valueListenable: Hive.box('favorites').listenable(),
-                          builder: (context, Box box, _) {
-                            final isFav = box.containsKey(mediaItem.id);
-                            return IconButton(
-                              icon: Icon(isFav ? Icons.favorite : Icons.favorite_border, color: isFav ? Colors.redAccent : Colors.white, size: 28),
-                              onPressed: () {
-                                if (isFav) { box.delete(mediaItem.id); } 
-                                else { box.put(mediaItem.id, {'id': mediaItem.id, 'title': mediaItem.title, 'artist': mediaItem.artist, 'artUri': mediaItem.artUri?.toString(), 'duration': mediaItem.duration?.inMilliseconds ?? 0}); }
-                              }
-                            );
-                          }
-                        )
-                      ]
-                    )
-                  ]
-                ),
-                
-                const SizedBox(height: 15),
-                ValueListenableBuilder<Color>(
-                  valueListenable: appColor,
-                  builder: (context, color, _) {
-                    return Container(
-                      decoration: BoxDecoration(
-                        boxShadow: [BoxShadow(color: color.withOpacity(0.3), blurRadius: 40, spreadRadius: 10)]
-                      ),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(20),
-                        child: Image.network(mediaItem.artUri.toString(), width: MediaQuery.of(context).size.width * 0.75, height: MediaQuery.of(context).size.width * 0.75, fit: BoxFit.cover)
-                      )
-                    );
-                  }
-                ),
-                const SizedBox(height: 30),
-                
-                // INFO DE PISTA Y CONTADOR DE COLA
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                // BARRA SUPERIOR
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 4.0, vertical: 8.0),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      IconButton(icon: const Icon(Icons.keyboard_arrow_down, color: Colors.white, size: 32), onPressed: () => Navigator.pop(context)),
+                      Row(
                         children: [
-                          Text(mediaItem.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold)),
-                          const SizedBox(height: 8),
-                          Text(mediaItem.artist ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.grey, fontSize: 18))
-                        ]
-                      )
-                    ),
-                    StreamBuilder<List<MediaItem>>(
-                      stream: audioHandler.queue,
-                      builder: (context, queueSnapshot) {
-                        final queue = queueSnapshot.data ?? [];
-                        final index = queue.indexWhere((item) => item.id == mediaItem.id);
-                        final displayIndex = index >= 0 ? index + 1 : 0;
-                        return Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                          decoration: BoxDecoration(color: Colors.white12, borderRadius: BorderRadius.circular(10)),
-                          child: Text("$displayIndex / ${queue.length}", style: const TextStyle(color: Colors.white70, fontSize: 13, fontWeight: FontWeight.bold))
-                        );
-                      }
-                    )
-                  ]
-                ),
-                const SizedBox(height: 20),
-                
-                // SLIDER DE REPRODUCCIÓN
-                StreamBuilder<Duration>(
-                  stream: AudioService.position,
-                  builder: (context, snapshotDuration) {
-                    final position = snapshotDuration.data ?? Duration.zero;
-                    final duration = mediaItem.duration ?? Duration.zero;
-                    return Column(
-                      children: [
-                        SliderTheme(
-                          data: SliderThemeData(trackHeight: 4, thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6), overlayShape: const RoundSliderOverlayShape(overlayRadius: 14)),
-                          child: ValueListenableBuilder<Color>(
-                            valueListenable: appColor,
-                            builder: (context, color, _) {
-                              return Slider(
-                                activeColor: color,
-                                inactiveColor: Colors.white24,
-                                value: position.inMilliseconds.toDouble().clamp(0, duration.inMilliseconds.toDouble()),
-                                max: duration.inMilliseconds.toDouble() > 0 ? duration.inMilliseconds.toDouble() : 1.0,
-                                onChanged: (val) => audioHandler.seek(Duration(milliseconds: val.toInt()))
+                          IconButton(icon: const Icon(Icons.download, color: Colors.white), onPressed: () => downloadAudio(context, mediaItem)),
+                          IconButton(icon: const Icon(Icons.timer_outlined, color: Colors.white), onPressed: () => _showSleepTimerDialog(context)),
+                          ValueListenableBuilder(
+                            valueListenable: Hive.box('favorites').listenable(),
+                            builder: (context, Box box, _) {
+                              final isFav = box.containsKey(mediaItem.id);
+                              return IconButton(
+                                icon: Icon(isFav ? Icons.favorite : Icons.favorite_border, color: isFav ? Colors.redAccent : Colors.white),
+                                onPressed: () {
+                                  if (isFav) { box.delete(mediaItem.id); } 
+                                  else { box.put(mediaItem.id, {'id': mediaItem.id, 'title': mediaItem.title, 'artist': mediaItem.artist, 'artUri': mediaItem.artUri?.toString(), 'duration': mediaItem.duration?.inMilliseconds ?? 0}); }
+                                }
                               );
                             }
-                          )
+                          ),
+                          IconButton(icon: const Icon(Icons.more_vert, color: Colors.white), onPressed: () {}),
+                        ]
+                      )
+                    ]
+                  )
+                ),
+                
+                // ARTE DE PORTADA EXTENDIDO
+                Expanded(
+                  flex: 4,
+                  child: SizedBox(
+                    width: double.infinity,
+                    child: Image.network(mediaItem.artUri.toString(), fit: BoxFit.cover),
+                  )
+                ),
+                
+                // CONTROLES E INFORMACIÓN
+                Expanded(
+                  flex: 5,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 24.0),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const SizedBox(height: 20),
+                        Text(mediaItem.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold)),
+                        const SizedBox(height: 8),
+                        Text(mediaItem.artist ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.grey, fontSize: 16)),
+                        const SizedBox(height: 30),
+                        
+                        // BARRA DE PROGRESO
+                        StreamBuilder<Duration>(
+                          stream: AudioService.position,
+                          builder: (context, snapshotDuration) {
+                            final position = snapshotDuration.data ?? Duration.zero;
+                            final duration = mediaItem.duration ?? Duration.zero;
+                            return Row(
+                              children: [
+                                Text(_formatDuration(position), style: const TextStyle(color: Colors.grey, fontSize: 12)),
+                                Expanded(
+                                  child: SliderTheme(
+                                    data: SliderThemeData(trackHeight: 2, thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6)),
+                                    child: ValueListenableBuilder<Color>(
+                                      valueListenable: appColor,
+                                      builder: (context, color, _) {
+                                        return Slider(
+                                          activeColor: color,
+                                          inactiveColor: Colors.white24,
+                                          value: position.inMilliseconds.toDouble().clamp(0, duration.inMilliseconds.toDouble()),
+                                          max: duration.inMilliseconds.toDouble() > 0 ? duration.inMilliseconds.toDouble() : 1.0,
+                                          onChanged: (val) => audioHandler.seek(Duration(milliseconds: val.toInt()))
+                                        );
+                                      }
+                                    )
+                                  )
+                                ),
+                                Text(_formatDuration(duration), style: const TextStyle(color: Colors.grey, fontSize: 12)),
+                              ],
+                            );
+                          }
                         ),
-                        Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Text(_formatDuration(position), style: const TextStyle(color: Colors.grey, fontSize: 12)),
-                              Text(_formatDuration(duration), style: const TextStyle(color: Colors.grey, fontSize: 12))
-                            ]
-                          )
-                        )
-                      ]
-                    );
-                  }
-                ),
-                
-                const Spacer(),
-                
-                // CONTROLES PRINCIPALES
-                StreamBuilder<PlaybackState>(
-                  stream: audioHandler.playbackState,
-                  builder: (context, snapshot) {
-                    final playing = snapshot.data?.playing ?? false;
-                    final isBuffering = snapshot.data?.processingState == AudioProcessingState.buffering || snapshot.data?.processingState == AudioProcessingState.loading;
-                    
-                    return ValueListenableBuilder<Color>(
-                      valueListenable: appColor,
-                      builder: (context, color, _) {
-                        return Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                          children: [
-                            ValueListenableBuilder<int>(
-                              valueListenable: sleepTimerRemaining,
-                              builder: (context, timeLeft, _) {
-                                if (timeLeft > 0) {
-                                  final m = (timeLeft ~/ 60).toString().padLeft(2, '0');
-                                  final s = (timeLeft % 60).toString().padLeft(2, '0');
-                                  return GestureDetector(
-                                    onTap: () => _showSleepTimerDialog(context),
-                                    child: Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                                      decoration: BoxDecoration(color: color.withOpacity(0.2), borderRadius: BorderRadius.circular(15)),
-                                      child: Text("$m:$s", style: TextStyle(color: color, fontWeight: FontWeight.bold, fontSize: 13))
-                                    )
-                                  );
-                                }
-                                return IconButton(icon: const Icon(Icons.timer, color: Colors.grey), onPressed: () => _showSleepTimerDialog(context));
-                              }
-                            ),
-                            IconButton(
-                              icon: const Icon(Icons.skip_previous, size: 48, color: Colors.white),
-                              onPressed: () => audioHandler.skipToPrevious()
-                            ),
-                            Container(
-                              width: 80, height: 80,
-                              decoration: BoxDecoration(shape: BoxShape.circle, color: color, boxShadow: [BoxShadow(color: color.withOpacity(0.5), blurRadius: 15)]),
-                              child: isBuffering 
-                                  ? const Padding(padding: EdgeInsets.all(20.0), child: CircularProgressIndicator(color: Colors.black, strokeWidth: 3))
+                        
+                        const SizedBox(height: 20),
+                        
+                        // BOTONES DE REPRODUCCIÓN
+                        StreamBuilder<PlaybackState>(
+                          stream: audioHandler.playbackState,
+                          builder: (context, snapshot) {
+                            final playing = snapshot.data?.playing ?? false;
+                            final isBuffering = snapshot.data?.processingState == AudioProcessingState.buffering || snapshot.data?.processingState == AudioProcessingState.loading;
+                            
+                            return Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                              children: [
+                                IconButton(icon: const Icon(Icons.fast_rewind, color: Colors.white, size: 28), onPressed: () => audioHandler.seek((AudioService.position.value ?? Duration.zero) - const Duration(seconds: 10))),
+                                IconButton(icon: const Icon(Icons.skip_previous, color: Colors.white, size: 36), onPressed: () => audioHandler.skipToPrevious()),
+                                
+                                isBuffering 
+                                  ? const Padding(padding: EdgeInsets.all(12.0), child: CircularProgressIndicator(color: Colors.white))
                                   : IconButton(
-                                      icon: Icon(playing ? Icons.pause : Icons.play_arrow, size: 48, color: Colors.black),
+                                      icon: Icon(playing ? Icons.pause : Icons.play_arrow, color: Colors.white, size: 54),
                                       onPressed: () => playing ? audioHandler.pause() : audioHandler.play()
-                                    )
-                            ),
-                            IconButton(
-                              icon: const Icon(Icons.skip_next, size: 48, color: Colors.white),
-                              onPressed: () => audioHandler.skipToNext()
-                            ),
-                            IconButton(
-                              icon: const Icon(Icons.shuffle, color: Colors.grey),
-                              onPressed: () {
-                                audioHandler.customAction('shuffle');
-                                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Lista mezclada"), backgroundColor: Colors.black));
-                              }
-                            )
-                          ]
+                                    ),
+                                    
+                                IconButton(icon: const Icon(Icons.skip_next, color: Colors.white, size: 36), onPressed: () => audioHandler.skipToNext()),
+                                IconButton(icon: const Icon(Icons.fast_forward, color: Colors.white, size: 28), onPressed: () => audioHandler.seek((AudioService.position.value ?? Duration.zero) + const Duration(seconds: 10))),
+                              ]
+                            );
+                          }
+                        ),
+                      ],
+                    )
+                  )
+                ),
+                
+                // PANEL INFERIOR "REPRODUCIENDO AHORA" CON MODAL RESTAURADO
+                StreamBuilder<List<MediaItem>>(
+                  stream: audioHandler.queue,
+                  builder: (context, queueSnapshot) {
+                    final queue = queueSnapshot.data ?? [];
+                    final index = queue.indexWhere((item) => item.id == mediaItem.id);
+                    final displayIndex = index >= 0 ? index + 1 : 0;
+                    
+                    return GestureDetector(
+                      onTap: () {
+                        showModalBottomSheet(
+                          context: context,
+                          backgroundColor: const Color(0xFF1A1A1A),
+                          shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+                          builder: (context) => Column(
+                            children: [
+                              const Padding(
+                                padding: EdgeInsets.all(16.0),
+                                child: Text("Cola de Reproducción", style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+                              ),
+                              Expanded(
+                                child: ListView.builder(
+                                  itemCount: queue.length,
+                                  itemBuilder: (context, i) {
+                                    final qItem = queue[i];
+                                    final isCurrent = qItem.id == mediaItem.id;
+                                    return ListTile(
+                                      leading: isCurrent ? const Icon(Icons.bar_chart, color: Colors.blueAccent) : const Icon(Icons.music_note, color: Colors.grey),
+                                      title: Text(qItem.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: isCurrent ? Colors.blueAccent : Colors.white)),
+                                      subtitle: Text(qItem.artist ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.grey)),
+                                      onTap: () {
+                                        audioHandler.skipToQueueItem(i);
+                                        Navigator.pop(context);
+                                      },
+                                    );
+                                  },
+                                ),
+                              ),
+                            ],
+                          ),
                         );
-                      }
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
+                        color: Colors.transparent, // Asegura que toda el área sea táctil
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                ValueListenableBuilder<Color>(
+                                  valueListenable: appColor,
+                                  builder: (context, color, _) => Icon(Icons.keyboard_arrow_up, color: color, size: 20),
+                                ),
+                                const Text("Reproduciendo ahora", style: TextStyle(color: Colors.white, fontSize: 14)),
+                                Text("$displayIndex / ${queue.length}", style: const TextStyle(color: Colors.grey, fontSize: 12)),
+                              ]
+                            ),
+                            IconButton(icon: const Icon(Icons.more_vert, color: Colors.white), onPressed: () {}),
+                          ]
+                        )
+                      )
                     );
                   }
-                ),
-                const SizedBox(height: 30),
+                )
               ]
-            )
-          );
-        }
+            );
+          }
+        )
       )
     );
   }
@@ -995,23 +994,44 @@ Future<void> downloadAudio(BuildContext context, dynamic item) async {
   try {
     final String videoId = item is MediaItem ? item.id : item.id.value;
     final String videoTitle = item.title;
+    final String artist = item.artist ?? 'Desconocido';
+    final String artUri = item.artUri?.toString() ?? '';
+    final int duration = item.duration?.inMilliseconds ?? 0;
     
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Obteniendo audio: $videoTitle...')));
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Preparando descarga: $videoTitle...')));
+    
     final yt = YoutubeExplode();
     final manifest = await yt.videos.streamsClient.getManifest(videoId);
     final streamInfo = manifest.audioOnly.withHighestBitrate();
-    final audioUrl = streamInfo.url.toString();
     
-    // Nueva ruta: Se guarda directo en la carpeta pública de Descargas de Android
+    // MAGIA OFFLINE: Obtenemos la ruta interna y segura de la aplicación
+    final directory = await getApplicationDocumentsDirectory();
     final cleanTitle = videoTitle.replaceAll(RegExp(r'[^\w\s]+'), '');
-    final savePath = '/storage/emulated/0/Download/$cleanTitle.m4a';
+    final savePath = '${directory.path}/$cleanTitle.m4a';
     
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Descargando en carpeta Descargas...')));
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Descargando a tu bóveda offline...')));
     
-    await Dio().download(audioUrl, savePath);
+    final stream = yt.videos.streamsClient.get(streamInfo);
+    final file = File(savePath);
+    final fileStream = file.openWrite();
+    
+    await stream.pipe(fileStream);
+    await fileStream.flush();
+    await fileStream.close();
     yt.close();
     
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('¡Guardado en Descargas!'), backgroundColor: Colors.green));
+    // Guardamos la referencia en Hive para usarla en el Gestor de Descargas
+    final downloadsBox = Hive.box('downloads');
+    downloadsBox.put(videoId, {
+      'id': videoId,
+      'title': videoTitle,
+      'artist': artist,
+      'artUri': artUri,
+      'duration': duration,
+      'localPath': savePath, // Esta es la llave maestra para reproducirlo sin internet
+    });
+    
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('¡Descarga Offline completada!'), backgroundColor: Colors.green));
   } catch (e) {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error al descargar: $e'), backgroundColor: Colors.red));
   }
