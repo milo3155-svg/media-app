@@ -258,56 +258,32 @@ Future<void> globalPlayQueue(List<MediaItem> items, int startIndex) async {
 void globalShowOptions(BuildContext context, Video video, Color color) {
   showModalBottomSheet(
     context: context, backgroundColor: const Color(0xFF1A1A1A), isScrollControlled: true,
-    shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))), 
-    builder: (context) { 
+    shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+    builder: (context) {
       return Padding(
-        padding: const EdgeInsets.symmetric(vertical: 10), 
+        padding: const EdgeInsets.symmetric(vertical: 10),
         child: Column(
-          mainAxisSize: MainAxisSize.min, 
+          mainAxisSize: MainAxisSize.min,
           children: [
-            ListTile(leading: ClipRRect(borderRadius: BorderRadius.circular(4), child: Image.network(video.thumbnails.lowResUrl, width: 40, height: 40, fit: BoxFit.cover)), title: Text(video.title, maxLines: 1, overflow: TextOverflow.ellipsis), subtitle: Text(video.author, style: const TextStyle(color: Colors.grey))), 
-            const Divider(color: Colors.white24), 
-            ListTile(leading: const Icon(Icons.radio, color: Colors.white), title: const Text('Ir a radio de la canción'), onTap: () async { Navigator.pop(context); final newItem = MediaItem(id: video.id.value, title: video.title, artist: video.author, duration: video.duration, artUri: Uri.parse(video.thumbnails.highResUrl)); await globalPlay(newItem); ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Iniciando Radio de ${video.title}'), backgroundColor: color)); }),
-            ListTile(leading: const Icon(Icons.playlist_add, color: Colors.white), title: const Text('Agregar a una playlist'), onTap: () { Navigator.pop(context); _showPlaylistDialog(context, video, color); }),
-            ListTile(
-  leading: const Icon(Icons.queue_music, color: Colors.white),
-  title: const Text('Agregar a la cola', style: TextStyle(color: Colors.white)),
-  onTap: () async {
-    Navigator.pop(context);
-    final itemToQueue = MediaItem(
-      id: video.id.value,
-      title: video.title,
-      artist: video.author,
-      duration: video.duration,
-      artUri: Uri.parse(video.thumbnails.highResUrl),
-    );
-    await audioHandler.addQueueItem(itemToQueue);
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Cancion agregada a la cola')),
-    );
+            ListTile(leading: ClipRRect(borderRadius: BorderRadius.circular(4), child: Image.network(video.thumbnails.highResUrl, width: 50, height: 50, fit: BoxFit.cover)), title: Text(video.title, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)), subtitle: Text(video.author, style: const TextStyle(color: Colors.grey))),
+            const Divider(color: Colors.white24),
+            ListTile(leading: const Icon(Icons.radio, color: Colors.white), title: const Text('Ir a la radio de la canción', style: TextStyle(color: Colors.white))),
+            ListTile(leading: const Icon(Icons.playlist_add, color: Colors.white), title: const Text('Agregar a una playlist', style: TextStyle(color: Colors.white)), onTap: () { Navigator.pop(context); _showPlaylistDialog(context, video, color); }),
             ListTile(
               leading: const Icon(Icons.queue_music, color: Colors.white),
               title: const Text('Agregar a la cola', style: TextStyle(color: Colors.white)),
               onTap: () async {
                 Navigator.pop(context);
-                final itemToQueue = MediaItem(
-                  id: video.id.value,
-                  title: video.title,
-                  artist: video.author,
-                  duration: video.duration,
-                  artUri: Uri.parse(video.thumbnails.highResUrl),
-                );
+                final itemToQueue = MediaItem(id: video.id.value, title: video.title, artist: video.author, duration: video.duration, artUri: Uri.parse(video.thumbnails.highResUrl));
                 await audioHandler.addQueueItem(itemToQueue);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Canción agregada a la cola')),
-                );
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Canción agregada a la cola')));
               },
             ),
-              ListTile(
+            ListTile(
               leading: const Icon(Icons.download, color: Colors.white),
               title: const Text('Descargar', style: TextStyle(color: Colors.white)),
               onTap: () {
-                Navigator.pop(context); 
+                Navigator.pop(context);
                 downloadAudio(context, video);
               },
             ),
@@ -316,35 +292,47 @@ void globalShowOptions(BuildContext context, Video video, Color color) {
               builder: (context, Box box, _) {
                 final isFav = box.containsKey(video.id.value);
                 return ListTile(
-                  leading: Icon(isFav ? Icons.favorite : Icons.favorite_border, color: isFav ? Colors.redAccent : Colors.white), 
-                  title: Text(isFav ? 'Eliminar de Tus me gusta' : 'Agregar a Tus me gusta'), 
-                  onTap: () { 
+                  leading: Icon(isFav ? Icons.favorite : Icons.favorite_border, color: isFav ? Colors.redAccent : Colors.white),
+                  title: Text(isFav ? 'Eliminar de Tus me gusta' : 'Agregar a Tus me gusta', style: const TextStyle(color: Colors.white)),
+                  onTap: () {
                     if (isFav) { box.delete(video.id.value); } else { box.put(video.id.value, {'id': video.id.value, 'title': video.title, 'artist': video.author, 'artUri': video.thumbnails.highResUrl, 'duration': video.duration?.inMilliseconds ?? 0}); }
-                    Navigator.pop(context); ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(isFav ? 'Eliminado de Favoritos' : 'Agregado a Favoritos'), backgroundColor: color)); 
+                    Navigator.pop(context);
+                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(isFav ? 'Eliminado de Favoritos' : 'Agregado a Favoritos'), backgroundColor: color));
                   }
                 );
               }
             ),
           ]
         )
-      ); 
+      );
     }
-  ); 
+  );
 }
-  
+
 void _showPlaylistDialog(BuildContext context, Video video, Color color) {
   final box = Hive.box('playlists');
   final songData = {'id': video.id.value, 'title': video.title, 'artist': video.author, 'artUri': video.thumbnails.highResUrl, 'duration': video.duration?.inMilliseconds ?? 0};
   showDialog(
-    context: context, 
-    builder: (context) => AlertDialog(backgroundColor: const Color(0xFF1A1A1A), title: const Text("Mis Playlists", style: TextStyle(color: Colors.white)), content: SizedBox(width: double.maxFinite, child: Column(mainAxisSize: MainAxisSize.min, children: [
-            ListTile(leading: const Icon(Icons.add, color: Colors.white), title: const Text("Crear Nueva Playlist", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white)), onTap: () { Navigator.pop(context); _showCreatePlaylistDialog(context, songData, color); }), const Divider(color: Colors.white24),
-            if (box.isEmpty) const Padding(padding: EdgeInsets.all(16), child: Text("No tienes playlists aún", style: TextStyle(color: Colors.grey)))
-            else ...box.keys.map((key) => ListTile(leading: const Icon(Icons.queue_music, color: Colors.grey), title: Text(key.toString(), style: const TextStyle(color: Colors.white)), onTap: () {
-                List currentList = box.get(key) ?? []; if (!currentList.any((s) => s['id'] == songData['id'])) { currentList.add(songData); box.put(key, currentList); ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Agregada a $key'), backgroundColor: color)); } else { ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Ya está en esta playlist'), backgroundColor: Colors.redAccent)); } Navigator.pop(context);
-              })).toList()
-          ])))
+    context: context,
+    builder: (context) => AlertDialog(backgroundColor: const Color(0xFF1A1A1A), title: const Text("Mis Playlists", style: TextStyle(color: Colors.white)),
+      content: Column(mainAxisSize: MainAxisSize.min, children: [
+        ListTile(leading: const Icon(Icons.add, color: Colors.white), title: const Text("Crear Nueva Playlist", style: TextStyle(color: Colors.white)), onTap: () { Navigator.pop(context); _showCreatePlaylistDialog(context, songData, color); }),
+        if (box.isEmpty) const Padding(padding: EdgeInsets.all(16), child: Text("No tienes playlists aún", style: TextStyle(color: Colors.grey)))
+        else ...box.keys.map((key) => ListTile(leading: const Icon(Icons.queue_music, color: Colors.grey), title: Text(key.toString(), style: const TextStyle(color: Colors.white)), onTap: () { final currentList = box.get(key) ?? []; if (!currentList.any((s) => s['id'] == songData['id'])) { currentList.add(songData); box.put(key, currentList); } Navigator.pop(context); ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Agregado a $key"), backgroundColor: color)); })).toList()
+      ])
+    )
   );
+}
+
+void _showCreatePlaylistDialog(BuildContext context, Map songData, Color color) {
+  final textController = TextEditingController();
+  showDialog(context: context, builder: (context) => AlertDialog(backgroundColor: const Color(0xFF1A1A1A), title: const Text("Nueva Playlist", style: TextStyle(color: Colors.white)),
+    content: TextField(controller: textController, style: const TextStyle(color: Colors.white), decoration: const InputDecoration(hintText: "Nombre de la playlist", hintStyle: TextStyle(color: Colors.grey))),
+    actions: [
+      TextButton(onPressed: () => Navigator.pop(context), child: const Text("Cancelar", style: TextStyle(color: Colors.grey))),
+      TextButton(onPressed: () { if (textController.text.trim().isNotEmpty) { Hive.box('playlists').put(textController.text.trim(), [songData]); Navigator.pop(context); ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Playlist creada"), backgroundColor: color)); } }, child: const Text("Crear", style: TextStyle(color: Colors.white)))
+    ]
+  ));
 }
 
 void _showCreatePlaylistDialog(BuildContext context, Map songData, Color color) {
@@ -475,85 +463,60 @@ class _SearchScreenState extends State<SearchScreen> {
       ],
     );
   }
-
-  @override Widget build(BuildContext context) {
+  @override
+  Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Buscador VIP', style: TextStyle(fontWeight: FontWeight.bold))),
       body: Column(
         children: [
-          Padding(padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0), child: TextField(controller: searchController, onChanged: (val) { if (_debounce?.isActive ?? false) _debounce!.cancel(); _debounce = Timer(const Duration(milliseconds: 500), () async { if (val.isEmpty) { if(mounted) setState(() { videos.clear(); searchSuggestions.clear(); }); } else { try { var sugs = await yt.search.getQuerySuggestions(val); if(mounted) setState(() { searchSuggestions = sugs; }); } catch(e) { } } }); }, decoration: InputDecoration(hintText: 'Buscar música...', filled: true, fillColor: const Color(0xFF1A1A1A), contentPadding: const EdgeInsets.symmetric(vertical: 0, horizontal: 20), border: OutlineInputBorder(borderRadius: BorderRadius.circular(30), borderSide: BorderSide.none), suffixIcon: ValueListenableBuilder<Color>(valueListenable: appColor, builder: (context, color, _) => IconButton(icon: Icon(Icons.search, color: color), onPressed: () => searchVideos(searchController.text)))), onSubmitted: searchVideos)),
-          SizedBox(height: 40, child: ListView.builder(scrollDirection: Axis.horizontal, padding: const EdgeInsets.symmetric(horizontal: 12), itemCount: _categories.length, itemBuilder: (context, index) { String displayLabel = _categories.keys.elementAt(index); String searchQuery = _categories.values.elementAt(index); return Padding(padding: const EdgeInsets.symmetric(horizontal: 4.0), child: ChoiceChip(label: Text(displayLabel, style: const TextStyle(color: Colors.white)), selected: false, backgroundColor: const Color(0xFF1A1A1A), onSelected: (bool selected) { searchController.text = displayLabel; searchController.selection = TextSelection.fromPosition(TextPosition(offset: searchController.text.length)); searchVideos(searchQuery); })); })),
-          const SizedBox(height: 8),
-          if (isLoading) Expanded(child: Center(child: ValueListenableBuilder<Color>(valueListenable: appColor, builder: (context, color, _) => CircularProgressIndicator(color: color))))
-          else if (searchSuggestions.isNotEmpty && videos.isEmpty) Expanded(child: ListView.builder(itemCount: searchSuggestions.length, itemBuilder: (context, index) { return ListTile(leading: const Icon(Icons.search, color: Colors.grey), title: Text(searchSuggestions[index], style: const TextStyle(color: Colors.white)), onTap: () { searchController.text = searchSuggestions[index]; searchVideos(searchSuggestions[index]); }); }))
-          else if (videos.isEmpty && searchController.text.isEmpty) Expanded(child: _buildSearchHistory()) 
-else Expanded(
-              child: StreamBuilder<MediaItem?>(
-                stream: audioHandler.mediaItem,
-                builder: (context, snapshot) {
-                  final currentId = snapshot.data?.id;
-                  return ListView.builder(
-                    padding: const EdgeInsets.only(bottom: 100),
-                    itemCount: videos.length,
-                    itemBuilder: (context, index) {
-                      final video = videos[index];
-                      final isPlaying = currentId == video.id.value;
-                      
-                      return ListTile(
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                        leading: Stack(
-                          children: [
-                            ClipRRect(
-                              borderRadius: BorderRadius.circular(8),
-                              child: Image.network(video.thumbnails.mediumResUrl, width: 55, height: 55, fit: BoxFit.cover),
-                            ),
-                            Positioned(
-                              bottom: 2,
-                              right: 2,
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-                                decoration: BoxDecoration(color: Colors.black87, borderRadius: BorderRadius.circular(4)),
-                                child: Text(formatGlobalDuration(video.duration), style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold)),
-                              ),
-                            ),
-                          ],
-                        ),
-                        title: Text(video.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w500)),
-                        subtitle: Text(video.author, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.grey, fontSize: 13)),
-                        trailing: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            if (isPlaying) ValueListenableBuilder<Color>(
-                              valueListenable: appColor, 
-                              builder: (context, color, _) => Icon(Icons.equalizer, color: color, size: 24)
-                            ),
-                            ValueListenableBuilder<Color>(
-                              valueListenable: appColor, 
-                              builder: (context, color, _) => IconButton(
-                                icon: const Icon(Icons.more_vert, color: Colors.grey), 
-                                onPressed: () => globalShowOptions(context, video, color)
-                              )
-                            ),
-                          ],
-                        ),
-                                      onTap: () async {
-                final queueItems = videos.map((vid) => MediaItem(
-                  id: vid.id.value,
-                  title: vid.title,
-                  artist: vid.author,
-                  duration: vid.duration,
-                  artUri: Uri.parse(vid.thumbnails.highResUrl),
-                )).toList();
-                
-                await globalPlayQueue(queueItems, index);
-            ),
-          );
-        }
-      ),
+          Padding(padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0), child: Row(children: [ Expanded(child: TextField(controller: searchController, decoration: InputDecoration(hintText: 'Buscar...', border: OutlineInputBorder(borderRadius: BorderRadius.circular(10))), onSubmitted: (val) { if (val.trim().isNotEmpty) { _saveSearchHistory(val); searchVideos(val); } })) ])),
+          if (isLoading) const Expanded(child: Center(child: CircularProgressIndicator()))
+          else if (searchSuggestions.isNotEmpty && videos.isEmpty) Expanded(child: ListView.builder(itemCount: searchSuggestions.length, itemBuilder: (context, index) => ListTile(title: Text(searchSuggestions[index]), onTap: () { searchController.text = searchSuggestions[index]; searchVideos(searchSuggestions[index]); })))
+          else if (videos.isEmpty && searchController.text.isEmpty) Expanded(child: _buildSearchHistory())
+          else Expanded(
+            child: StreamBuilder<MediaItem?>(
+              stream: audioHandler.mediaItem,
+              builder: (context, snapshot) {
+                final currentId = snapshot.data?.id;
+                return ListView.builder(
+                  padding: const EdgeInsets.only(bottom: 100),
+                  itemCount: videos.length,
+                  itemBuilder: (context, index) {
+                    final video = videos[index];
+                    final isPlaying = currentId == video.id.value;
+                    return ListTile(
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                      leading: Stack(
+                        children: [
+                          ClipRRect(borderRadius: BorderRadius.circular(8), child: Image.network(video.thumbnails.mediumResUrl, width: 80, height: 50, fit: BoxFit.cover)),
+                          Positioned(bottom: 2, right: 2, child: Container(padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2), decoration: BoxDecoration(color: Colors.black87, borderRadius: BorderRadius.circular(4)), child: Text(_formatGlobalDuration(video.duration), style: const TextStyle(color: Colors.white, fontSize: 10))))
+                        ]
+                      ),
+                      title: Text(video.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white)),
+                      subtitle: Text(video.author, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.grey)),
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (isPlaying) ValueListenableBuilder<Color>(valueListenable: appColor, builder: (context, color, _) => Icon(Icons.equalizer, color: color, size: 24)),
+                          ValueListenableBuilder<Color>(valueListenable: appColor, builder: (context, color, _) => IconButton(icon: const Icon(Icons.more_vert, color: Colors.grey), onPressed: () => globalShowOptions(context, video, color)))
+                        ]
+                      ),
+                      onTap: () async {
+                        final queueItems = videos.map((vid) => MediaItem(id: vid.id.value, title: vid.title, artist: vid.author, duration: vid.duration, artUri: Uri.parse(vid.thumbnails.highResUrl))).toList();
+                        await globalPlayQueue(queueItems, index);
+                      }
+                    );
+                  }
+                );
+              }
+            )
+          )
+        ]
+      )
     );
   }
 }
-
+  
 class VaultScreen extends StatelessWidget {          
   const VaultScreen({super.key}); 
   @override Widget build(BuildContext context) { 
