@@ -1063,49 +1063,53 @@ Future<void> downloadAudio(BuildContext context, dynamic item) async {
       try { duration = item.duration?.inMilliseconds ?? 0; } catch(_) {}
     }
 
+    final directory = await getApplicationDocumentsDirectory();
+    final savePath = '${directory.path}/$videoId.m4a';
+    final file = File(savePath);
+
+    // BLINDAJE 1 MEJORADO: Destructor automático de archivos fantasma
+    if (file.existsSync()) {
+      if (file.lengthSync() == 0) {
+        file.deleteSync(); // Borra el archivo vacío del intento fallido anterior
+      } else {
+        // El archivo existe y está completo
+        final box = Hive.box('downloads');
+        await box.put(videoId, {
+          'id': videoId, 'title': videoTitle, 'artist': artist,
+          'artUri': artUri, 'duration': duration, 'localPath': savePath,
+        });
+        messenger.showSnackBar(const SnackBar(
+          content: Text('✅ Este audio ya está en tu Bóveda.'),
+          backgroundColor: Colors.blue,
+        ));
+        return; 
+      }
+    }
+
     messenger.showSnackBar(SnackBar(content: Text('Conectando: $videoTitle...')));
 
     yt = YoutubeExplode();
     var manifest = await yt.videos.streamsClient.getManifest(videoId);
     
-    // 🔥 SOLUCIÓN DINÁMICA: Dejar que YouTube decida el mejor formato y adaptar nuestra extensión
-    var streamInfo = manifest.audioOnly.withHighestBitrate();
-    String ext = streamInfo.container.name.toString().toLowerCase();
-    if (ext.contains('mp4')) ext = 'm4a'; // Estandarizar mp4 de audio a m4a
-
-    final directory = await getApplicationDocumentsDirectory();
-    final savePath = '${directory.path}/$videoId.$ext';
-    final file = File(savePath);
-
-    // BLINDAJE 1: Movimos la revisión de duplicados hasta saber la extensión correcta
-    if (file.existsSync()) {
-      final box = Hive.box('downloads');
-      await box.put(videoId, {
-        'id': videoId, 'title': videoTitle, 'artist': artist,
-        'artUri': artUri, 'duration': duration, 'localPath': savePath,
-      });
-      messenger.showSnackBar(const SnackBar(
-        content: Text('✅ Este audio ya está en tu Bóveda.'),
-        backgroundColor: Colors.blue,
-      ));
-      return; 
-    }
+    // 🔥 LA CURA DEFINITIVA: Filtrar estrictamente a M4A. ExoPlayer no tolerará WebM.
+    var audioStreams = manifest.audioOnly.where((s) => s.container.name.toString().toLowerCase().contains('mp4'));
+    if (audioStreams.isEmpty) throw Exception('No hay formato M4A compatible disponible.');
+    var streamInfo = audioStreams.withHighestBitrate();
 
     final stream = yt.videos.streamsClient.get(streamInfo);
     final fileStream = file.openWrite();
 
     messenger.hideCurrentSnackBar();
-    messenger.showSnackBar(SnackBar(content: Text('Descargando pista ($ext)...')));
+    messenger.showSnackBar(const SnackBar(content: Text('Descargando pista M4A nativa...')));
 
-    // BLINDAJE 2: Escritura segura sin usar el conflictivo .pipe()
+    // Escritura pura byte por byte
     await for (final chunk in stream) {
       fileStream.add(chunk);
     }
-    
     await fileStream.flush();
     await fileStream.close();
 
-    // BLINDAJE 3: Ahora sí llegará aquí sin explotar
+    // BLINDAJE 3: Si llegamos aquí, la pista es 100% sana
     final downloadsBox = Hive.box('downloads');
     await downloadsBox.put(videoId, {
       'id': videoId,
