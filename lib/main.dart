@@ -1043,6 +1043,15 @@ class _CerrojoScreenState extends State<CerrojoScreen> {
 Future<void> downloadAudio(BuildContext context, dynamic item) async {
   final messenger = ScaffoldMessenger.of(context);
   YoutubeExplode? yt;
+  
+  // Controlador para cerrar el cuadro de diálogo de forma segura
+  bool isDialogShowing = false;
+  void closeDialog() {
+    if (isDialogShowing && Navigator.canPop(context)) {
+      Navigator.pop(context);
+      isDialogShowing = false;
+    }
+  }
 
   try {
     final isMediaItem = item is MediaItem;
@@ -1067,12 +1076,11 @@ Future<void> downloadAudio(BuildContext context, dynamic item) async {
     final savePath = '${directory.path}/$videoId.m4a';
     final file = File(savePath);
 
-    // BLINDAJE 1 MEJORADO: Destructor automático de archivos fantasma
+    // BLINDAJE 1: Destructor de fantasmas
     if (file.existsSync()) {
       if (file.lengthSync() == 0) {
-        file.deleteSync(); // Borra el archivo vacío del intento fallido anterior
+        file.deleteSync(); 
       } else {
-        // El archivo existe y está completo
         final box = Hive.box('downloads');
         await box.put(videoId, {
           'id': videoId, 'title': videoTitle, 'artist': artist,
@@ -1086,30 +1094,79 @@ Future<void> downloadAudio(BuildContext context, dynamic item) async {
       }
     }
 
-    messenger.showSnackBar(SnackBar(content: Text('Conectando: $videoTitle...')));
-
     yt = YoutubeExplode();
     var manifest = await yt.videos.streamsClient.getManifest(videoId);
     
-    // 🔥 LA CURA DEFINITIVA: Filtrar estrictamente a M4A. ExoPlayer no tolerará WebM.
     var audioStreams = manifest.audioOnly.where((s) => s.container.name.toString().toLowerCase().contains('mp4'));
     if (audioStreams.isEmpty) throw Exception('No hay formato M4A compatible disponible.');
     var streamInfo = audioStreams.withHighestBitrate();
 
     final stream = yt.videos.streamsClient.get(streamInfo);
     final fileStream = file.openWrite();
+    
+    int totalBytes = streamInfo.size.totalBytes;
+    int receivedBytes = 0;
 
-    messenger.hideCurrentSnackBar();
-    messenger.showSnackBar(const SnackBar(content: Text('Descargando pista M4A nativa...')));
+    // 🔥 BLOQUEO DE PANTALLA: Barra de progreso en tiempo real
+    final progressNotifier = ValueNotifier<double>(0.0);
+    isDialogShowing = true;
+    
+    showDialog(
+      context: context,
+      barrierDismissible: false, // Bloquea la pantalla
+      builder: (context) {
+        return WillPopScope(
+          onWillPop: () async => false, // Desactiva el botón físico de "Atrás" de Android
+          child: AlertDialog(
+            backgroundColor: Colors.grey[900],
+            title: const Text('Descargando pista', style: TextStyle(color: Colors.white)),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text(
+                  'Descarga en proceso.\nNo desconecte la red ni encime otra descarga, por favor espere.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: Colors.orangeAccent, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 25),
+                ValueListenableBuilder<double>(
+                  valueListenable: progressNotifier,
+                  builder: (context, value, child) {
+                    return Column(
+                      children: [
+                        LinearProgressIndicator(
+                          value: value,
+                          backgroundColor: Colors.grey[700],
+                          valueColor: const AlwaysStoppedAnimation<Color>(Colors.blueAccent),
+                          minHeight: 8,
+                        ),
+                        const SizedBox(height: 12),
+                        Text(
+                          '${(value * 100).toStringAsFixed(1)}%', 
+                          style: const TextStyle(color: Colors.white, fontSize: 18)
+                        ),
+                      ],
+                    );
+                  },
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
 
-    // Escritura pura byte por byte
+    // BLINDAJE 2: Inyectar datos a la barra mientras descargamos
     await for (final chunk in stream) {
       fileStream.add(chunk);
+      receivedBytes += chunk.length;
+      progressNotifier.value = receivedBytes / totalBytes; // Esto mueve la barra
     }
+    
     await fileStream.flush();
     await fileStream.close();
 
-    // BLINDAJE 3: Si llegamos aquí, la pista es 100% sana
+    // BLINDAJE 3: Guardar en bóveda
     final downloadsBox = Hive.box('downloads');
     await downloadsBox.put(videoId, {
       'id': videoId,
@@ -1120,7 +1177,8 @@ Future<void> downloadAudio(BuildContext context, dynamic item) async {
       'localPath': savePath,
     });
 
-    messenger.hideCurrentSnackBar();
+    closeDialog(); // Quitar el bloqueo de pantalla al terminar con éxito
+
     messenger.showSnackBar(
       const SnackBar(
         content: Text('✅ ¡Descarga Offline completada!'),
@@ -1129,7 +1187,7 @@ Future<void> downloadAudio(BuildContext context, dynamic item) async {
     );
 
   } catch (e) {
-    messenger.hideCurrentSnackBar();
+    closeDialog(); // Quitar el bloqueo si hay error para no dejar al usuario atrapado
     messenger.showSnackBar(
       SnackBar(
         content: Text('Error crítico: $e'),
@@ -1138,6 +1196,7 @@ Future<void> downloadAudio(BuildContext context, dynamic item) async {
       ),
     );
   } finally {
+    closeDialog(); // Seguro de vida por si todo lo demás falla
     yt?.close();
   }
 }
