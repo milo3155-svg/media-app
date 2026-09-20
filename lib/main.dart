@@ -1055,7 +1055,7 @@ Future<void> downloadAudio(BuildContext context, dynamic item) async {
 
     // BLINDAJE 1: Prevención de duplicados (Resuelve tu sospecha)
     if (file.existsSync()) {
-      final box = await Hive.openBox('downloads');
+      final box = Hive.Box('downloads');
       await box.put(videoId, {
         'id': videoId,
         'title': videoTitle,
@@ -1104,7 +1104,7 @@ Future<void> downloadAudio(BuildContext context, dynamic item) async {
     await fileStream.close();
 
     // BLINDAJE 3: Apertura forzada de base de datos
-    final downloadsBox = await Hive.openBox('downloads');
+    final downloadsBox = Hive.Box('downloads');
     await downloadsBox.put(videoId, {
       'id': videoId,
       'title': videoTitle,
@@ -1183,10 +1183,27 @@ class OfflineVaultScreen extends StatelessWidget {
                     IconButton(
                       icon: const Icon(Icons.play_arrow, color: Colors.blueAccent),
                       onPressed: () {
-                         // Aquí agregaremos la lógica para reproducir el archivo local más adelante
-                         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Reproduciendo ${item['title']} desde almacenamiento local...')));
-                      },
-                    ),
+                         
+                         onPressed: () async {
+  ScaffoldMessenger.of(context).showSnackBar(
+    SnackBar(content: Text('Bóveda: Reproduciendo ${item['title']}...'))
+  );
+
+  try {
+    // 1. Detenemos cualquier audio que esté sonando de internet
+    await player.stop(); 
+    
+    // 2. MAGIA OFFLINE: Cargamos el archivo directamente desde tu memoria física
+    await player.setFilePath(item['localPath']); 
+    
+    // 3. Arrancamos la reproducción
+    player.play();
+  } catch (e) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Error al leer el archivo local: $e'))
+    );
+  }
+}
                     IconButton(
                       icon: const Icon(Icons.delete, color: Colors.redAccent),
                       onPressed: () {
