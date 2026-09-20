@@ -1028,7 +1028,8 @@ class _CerrojoScreenState extends State<CerrojoScreen> {
 
 Future<void> downloadAudio(BuildContext context, dynamic item) async {
   final messenger = ScaffoldMessenger.of(context);
-  
+  YoutubeExplode? yt;
+
   try {
     final isMediaItem = item is MediaItem;
     final String videoId = isMediaItem ? item.id : item.id.value;
@@ -1047,32 +1048,15 @@ Future<void> downloadAudio(BuildContext context, dynamic item) async {
       try { artUri = item.thumbnails.highResUrl; } catch(_) {}
       try { duration = item.duration?.inMilliseconds ?? 0; } catch(_) {}
     }
-    
-    messenger.showSnackBar(SnackBar(content: Text('Iniciando descarga: $videoTitle...')));
-    
-    final yt = YoutubeExplode();
-    var manifest = await yt.videos.streamsClient.getManifest(videoId);
-    var streamInfo = manifest.audioOnly.withHighestBitrate();
-    
+
     final directory = await getApplicationDocumentsDirectory();
-    // BLINDAJE: Usamos el videoId para el nombre del archivo, es 100% seguro contra errores.
     final savePath = '${directory.path}/$videoId.m4a';
-    
-    messenger.showSnackBar(const SnackBar(content: Text('Guardando en tu Bóveda Física...')));
-    
-    final stream = yt.videos.streamsClient.get(streamInfo);
     final file = File(savePath);
-    final fileStream = file.openWrite();
-    
-    await stream.pipe(fileStream);
-    await fileStream.flush();
-    await fileStream.close();
-    yt.close();
-    
-    // GUARDADO SEGURO EN HIVE
-    try {
-      final downloadsBox = Hive.box('downloads');
-      await downloadsBox.put(videoId, {
+
+    // BLINDAJE 1: Prevención de duplicados (Resuelve tu sospecha)
+    if (file.existsSync()) {
+      final box = await Hive.openBox('downloads');
+      await box.put(videoId, {
         'id': videoId,
         'title': videoTitle,
         'artist': artist,
@@ -1080,10 +1064,56 @@ Future<void> downloadAudio(BuildContext context, dynamic item) async {
         'duration': duration,
         'localPath': savePath,
       });
-    } catch (hiveError) {
-      print("Advertencia en base de datos: $hiveError");
+      messenger.showSnackBar(const SnackBar(
+        content: Text('✅ Este audio ya está guardado en tu Bóveda.'),
+        backgroundColor: Colors.blue,
+      ));
+      return; // Aborta la descarga para no trabar el teléfono
     }
-    
+
+    messenger.showSnackBar(SnackBar(content: Text('Conectando: $videoTitle...')));
+
+    yt = YoutubeExplode();
+    var manifest = await yt.videos.streamsClient.getManifest(videoId);
+    var streamInfo = manifest.audioOnly.withHighestBitrate();
+
+    final stream = yt.videos.streamsClient.get(streamInfo);
+    final fileStream = file.openWrite();
+
+    // BLINDAJE 2: Motor manual con reporte de progreso
+    int totalBytes = streamInfo.size.totalBytes;
+    int receivedBytes = 0;
+    int lastPercentage = 0;
+
+    await for (final chunk in stream) {
+      receivedBytes += chunk.length;
+      fileStream.add(chunk);
+
+      int percentage = ((receivedBytes / totalBytes) * 100).round();
+      if (percentage != lastPercentage && percentage % 25 == 0) {
+        lastPercentage = percentage;
+        messenger.hideCurrentSnackBar();
+        messenger.showSnackBar(SnackBar(
+          content: Text('Descargando: $percentage%'),
+          duration: const Duration(milliseconds: 1500),
+        ));
+      }
+    }
+
+    await fileStream.flush();
+    await fileStream.close();
+
+    // BLINDAJE 3: Apertura forzada de base de datos
+    final downloadsBox = await Hive.openBox('downloads');
+    await downloadsBox.put(videoId, {
+      'id': videoId,
+      'title': videoTitle,
+      'artist': artist,
+      'artUri': artUri,
+      'duration': duration,
+      'localPath': savePath,
+    });
+
     messenger.hideCurrentSnackBar();
     messenger.showSnackBar(
       const SnackBar(
@@ -1102,6 +1132,8 @@ Future<void> downloadAudio(BuildContext context, dynamic item) async {
         duration: const Duration(seconds: 5),
       ),
     );
+  } finally {
+    yt?.close(); // Asegura que la conexión de red se libere siempre
   }
 }
 
