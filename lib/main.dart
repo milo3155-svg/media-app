@@ -1067,41 +1067,44 @@ Future<void> downloadAudio(BuildContext context, dynamic item) async {
     final savePath = '${directory.path}/$videoId.m4a';
     final file = File(savePath);
 
-    // BLINDAJE 1: Prevención de duplicados (Resuelve tu sospecha)
+    // BLINDAJE 1: Evitar duplicados
     if (file.existsSync()) {
       final box = Hive.box('downloads');
       await box.put(videoId, {
-        'id': videoId,
-        'title': videoTitle,
-        'artist': artist,
-        'artUri': artUri,
-        'duration': duration,
-        'localPath': savePath,
+        'id': videoId, 'title': videoTitle, 'artist': artist,
+        'artUri': artUri, 'duration': duration, 'localPath': savePath,
       });
       messenger.showSnackBar(const SnackBar(
-        content: Text('✅ Este audio ya está guardado en tu Bóveda.'),
+        content: Text('✅ Este audio ya está en tu Bóveda.'),
         backgroundColor: Colors.blue,
       ));
-      return; // Aborta la descarga para no trabar el teléfono
+      return; 
     }
 
     messenger.showSnackBar(SnackBar(content: Text('Conectando: $videoTitle...')));
 
     yt = YoutubeExplode();
     var manifest = await yt.videos.streamsClient.getManifest(videoId);
-    var streamInfo = manifest.audioOnly.withHighestBitrate();
+    
+    // 🔥 LA CURA AL "SOURCE ERROR": Forzamos a YouTube a darnos un archivo MP4 nativo
+    var streamsMp4 = manifest.audioOnly.where((s) => s.container.name.toString().toLowerCase().contains('mp4'));
+    var streamInfo = streamsMp4.isNotEmpty ? streamsMp4.withHighestBitrate() : manifest.audioOnly.withHighestBitrate();
 
     final stream = yt.videos.streamsClient.get(streamInfo);
     final fileStream = file.openWrite();
 
-    // BLINDAJE 2: Motor directo del Sandbox (100% probado)
-    messenger.showSnackBar(const SnackBar(content: Text('Descargando audio en segundo plano...')));
-    
-    await stream.pipe(fileStream);
-    await fileStream.flush();
-    await fileStream.close();   
+    messenger.hideCurrentSnackBar();
+    messenger.showSnackBar(const SnackBar(content: Text('Descargando pista nativa...')));
 
-    // BLINDAJE 3: Apertura forzada de base de datos
+    // BLINDAJE 2: Escritura segura byte por byte
+    await for (final chunk in stream) {
+      fileStream.add(chunk);
+    }
+    
+    await fileStream.flush();
+    await fileStream.close();
+
+    // BLINDAJE 3: Guardado en Bóveda
     final downloadsBox = Hive.box('downloads');
     await downloadsBox.put(videoId, {
       'id': videoId,
@@ -1117,7 +1120,6 @@ Future<void> downloadAudio(BuildContext context, dynamic item) async {
       const SnackBar(
         content: Text('✅ ¡Descarga Offline completada!'),
         backgroundColor: Colors.green,
-        duration: Duration(seconds: 4),
       ),
     );
 
@@ -1131,7 +1133,7 @@ Future<void> downloadAudio(BuildContext context, dynamic item) async {
       ),
     );
   } finally {
-    yt?.close(); // Asegura que la conexión de red se libere siempre
+    yt?.close();
   }
 }
 
