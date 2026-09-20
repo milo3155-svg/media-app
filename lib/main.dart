@@ -416,8 +416,37 @@ class _SearchScreenState extends State<SearchScreen> {
   @override void dispose() { _debounce?.cancel(); searchController.dispose(); super.dispose(); }
 
   void _saveSearchHistory(String query) { if (query.trim().isEmpty) return; final box = Hive.box('search_history'); List<String> searches = box.values.cast<String>().toList(); searches.remove(query); searches.insert(0, query); if (searches.length > 15) searches = searches.sublist(0, 15); box.clear(); box.addAll(searches); }
-  void searchVideos(String query) async { if (query.isEmpty) return; FocusScope.of(context).unfocus(); _saveSearchHistory(query); setState(() { isLoading = true; searchSuggestions.clear(); }); try { var result = await yt.search.search(query); if(mounted) setState(() { videos = result.toList(); isLoading = false; }); } catch (e) { if(mounted) { setState(() => isLoading = false); } } }
-  
+  void searchVideos(String query) async {
+    if (query.trim().isEmpty) return;
+    FocusScope.of(context).unfocus();
+    _saveSearchHistory(query);
+    
+    setState(() {
+      isLoading = true;
+      videos.clear();
+    });
+
+    try {
+      final results = await yt.search.search(query);
+      setState(() {
+        videos = results.toList();
+        isLoading = false;
+      });
+    } catch (e) {
+      setState(() {
+        isLoading = false;
+      });
+      // EL DETECTOR DE ERRORES:
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error de conexión con YouTube: $e'),
+          backgroundColor: Colors.red,
+          duration: const Duration(seconds: 6),
+        ),
+      );
+    }
+  }
+
   Widget _buildSearchHistory() {
     return ListView(
       children: [
