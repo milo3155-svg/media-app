@@ -1063,11 +1063,21 @@ Future<void> downloadAudio(BuildContext context, dynamic item) async {
       try { duration = item.duration?.inMilliseconds ?? 0; } catch(_) {}
     }
 
+    messenger.showSnackBar(SnackBar(content: Text('Conectando: $videoTitle...')));
+
+    yt = YoutubeExplode();
+    var manifest = await yt.videos.streamsClient.getManifest(videoId);
+    
+    // 🔥 SOLUCIÓN DINÁMICA: Dejar que YouTube decida el mejor formato y adaptar nuestra extensión
+    var streamInfo = manifest.audioOnly.withHighestBitrate();
+    String ext = streamInfo.container.name.toString().toLowerCase();
+    if (ext.contains('mp4')) ext = 'm4a'; // Estandarizar mp4 de audio a m4a
+
     final directory = await getApplicationDocumentsDirectory();
-    final savePath = '${directory.path}/$videoId.m4a';
+    final savePath = '${directory.path}/$videoId.$ext';
     final file = File(savePath);
 
-    // BLINDAJE 1: Evitar duplicados
+    // BLINDAJE 1: Movimos la revisión de duplicados hasta saber la extensión correcta
     if (file.existsSync()) {
       final box = Hive.box('downloads');
       await box.put(videoId, {
@@ -1081,22 +1091,13 @@ Future<void> downloadAudio(BuildContext context, dynamic item) async {
       return; 
     }
 
-    messenger.showSnackBar(SnackBar(content: Text('Conectando: $videoTitle...')));
-
-    yt = YoutubeExplode();
-    var manifest = await yt.videos.streamsClient.getManifest(videoId);
-    
-    // 🔥 LA CURA AL "SOURCE ERROR": Forzamos a YouTube a darnos un archivo MP4 nativo
-    var streamsMp4 = manifest.audioOnly.where((s) => s.container.name.toString().toLowerCase().contains('mp4'));
-    var streamInfo = streamsMp4.isNotEmpty ? streamsMp4.withHighestBitrate() : manifest.audioOnly.withHighestBitrate();
-
     final stream = yt.videos.streamsClient.get(streamInfo);
     final fileStream = file.openWrite();
 
     messenger.hideCurrentSnackBar();
-    messenger.showSnackBar(const SnackBar(content: Text('Descargando pista nativa...')));
+    messenger.showSnackBar(SnackBar(content: Text('Descargando pista ($ext)...')));
 
-    // BLINDAJE 2: Escritura segura byte por byte
+    // BLINDAJE 2: Escritura segura sin usar el conflictivo .pipe()
     await for (final chunk in stream) {
       fileStream.add(chunk);
     }
@@ -1104,7 +1105,7 @@ Future<void> downloadAudio(BuildContext context, dynamic item) async {
     await fileStream.flush();
     await fileStream.close();
 
-    // BLINDAJE 3: Guardado en Bóveda
+    // BLINDAJE 3: Ahora sí llegará aquí sin explotar
     final downloadsBox = Hive.box('downloads');
     await downloadsBox.put(videoId, {
       'id': videoId,
