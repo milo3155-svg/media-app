@@ -1105,6 +1105,7 @@ Future<void> downloadAudio(BuildContext context, dynamic item) async {
     final fileStream = file.openWrite();
     
     int totalBytes = streamInfo.size.totalBytes;
+    if (totalBytes <= 0) totalBytes = 1; 
     int receivedBytes = 0;
 
     // 🔥 BLOQUEO DE PANTALLA: Barra de progreso en tiempo real
@@ -1156,11 +1157,14 @@ Future<void> downloadAudio(BuildContext context, dynamic item) async {
       },
     );
 
-    // BLINDAJE 2: Inyectar datos a la barra mientras descargamos
+    // BLINDAJE 2: Escritura segura y fluida
     await for (final chunk in stream) {
       fileStream.add(chunk);
       receivedBytes += chunk.length;
-      progressNotifier.value = receivedBytes / totalBytes; // Esto mueve la barra
+      
+      double progress = receivedBytes / totalBytes;
+      if (progress > 1.0) progress = 1.0;
+      progressNotifier.value = progress;
     }
     
     await fileStream.flush();
