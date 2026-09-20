@@ -12,6 +12,7 @@ import 'dart:math' as math;
 import 'dart:async'; 
 import 'package:dio/dio.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:http/http.dart' as http;
 
 class VIPHttpOverrides extends HttpOverrides {
   @override HttpClient createHttpClient(SecurityContext? context) {
@@ -1044,7 +1045,6 @@ Future<void> downloadAudio(BuildContext context, dynamic item) async {
   final messenger = ScaffoldMessenger.of(context);
   YoutubeExplode? yt;
   
-  // Controlador para cerrar el cuadro de diálogo de forma segura
   bool isDialogShowing = false;
   void closeDialog() {
     if (isDialogShowing && Navigator.canPop(context)) {
@@ -1076,7 +1076,6 @@ Future<void> downloadAudio(BuildContext context, dynamic item) async {
     final savePath = '${directory.path}/$videoId.m4a';
     final file = File(savePath);
 
-    // BLINDAJE 1: Destructor de fantasmas
     if (file.existsSync()) {
       if (file.lengthSync() == 0) {
         file.deleteSync(); 
@@ -1101,23 +1100,19 @@ Future<void> downloadAudio(BuildContext context, dynamic item) async {
     if (audioStreams.isEmpty) throw Exception('No hay formato M4A compatible disponible.');
     var streamInfo = audioStreams.withHighestBitrate();
 
-    final stream = yt.videos.streamsClient.get(streamInfo);
-    final fileStream = file.openWrite();
-    
-    int totalBytes = streamInfo.size.totalBytes;
-    if (totalBytes <= 0) totalBytes = 1; 
-    int receivedBytes = 0;
+    final audioUrl = streamInfo.url;
+    yt.close();
+    yt = null;
 
-    // 🔥 BLOQUEO DE PANTALLA: Barra de progreso en tiempo real
     final progressNotifier = ValueNotifier<double>(0.0);
     isDialogShowing = true;
     
     showDialog(
       context: context,
-      barrierDismissible: false, // Bloquea la pantalla
+      barrierDismissible: false,
       builder: (context) {
         return WillPopScope(
-          onWillPop: () async => false, // Desactiva el botón físico de "Atrás" de Android
+          onWillPop: () async => false,
           child: AlertDialog(
             backgroundColor: Colors.grey[900],
             title: const Text('Descargando pista', style: TextStyle(color: Colors.white)),
@@ -1157,20 +1152,25 @@ Future<void> downloadAudio(BuildContext context, dynamic item) async {
       },
     );
 
-    // BLINDAJE 2: Escritura segura y fluida
-    await for (final chunk in stream) {
+    final request = http.Request('GET', audioUrl);
+    final response = await http.Client().send(request);
+    
+    final totalBytes = response.contentLength ?? 1;
+    int receivedBytes = 0;
+
+    final fileStream = file.openWrite();
+    
+    await response.stream.forEach((chunk) {
       fileStream.add(chunk);
       receivedBytes += chunk.length;
-      
       double progress = receivedBytes / totalBytes;
       if (progress > 1.0) progress = 1.0;
       progressNotifier.value = progress;
-    }
-    
+    });
+
     await fileStream.flush();
     await fileStream.close();
 
-    // BLINDAJE 3: Guardar en bóveda
     final downloadsBox = Hive.box('downloads');
     await downloadsBox.put(videoId, {
       'id': videoId,
@@ -1181,7 +1181,7 @@ Future<void> downloadAudio(BuildContext context, dynamic item) async {
       'localPath': savePath,
     });
 
-    closeDialog(); // Quitar el bloqueo de pantalla al terminar con éxito
+    closeDialog();
 
     messenger.showSnackBar(
       const SnackBar(
@@ -1191,7 +1191,7 @@ Future<void> downloadAudio(BuildContext context, dynamic item) async {
     );
 
   } catch (e) {
-    closeDialog(); // Quitar el bloqueo si hay error para no dejar al usuario atrapado
+    closeDialog();
     messenger.showSnackBar(
       SnackBar(
         content: Text('Error crítico: $e'),
@@ -1200,7 +1200,7 @@ Future<void> downloadAudio(BuildContext context, dynamic item) async {
       ),
     );
   } finally {
-    closeDialog(); // Seguro de vida por si todo lo demás falla
+    closeDialog();
     yt?.close();
   }
 }
