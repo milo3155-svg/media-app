@@ -178,6 +178,20 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
       queue.add([]);
       return;
     }
+
+    if (name == 'playLocal' && extras != null) {
+          await _player.stop();
+          await _player.setFilePath(extras['localPath']);
+          _player.play();
+          
+          mediaItem.add(MediaItem(
+            id: extras['id'] ?? 'offline',
+            title: extras['title'] ?? 'Audio Local',
+            artist: 'Bóveda Offline',
+          ));
+          return;
+        }
+
     if (name == 'setSleepTimer' && extras != null) { 
       int minutes = extras['minutes']; _countdownTimer?.cancel(); 
       if (minutes > 0) { 
@@ -1180,30 +1194,27 @@ class OfflineVaultScreen extends StatelessWidget {
                 trailing: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    IconButton(
-                      icon: const Icon(Icons.play_arrow, color: Colors.blueAccent),
-                      onPressed: () {
-                         
-                         onPressed: () async {
-  ScaffoldMessenger.of(context).showSnackBar(
-    SnackBar(content: Text('Bóveda: Reproduciendo ${item['title']}...'))
-  );
-
-  try {
-    // 1. Detenemos cualquier audio que esté sonando de internet
-    await player.stop(); 
-    
-    // 2. MAGIA OFFLINE: Cargamos el archivo directamente desde tu memoria física
-    await player.setFilePath(item['localPath']); 
-    
-    // 3. Arrancamos la reproducción
-    player.play();
-  } catch (e) {
+                  
+                   IconButton(
+  icon: const Icon(Icons.play_arrow, color: Colors.blueAccent),
+  onPressed: () async {
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Error al leer el archivo local: $e'))
+      SnackBar(content: Text('Bóveda: Reproduciendo ${item['title']}...'))
     );
-  }
-}
+
+    try {
+      await audioHandler.customAction('playLocal', {
+        'localPath': item['localPath'],
+        'id': item['id'],
+        'title': item['title'],
+      });
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error de conexión local: $e'))
+      );
+    }
+  },
+),
                     IconButton(
                       icon: const Icon(Icons.delete, color: Colors.redAccent),
                       onPressed: () {
