@@ -998,12 +998,13 @@ class _CerrojoScreenState extends State<CerrojoScreen> {
 }
 
 Future<void> downloadAudio(BuildContext context, dynamic item) async {
+  final messenger = ScaffoldMessenger.of(context);
+  
   try {
     final isMediaItem = item is MediaItem;
     final String videoId = isMediaItem ? item.id : item.id.value;
     final String videoTitle = item.title;
     
-    // Variables seguras para evitar el error rojo de NoSuchMethodError
     String artist = 'Desconocido';
     String artUri = '';
     int duration = 0;
@@ -1018,7 +1019,7 @@ Future<void> downloadAudio(BuildContext context, dynamic item) async {
       try { duration = item.duration?.inMilliseconds ?? 0; } catch(_) {}
     }
     
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Preparando descarga: $videoTitle...')));
+    messenger.showSnackBar(SnackBar(content: Text('Preparando descarga: $videoTitle...')));
     
     final yt = YoutubeExplode();
     final manifest = await yt.videos.streamsClient.getManifest(videoId);
@@ -1028,7 +1029,7 @@ Future<void> downloadAudio(BuildContext context, dynamic item) async {
     final cleanTitle = videoTitle.replaceAll(RegExp(r'[^\w\s]+'), '');
     final savePath = '${directory.path}/$cleanTitle.m4a';
     
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Descargando a tu bóveda offline...')));
+    messenger.showSnackBar(const SnackBar(content: Text('Descargando a tu bóveda offline...')));
     
     final stream = yt.videos.streamsClient.get(streamInfo);
     final file = File(savePath);
@@ -1045,12 +1046,28 @@ Future<void> downloadAudio(BuildContext context, dynamic item) async {
       'title': videoTitle,
       'artist': artist,
       'artUri': artUri,
+      'artUri': artUri,
       'duration': duration,
       'localPath': savePath,
     });
     
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('¡Descarga Offline completada!'), backgroundColor: Colors.green));
+    // MENSAJE DE ÉXITO FORZADO
+    messenger.hideCurrentSnackBar();
+    messenger.showSnackBar(
+      const SnackBar(
+        content: Text('¡Descarga Offline completada!'),
+        backgroundColor: Colors.green,
+        duration: Duration(seconds: 4),
+      ),
+    );
   } catch (e) {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error al descargar: $e'), backgroundColor: Colors.red));
+    messenger.hideCurrentSnackBar();
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text('Error al descargar: $e'),
+        backgroundColor: Colors.red,
+        duration: Duration(seconds: 5),
+      ),
+    );
   }
 }
