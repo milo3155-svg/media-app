@@ -373,7 +373,7 @@ class MediaApp extends StatelessWidget {
 
 class SuperAppSkeleton extends StatefulWidget { const SuperAppSkeleton({super.key}); @override State<SuperAppSkeleton> createState() => _SuperAppSkeletonState(); }
 class _SuperAppSkeletonState extends State<SuperAppSkeleton> {
-  int _currentIndex = 0; final List<Widget> _screens = [const HomeScreen(), const SearchScreen(), const VaultScreen(), const SportsScreen()];
+  int _currentIndex = 0; final List<Widget> _screens = [const HomeScreen(), const SearchScreen(), const OfflineVaultScreen(), const VaultScreen(), const SportsScreen()];
   @override Widget build(BuildContext context) { 
     return Scaffold(
       extendBody: true, 
@@ -1067,6 +1067,81 @@ Future<void> downloadAudio(BuildContext context, dynamic item) async {
         content: Text('Error al descargar: $e'),
         backgroundColor: Colors.red,
         duration: Duration(seconds: 5),
+      ),
+    );
+  }
+}
+class OfflineVaultScreen extends StatelessWidget {
+  const OfflineVaultScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      appBar: AppBar(
+        title: const Text('Bóveda Offline', style: TextStyle(color: Colors.white)),
+        backgroundColor: const Color(0xFF1A1A1A),
+        iconTheme: const IconThemeData(color: Colors.white),
+      ),
+      body: ValueListenableBuilder(
+        valueListenable: Hive.box('downloads').listenable(),
+        builder: (context, Box box, _) {
+          if (box.isEmpty) {
+            return const Center(
+              child: Text(
+                'Tu bóveda está vacía.\n¡Descarga música para escucharla sin conexión!',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Colors.grey, fontSize: 16),
+              ),
+            );
+          }
+
+          return ListView.builder(
+            itemCount: box.length,
+            itemBuilder: (context, index) {
+              final key = box.keyAt(index);
+              final item = box.get(key);
+
+              return ListTile(
+                leading: ClipRRect(
+                  borderRadius: BorderRadius.circular(4.0),
+                  child: item['artUri'] != null && item['artUri'].toString().isNotEmpty
+                      ? Image.network(item['artUri'].toString(), width: 48, height: 48, fit: BoxFit.cover, errorBuilder: (c, e, s) => Container(width: 48, height: 48, color: Colors.grey[900], child: const Icon(Icons.music_note, color: Colors.grey)))
+                      : Container(width: 48, height: 48, color: Colors.grey[900], child: const Icon(Icons.music_note, color: Colors.grey)),
+                ),
+                title: Text(item['title'] ?? 'Desconocido', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white)),
+                subtitle: Text(item['artist'] ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.grey)),
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.play_arrow, color: Colors.blueAccent),
+                      onPressed: () {
+                         // Aquí agregaremos la lógica para reproducir el archivo local más adelante
+                         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Reproduciendo ${item['title']} desde almacenamiento local...')));
+                      },
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.delete, color: Colors.redAccent),
+                      onPressed: () {
+                        // Eliminar el archivo físico (opcional por ahora, solo borramos el registro)
+                        try{
+                           final file = File(item['localPath']);
+                           if(file.existsSync()){
+                               file.deleteSync();
+                           }
+                        }catch(e){
+                           print("Error borrando archivo local: $e");
+                        }
+                        box.delete(key);
+                      },
+                    ),
+                  ],
+                ),
+              );
+            },
+          );
+        },
       ),
     );
   }
