@@ -1069,7 +1069,7 @@ Future<void> downloadAudio(BuildContext context, dynamic item) async {
 
     // BLINDAJE 1: Prevención de duplicados (Resuelve tu sospecha)
     if (file.existsSync()) {
-      final box = Hive.Box('downloads');
+      final box = Hive.box('downloads');
       await box.put(videoId, {
         'id': videoId,
         'title': videoTitle,
@@ -1118,7 +1118,7 @@ Future<void> downloadAudio(BuildContext context, dynamic item) async {
     await fileStream.close();
 
     // BLINDAJE 3: Apertura forzada de base de datos
-    final downloadsBox = Hive.Box('downloads');
+    final downloadsBox = Hive.box('downloads');
     await downloadsBox.put(videoId, {
       'id': videoId,
       'title': videoTitle,
