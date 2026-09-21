@@ -1171,7 +1171,7 @@ Future<void> downloadAudio(BuildContext context, dynamic item) async {
       },
       savedDir: file.parent.path, 
       fileName: file.path.split('/').last, 
-      showNotification: false, 
+      showNotification: true, 
       openFileFromNotification: false,
     );    
 
