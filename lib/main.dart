@@ -1173,7 +1173,29 @@ Future<void> downloadAudio(BuildContext context, dynamic item) async {
     );
 
     // Cerramos tu diálogo de descarga en la UI inmediatamente
-    progressNotifier.value = 1.0;
+    // --- INICIO DEL OBSERVADOR ---
+    bool isDownloading = true;
+    while (isDownloading) {
+      await Future.delayed(const Duration(milliseconds: 500));
+      final tasks = await FlutterDownloader.loadTasks();
+      
+      if (tasks != null) {
+        for (var t in tasks) {
+          if (t.taskId == taskId) {
+            if (t.status == DownloadTaskStatus.running && t.progress > 0) {
+              // Revive tu barra de carga con el progreso real de Android
+              progressNotifier.value = t.progress / 100; 
+            } else if (t.status == DownloadTaskStatus.complete) {
+              progressNotifier.value = 1.0;
+              isDownloading = false; // Rompe el bucle para guardar en la bóveda
+            } else if (t.status == DownloadTaskStatus.failed || t.status == DownloadTaskStatus.canceled) {
+              throw Exception('Android canceló la descarga en segundo plano.'); 
+            }
+          }
+        }
+      }
+    }
+    // --- FIN DEL OBSERVADOR ---
 
     final downloadsBox = Hive.box('downloads');
     await downloadsBox.put(videoId, {
