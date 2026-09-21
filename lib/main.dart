@@ -1074,7 +1074,6 @@ Future<void> downloadAudio(BuildContext context, dynamic item) async {
       try { duration = item.duration?.inMilliseconds ?? 0; } catch(_) {}
     }
 
-    // 🔥 Volvemos a M4A porque Piped nos da el audio original nativo
     final directory = await getApplicationDocumentsDirectory();
     final savePath = '${directory.path}/$videoId.m4a';
     final file = File(savePath);
@@ -1111,7 +1110,7 @@ Future<void> downloadAudio(BuildContext context, dynamic item) async {
               mainAxisSize: MainAxisSize.min,
               children: [
                 const Text(
-                  'Conectando con red Piped...\nPor favor espere.',
+                  'Buscando servidor libre...\nPor favor espere.',
                   textAlign: TextAlign.center,
                   style: TextStyle(color: Colors.orangeAccent, fontWeight: FontWeight.bold),
                 ),
@@ -1143,34 +1142,51 @@ Future<void> downloadAudio(BuildContext context, dynamic item) async {
       },
     );
 
-    // 1. Aseguramos la metadata
     yt = YoutubeExplode();
     await yt.videos.get(videoId); 
     yt.close();
     yt = null;
 
-    // 2. CONEXIÓN AL NUEVO SERVIDOR PUENTE (API Libre de Piped)
-    // Sin Cloudflare, sin bloqueos 403, directo al audio.
-    final apiUrl = Uri.parse('https://pipedapi.kavin.rocks/streams/$videoId');
+    // 🔥 ESCUADRÓN DE ROTACIÓN: Si uno falla, pasamos al siguiente al instante.
+    final instances = [
+      'https://pipedapi.garudalinux.org', // Muy estable, sin bloqueos severos
+      'https://pipedapi.adminforge.de',
+      'https://pipedapi.kavin.rocks'
+    ];
     
-    final apiResponse = await http.get(
-      apiUrl,
-      headers: {'Accept': 'application/json'},
-    ).timeout(const Duration(seconds: 15));
-
-    if (apiResponse.statusCode != 200) {
-      throw Exception('El puente Piped falló (Código: ${apiResponse.statusCode}).');
+    String? responseBody;
+    
+    for (var instance in instances) {
+      try {
+        final res = await http.get(
+          Uri.parse('$instance/streams/$videoId'),
+          headers: {
+            'Accept': 'application/json',
+            // 🔥 El Disfraz Inquebrantable de Chrome
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
+          }
+        ).timeout(const Duration(seconds: 10));
+        
+        if (res.statusCode == 200) {
+          responseBody = res.body;
+          break; // ¡Bingo! Conexión exitosa, rompemos el bucle
+        }
+      } catch (_) {
+        continue; // Falló (403, Timeout, etc.), saltamos a la siguiente opción
+      }
     }
 
-    final jsonResult = jsonDecode(apiResponse.body);
+    if (responseBody == null) {
+      throw Exception('Todos los servidores están saturados. Intenta más tarde.');
+    }
+
+    final jsonResult = jsonDecode(responseBody);
     
     if (!jsonResult.containsKey('audioStreams') || (jsonResult['audioStreams'] as List).isEmpty) {
       throw Exception('No se encontraron pistas de audio libres.');
     }
 
     final audioStreams = jsonResult['audioStreams'] as List;
-    
-    // Filtramos para asegurar el formato nativo M4A
     var bestStream = audioStreams.firstWhere(
       (stream) => stream['format'].toString().toLowerCase() == 'm4a',
       orElse: () => audioStreams.first,
@@ -1178,9 +1194,11 @@ Future<void> downloadAudio(BuildContext context, dynamic item) async {
 
     final String directAudioUrl = bestStream['url'];
 
-    // 3. DESCARGA PURA Y DIRECTA
+    // 3. DESCARGA PURA (También disfrazada)
     final request = http.Request('GET', Uri.parse(directAudioUrl));
-    final response = await http.Client().send(request).timeout(const Duration(seconds: 15));
+    request.headers['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
+    
+    final response = await http.Client().send(request).timeout(const Duration(seconds: 20));
     
     final totalBytes = response.contentLength ?? 1;
     int receivedBytes = 0;
