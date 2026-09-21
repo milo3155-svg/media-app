@@ -62,3 +62,16 @@ CI/CD: Codemagic
 * *Próximos pasos (Pendientes):* 
   * Reubicación de la interfaz del reproductor (contador de cola "1/20", botón de favoritos).
   * Redirección de descargas .m4a de la ruta interna al almacenamiento público de Android
+## Bitácora de Desarrollo - 20 de septiembre de 2026
+
+*Estado actual:* Módulo de descarga de audios bloqueado por medidas anti-bot de YouTube.
+*Problema:* Las peticiones HTTP directas son interceptadas por los servidores de Google.
+
+*Estrategias intentadas y resultados:*
+*   *Petición HTTP Directa (Stream):* Fallida. YouTube detecta la falta de entorno web y aplica "Tarpitting" (conexión abierta sin envío de datos, congelando el progreso en 0.0%).
+*   *Servidores Puente (API Cobalt / Piped):* Inestable. Los servidores externos bloquean las peticiones automatizadas de Dart devolviendo errores 403 Forbidden, incluso inyectando cabeceras (User-Agent) de Google Chrome, debido a la protección de Cloudflare Turnstile.
+*   *Descarga Fraccionada (Chunked Downloading) con Auto-Recuperación:* Parcialmente exitosa. Se lograron descargar fragmentos usando peticiones de Rango (Range: bytes=...) de 1 MB. Sin embargo, YouTube corta irreversiblemente la conexión de red (Timeout/403) alrededor del 30% al detectar descargas rápidas y secuenciales desde una misma IP.
+
+*Próximos pasos (Siguiente Sprint):*
+1. Implementar estrangulamiento de red (Throttling): Reducir los bloques HTTP a 256 KB e introducir retardos aleatorios entre descargas para emular el buffering de un reproductor humano.
+2. Investigar la migración de la lógica de descarga manual en Dart hacia una delegación al sistema operativo mediante flutter_downloader (Native Android Download Manager) para aprovechar su resiliencia ante micro-cortes.
