@@ -1152,8 +1152,10 @@ Future<void> downloadAudio(BuildContext context, dynamic item) async {
     yt.close();
     yt = null;
 
-    // 2. CONEXIÓN AL SERVIDOR PUENTE (API de Cobalt)
+    // 2. CONEXIÓN AL SERVIDOR PUENTE CON DISFRAZ DE NAVEGADOR
     final videoUrl = 'https://www.youtube.com/watch?v=$videoId';
+    
+    // Usamos el puente principal
     final apiUrl = Uri.parse('https://api.cobalt.tools/api/json');
     
     final apiResponse = await http.post(
@@ -1161,6 +1163,10 @@ Future<void> downloadAudio(BuildContext context, dynamic item) async {
       headers: {
         'Accept': 'application/json',
         'Content-Type': 'application/json',
+        // 🔥 DISFRAZ: Nos hacemos pasar por Google Chrome en Windows
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        'Origin': 'https://cobalt.tools',
+        'Referer': 'https://cobalt.tools/',
       },
       body: jsonEncode({
         'url': videoUrl,
@@ -1170,7 +1176,8 @@ Future<void> downloadAudio(BuildContext context, dynamic item) async {
     ).timeout(const Duration(seconds: 15));
 
     if (apiResponse.statusCode != 200) {
-      throw Exception('El servidor puente está ocupado. Intenta de nuevo.');
+      // Modificamos el mensaje para que, si vuelve a fallar, nos diga el código numérico exacto
+      throw Exception('El puente bloqueó la conexión (Código: ${apiResponse.statusCode}).');
     }
 
     final jsonResult = jsonDecode(apiResponse.body);
