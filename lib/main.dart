@@ -13,6 +13,8 @@ import 'dart:async';
 import 'package:dio/dio.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:http/http.dart' as http;
+import 'dart:async';
+import 'dart:convert';
 
 class VIPHttpOverrides extends HttpOverrides {
   @override HttpClient createHttpClient(SecurityContext? context) {
@@ -1072,11 +1074,12 @@ Future<void> downloadAudio(BuildContext context, dynamic item) async {
       try { duration = item.duration?.inMilliseconds ?? 0; } catch(_) {}
     }
 
+    // 🔥 CAMBIO SEGURO: Usaremos MP3 universal en lugar de m4a
     final directory = await getApplicationDocumentsDirectory();
-    final savePath = '${directory.path}/$videoId.m4a';
+    final savePath = '${directory.path}/$videoId.mp3';
     final file = File(savePath);
 
-    // 🔥 EL CADENERO: Destruye archivos basura (menos de 500 KB)
+    // Destructor de basura
     if (file.existsSync()) {
       if (file.lengthSync() < 500000) { 
         file.deleteSync(); 
@@ -1094,19 +1097,9 @@ Future<void> downloadAudio(BuildContext context, dynamic item) async {
       }
     }
 
-    yt = YoutubeExplode();
-    var manifest = await yt.videos.streamsClient.getManifest(videoId);
-    
-    var audioStreams = manifest.audioOnly.where((s) => s.container.name.toString().toLowerCase().contains('mp4'));
-    if (audioStreams.isEmpty) throw Exception('No hay formato M4A compatible.');
-    var streamInfo = audioStreams.withHighestBitrate();
-
-    // VOLVEMOS AL MOTOR OFICIAL QUE DESCIFRA LAS FIRMAS DE YOUTUBE
-    final stream = yt.videos.streamsClient.get(streamInfo);
-    
+    // BLOQUEO DE PANTALLA INICIAL
     final progressNotifier = ValueNotifier<double>(0.0);
     isDialogShowing = true;
-    
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -1120,7 +1113,7 @@ Future<void> downloadAudio(BuildContext context, dynamic item) async {
               mainAxisSize: MainAxisSize.min,
               children: [
                 const Text(
-                  'Descarga en proceso.\nNo desconecte la red ni encime otra descarga.',
+                  'Conectando con servidor seguro...\nPor favor espere.',
                   textAlign: TextAlign.center,
                   style: TextStyle(color: Colors.orangeAccent, fontWeight: FontWeight.bold),
                 ),
@@ -1152,28 +1145,67 @@ Future<void> downloadAudio(BuildContext context, dynamic item) async {
       },
     );
 
-    int totalBytes = streamInfo.size.totalBytes;
-    if (totalBytes <= 0) totalBytes = 1; 
+    // 1. OBTENEMOS METADATA CON YOUTUBE EXPLODE (Rápido y sin bloqueos)
+    yt = YoutubeExplode();
+    // Solo usamos Explode para asegurar que el video existe, no para descargar
+    await yt.videos.get(videoId); 
+    yt.close();
+    yt = null;
+
+    // 2. CONEXIÓN AL SERVIDOR PUENTE (API de Cobalt)
+    final videoUrl = 'https://www.youtube.com/watch?v=$videoId';
+    final apiUrl = Uri.parse('https://api.cobalt.tools/api/json');
+    
+    final apiResponse = await http.post(
+      apiUrl,
+      headers: {
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+      },
+      body: jsonEncode({
+        'url': videoUrl,
+        'isAudioOnly': true,
+        'aFormat': 'mp3',
+      }),
+    ).timeout(const Duration(seconds: 15));
+
+    if (apiResponse.statusCode != 200) {
+      throw Exception('El servidor puente está ocupado. Intenta de nuevo.');
+    }
+
+    final jsonResult = jsonDecode(apiResponse.body);
+    if (jsonResult['status'] == 'error' || !jsonResult.containsKey('url')) {
+      throw Exception('El puente no pudo procesar esta pista.');
+    }
+
+    final String directAudioUrl = jsonResult['url'];
+
+    // 3. DESCARGA PURA Y DIRECTA (Alta velocidad, sin bloqueos de YT)
+    final request = http.Request('GET', Uri.parse(directAudioUrl));
+    final response = await http.Client().send(request).timeout(const Duration(seconds: 15));
+    
+    final totalBytes = response.contentLength ?? 1;
     int receivedBytes = 0;
     final fileStream = file.openWrite();
     
-    await for (final chunk in stream) {
+    await response.stream.forEach((chunk) {
       fileStream.add(chunk);
       receivedBytes += chunk.length;
       double progress = receivedBytes / totalBytes;
       if (progress > 1.0) progress = 1.0;
       progressNotifier.value = progress;
-    }
+    });
 
     await fileStream.flush();
     await fileStream.close();
 
-    // 🔥 REVISIÓN DE INTEGRIDAD POST-DESCARGA
+    // Verificación final de integridad
     if (file.lengthSync() < 500000) {
        file.deleteSync();
-       throw Exception('YouTube bloqueó la descarga (archivo vacío). Intenta cambiar de red.');
+       throw Exception('Archivo dañado. Se canceló la descarga.');
     }
 
+    // 4. GUARDADO EN BÓVEDA
     final downloadsBox = Hive.box('downloads');
     await downloadsBox.put(videoId, {
       'id': videoId,
@@ -1181,7 +1213,7 @@ Future<void> downloadAudio(BuildContext context, dynamic item) async {
       'artist': artist,
       'artUri': artUri,
       'duration': duration,
-      'localPath': savePath,
+      'localPath': savePath, // Ahora guarda la ruta con .mp3
     });
 
     closeDialog();
