@@ -1076,8 +1076,9 @@ Future<void> downloadAudio(BuildContext context, dynamic item) async {
     final savePath = '${directory.path}/$videoId.m4a';
     final file = File(savePath);
 
+    // 🔥 EL CADENERO: Destruye archivos basura (menos de 500 KB)
     if (file.existsSync()) {
-      if (file.lengthSync() == 0) {
+      if (file.lengthSync() < 500000) { 
         file.deleteSync(); 
       } else {
         final box = Hive.box('downloads');
@@ -1097,13 +1098,12 @@ Future<void> downloadAudio(BuildContext context, dynamic item) async {
     var manifest = await yt.videos.streamsClient.getManifest(videoId);
     
     var audioStreams = manifest.audioOnly.where((s) => s.container.name.toString().toLowerCase().contains('mp4'));
-    if (audioStreams.isEmpty) throw Exception('No hay formato M4A compatible disponible.');
+    if (audioStreams.isEmpty) throw Exception('No hay formato M4A compatible.');
     var streamInfo = audioStreams.withHighestBitrate();
 
-    final audioUrl = streamInfo.url;
-    yt.close();
-    yt = null;
-
+    // VOLVEMOS AL MOTOR OFICIAL QUE DESCIFRA LAS FIRMAS DE YOUTUBE
+    final stream = yt.videos.streamsClient.get(streamInfo);
+    
     final progressNotifier = ValueNotifier<double>(0.0);
     isDialogShowing = true;
     
@@ -1120,7 +1120,7 @@ Future<void> downloadAudio(BuildContext context, dynamic item) async {
               mainAxisSize: MainAxisSize.min,
               children: [
                 const Text(
-                  'Descarga en proceso.\nNo desconecte la red ni encime otra descarga, por favor espere.',
+                  'Descarga en proceso.\nNo desconecte la red ni encime otra descarga.',
                   textAlign: TextAlign.center,
                   style: TextStyle(color: Colors.orangeAccent, fontWeight: FontWeight.bold),
                 ),
@@ -1152,24 +1152,27 @@ Future<void> downloadAudio(BuildContext context, dynamic item) async {
       },
     );
 
-    final request = http.Request('GET', audioUrl);
-    final response = await http.Client().send(request);
-    
-    final totalBytes = response.contentLength ?? 1;
+    int totalBytes = streamInfo.size.totalBytes;
+    if (totalBytes <= 0) totalBytes = 1; 
     int receivedBytes = 0;
-
     final fileStream = file.openWrite();
     
-    await response.stream.forEach((chunk) {
+    await for (final chunk in stream) {
       fileStream.add(chunk);
       receivedBytes += chunk.length;
       double progress = receivedBytes / totalBytes;
       if (progress > 1.0) progress = 1.0;
       progressNotifier.value = progress;
-    });
+    }
 
     await fileStream.flush();
     await fileStream.close();
+
+    // 🔥 REVISIÓN DE INTEGRIDAD POST-DESCARGA
+    if (file.lengthSync() < 500000) {
+       file.deleteSync();
+       throw Exception('YouTube bloqueó la descarga (archivo vacío). Intenta cambiar de red.');
+    }
 
     final downloadsBox = Hive.box('downloads');
     await downloadsBox.put(videoId, {
@@ -1194,7 +1197,7 @@ Future<void> downloadAudio(BuildContext context, dynamic item) async {
     closeDialog();
     messenger.showSnackBar(
       SnackBar(
-        content: Text('Error crítico: $e'),
+        content: Text('Error: $e'),
         backgroundColor: Colors.red,
         duration: const Duration(seconds: 5),
       ),
