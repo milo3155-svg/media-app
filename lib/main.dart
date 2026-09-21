@@ -1163,11 +1163,13 @@ Future<void> downloadAudio(BuildContext context, dynamic item) async {
     
     if (totalBytes <= 0) throw Exception('YouTube ocultó el tamaño.');
 
-  final response = await http.get(
+ final response = await http.get(
       Uri.parse(audioUrl),
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36',
-        'Accept': '/',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,/;q=0.8',
+        'Accept-Language': 'es-ES,es;q=0.9',
+        'Referer': 'https://www.youtube.com/',
       },
     );
 
@@ -1194,17 +1196,6 @@ Future<void> downloadAudio(BuildContext context, dynamic item) async {
     } else {
       throw Exception('Error HTTP: ${response.statusCode}');
     }   
-
-
-    final downloadsBox = Hive.box('downloads');
-    await downloadsBox.put(videoId, {
-      'id': videoId,
-      'title': videoTitle,
-      'artist': artist,
-      'artUri': artUri,
-      'duration': duration,
-      'localPath': savePath,
-    });
 
     closeDialog();
 
