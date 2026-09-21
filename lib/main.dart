@@ -1074,12 +1074,11 @@ Future<void> downloadAudio(BuildContext context, dynamic item) async {
       try { duration = item.duration?.inMilliseconds ?? 0; } catch(_) {}
     }
 
-    // 🔥 CAMBIO SEGURO: Usaremos MP3 universal en lugar de m4a
+    // 🔥 Volvemos a M4A porque Piped nos da el audio original nativo
     final directory = await getApplicationDocumentsDirectory();
-    final savePath = '${directory.path}/$videoId.mp3';
+    final savePath = '${directory.path}/$videoId.m4a';
     final file = File(savePath);
 
-    // Destructor de basura
     if (file.existsSync()) {
       if (file.lengthSync() < 500000) { 
         file.deleteSync(); 
@@ -1097,7 +1096,6 @@ Future<void> downloadAudio(BuildContext context, dynamic item) async {
       }
     }
 
-    // BLOQUEO DE PANTALLA INICIAL
     final progressNotifier = ValueNotifier<double>(0.0);
     isDialogShowing = true;
     showDialog(
@@ -1113,7 +1111,7 @@ Future<void> downloadAudio(BuildContext context, dynamic item) async {
               mainAxisSize: MainAxisSize.min,
               children: [
                 const Text(
-                  'Conectando con servidor seguro...\nPor favor espere.',
+                  'Conectando con red Piped...\nPor favor espere.',
                   textAlign: TextAlign.center,
                   style: TextStyle(color: Colors.orangeAccent, fontWeight: FontWeight.bold),
                 ),
@@ -1145,49 +1143,42 @@ Future<void> downloadAudio(BuildContext context, dynamic item) async {
       },
     );
 
-    // 1. OBTENEMOS METADATA CON YOUTUBE EXPLODE (Rápido y sin bloqueos)
+    // 1. Aseguramos la metadata
     yt = YoutubeExplode();
-    // Solo usamos Explode para asegurar que el video existe, no para descargar
     await yt.videos.get(videoId); 
     yt.close();
     yt = null;
 
-    // 2. CONEXIÓN AL SERVIDOR PUENTE CON DISFRAZ DE NAVEGADOR
-    final videoUrl = 'https://www.youtube.com/watch?v=$videoId';
+    // 2. CONEXIÓN AL NUEVO SERVIDOR PUENTE (API Libre de Piped)
+    // Sin Cloudflare, sin bloqueos 403, directo al audio.
+    final apiUrl = Uri.parse('https://pipedapi.kavin.rocks/streams/$videoId');
     
-    // Usamos el puente principal
-    final apiUrl = Uri.parse('https://api.cobalt.tools/api/json');
-    
-    final apiResponse = await http.post(
+    final apiResponse = await http.get(
       apiUrl,
-      headers: {
-        'Accept': 'application/json',
-        'Content-Type': 'application/json',
-        // 🔥 DISFRAZ: Nos hacemos pasar por Google Chrome en Windows
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-        'Origin': 'https://cobalt.tools',
-        'Referer': 'https://cobalt.tools/',
-      },
-      body: jsonEncode({
-        'url': videoUrl,
-        'isAudioOnly': true,
-        'aFormat': 'mp3',
-      }),
+      headers: {'Accept': 'application/json'},
     ).timeout(const Duration(seconds: 15));
 
     if (apiResponse.statusCode != 200) {
-      // Modificamos el mensaje para que, si vuelve a fallar, nos diga el código numérico exacto
-      throw Exception('El puente bloqueó la conexión (Código: ${apiResponse.statusCode}).');
+      throw Exception('El puente Piped falló (Código: ${apiResponse.statusCode}).');
     }
 
     final jsonResult = jsonDecode(apiResponse.body);
-    if (jsonResult['status'] == 'error' || !jsonResult.containsKey('url')) {
-      throw Exception('El puente no pudo procesar esta pista.');
+    
+    if (!jsonResult.containsKey('audioStreams') || (jsonResult['audioStreams'] as List).isEmpty) {
+      throw Exception('No se encontraron pistas de audio libres.');
     }
 
-    final String directAudioUrl = jsonResult['url'];
+    final audioStreams = jsonResult['audioStreams'] as List;
+    
+    // Filtramos para asegurar el formato nativo M4A
+    var bestStream = audioStreams.firstWhere(
+      (stream) => stream['format'].toString().toLowerCase() == 'm4a',
+      orElse: () => audioStreams.first,
+    );
 
-    // 3. DESCARGA PURA Y DIRECTA (Alta velocidad, sin bloqueos de YT)
+    final String directAudioUrl = bestStream['url'];
+
+    // 3. DESCARGA PURA Y DIRECTA
     final request = http.Request('GET', Uri.parse(directAudioUrl));
     final response = await http.Client().send(request).timeout(const Duration(seconds: 15));
     
@@ -1206,7 +1197,6 @@ Future<void> downloadAudio(BuildContext context, dynamic item) async {
     await fileStream.flush();
     await fileStream.close();
 
-    // Verificación final de integridad
     if (file.lengthSync() < 500000) {
        file.deleteSync();
        throw Exception('Archivo dañado. Se canceló la descarga.');
@@ -1220,7 +1210,7 @@ Future<void> downloadAudio(BuildContext context, dynamic item) async {
       'artist': artist,
       'artUri': artUri,
       'duration': duration,
-      'localPath': savePath, // Ahora guarda la ruta con .mp3
+      'localPath': savePath,
     });
 
     closeDialog();
