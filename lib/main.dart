@@ -1075,7 +1075,7 @@ Future<void> downloadAudio(BuildContext context, dynamic item) async {
     }
 
     final directory = await getApplicationDocumentsDirectory();
-    final savePath = '${directory.path}/$videoId.m4a'; // M4A nativo para ExoPlayer
+    final savePath = '${directory.path}/$videoId.m4a'; 
     final file = File(savePath);
 
     if (file.existsSync()) {
@@ -1110,7 +1110,7 @@ Future<void> downloadAudio(BuildContext context, dynamic item) async {
               mainAxisSize: MainAxisSize.min,
               children: [
                 const Text(
-                  'Descarga fraccionada activada...\nEvadiendo bloqueos de YouTube.',
+                  'Descarga Blindada 3.0...\nAuto-recuperando conexiones.',
                   textAlign: TextAlign.center,
                   style: TextStyle(color: Colors.orangeAccent, fontWeight: FontWeight.bold),
                 ),
@@ -1142,49 +1142,66 @@ Future<void> downloadAudio(BuildContext context, dynamic item) async {
       },
     );
 
-    // 1. Obtenemos la URL secreta y directa del audio
     yt = YoutubeExplode();
-    var manifest = await yt.videos.streamsClient.getManifest(videoId);
-    var audioStreams = manifest.audioOnly.where((s) => s.container.name.toString().toLowerCase().contains('mp4'));
-    if (audioStreams.isEmpty) throw Exception('No hay formato M4A compatible.');
     
-    var streamInfo = audioStreams.withHighestBitrate();
-    final audioUrl = streamInfo.url.toString();
+    // 🔥 FUNCIÓN INTERNA: Consigue un link nuevo mágicamente si el anterior caduca
+    Future<StreamInfo> getFreshStreamInfo() async {
+      var manifest = await yt!.videos.streamsClient.getManifest(videoId);
+      var audioStreams = manifest.audioOnly.where((s) => s.container.name.toString().toLowerCase().contains('mp4'));
+      if (audioStreams.isEmpty) throw Exception('No hay formato M4A compatible.');
+      return audioStreams.withHighestBitrate();
+    }
+
+    var streamInfo = await getFreshStreamInfo();
+    String audioUrl = streamInfo.url.toString();
     final totalBytes = streamInfo.size.totalBytes;
     
-    yt.close();
-    yt = null;
+    if (totalBytes <= 0) throw Exception('YouTube ocultó el tamaño.');
 
-    if (totalBytes <= 0) throw Exception('YouTube ocultó el tamaño del archivo.');
-
-    // 🔥 2. DESCARGA POR BLOQUES (CHUNKED DOWNLOADING)
-    // Engañamos a YouTube pidiendo el archivo en fragmentos de 1 MB
     int downloadedBytes = 0;
-    final chunkSize = 1024 * 1024; // 1 Megabyte
+    final chunkSize = 1024 * 1024; // 1 Megabyte por salto
     final fileStream = file.openWrite();
 
+    // 🔥 EL BUCLE INDESTRUCTIBLE
     while (downloadedBytes < totalBytes) {
       int end = downloadedBytes + chunkSize - 1;
       if (end >= totalBytes) end = totalBytes - 1;
 
-      // Petición de Rango: "Mándame solo desde el byte X hasta el byte Y"
-      final response = await http.get(
-        Uri.parse(audioUrl),
-        headers: {
-          'Range': 'bytes=$downloadedBytes-$end',
-        },
-      ).timeout(const Duration(seconds: 15));
+      bool chunkSuccess = false;
+      int retries = 0;
 
-      // El código 206 significa "Contenido Parcial" (¡Éxito!)
-      if (response.statusCode == 206 || response.statusCode == 200) {
-        fileStream.add(response.bodyBytes);
-        downloadedBytes += response.bodyBytes.length;
-        
-        double progress = downloadedBytes / totalBytes;
-        if (progress > 1.0) progress = 1.0;
-        progressNotifier.value = progress;
-      } else {
-        throw Exception('YouTube bloqueó el fragmento en el ${((downloadedBytes/totalBytes)*100).round()}%.');
+      while (!chunkSuccess && retries < 3) {
+        try {
+          final response = await http.get(
+            Uri.parse(audioUrl),
+            headers: {'Range': 'bytes=$downloadedBytes-$end'},
+          ).timeout(const Duration(seconds: 10));
+
+          if (response.statusCode == 206 || response.statusCode == 200) {
+            fileStream.add(response.bodyBytes);
+            downloadedBytes += response.bodyBytes.length;
+            
+            double progress = downloadedBytes / totalBytes;
+            if (progress > 1.0) progress = 1.0;
+            progressNotifier.value = progress;
+            
+            chunkSuccess = true; // El bloque se descargó perfecto
+          } else if (response.statusCode == 403) {
+            // YouTube nos bloqueó el link a mitad de camino. ¡Pedimos uno nuevo!
+            streamInfo = await getFreshStreamInfo();
+            audioUrl = streamInfo.url.toString();
+            retries++;
+          } else {
+            retries++;
+          }
+        } catch (e) {
+          // Si hay un micro-corte de tu internet, lo ignoramos y reintentamos
+          retries++;
+        }
+      }
+
+      if (!chunkSuccess) {
+        throw Exception('Caída de red irrecuperable en el ${((downloadedBytes/totalBytes)*100).round()}%.');
       }
     }
 
@@ -1196,7 +1213,6 @@ Future<void> downloadAudio(BuildContext context, dynamic item) async {
        throw Exception('Archivo dañado. Se canceló la descarga.');
     }
 
-    // 3. GUARDADO EN BÓVEDA
     final downloadsBox = Hive.box('downloads');
     await downloadsBox.put(videoId, {
       'id': videoId,
