@@ -1159,10 +1159,11 @@ Future<void> downloadAudio(BuildContext context, dynamic item) async {
     if (totalBytes <= 0) throw Exception('YouTube ocultó el tamaño.');
 
     int downloadedBytes = 0;
-    final chunkSize = 1024 * 1024; // 1 Megabyte por salto
+    // 🔥 1. Reducimos el bocado a 256 KB exactos
+    final chunkSize = 256 * 1024; 
     final fileStream = file.openWrite();
 
-    // 🔥 EL BUCLE INDESTRUCTIBLE
+    // 🔥 EL BUCLE INDESTRUCTIBLE (Modo Sigilo)
     while (downloadedBytes < totalBytes) {
       int end = downloadedBytes + chunkSize - 1;
       if (end >= totalBytes) end = totalBytes - 1;
@@ -1185,9 +1186,12 @@ Future<void> downloadAudio(BuildContext context, dynamic item) async {
             if (progress > 1.0) progress = 1.0;
             progressNotifier.value = progress;
             
-            chunkSuccess = true; // El bloque se descargó perfecto
+            chunkSuccess = true; 
+
+            // 🔥 2. Freno de mano: Pausa obligatoria para emular a un humano
+            await Future.delayed(const Duration(milliseconds: 600));
+            
           } else if (response.statusCode == 403) {
-            // YouTube nos bloqueó el link a mitad de camino. ¡Pedimos uno nuevo!
             streamInfo = await getFreshStreamInfo();
             audioUrl = streamInfo.url.toString();
             retries++;
@@ -1195,7 +1199,6 @@ Future<void> downloadAudio(BuildContext context, dynamic item) async {
             retries++;
           }
         } catch (e) {
-          // Si hay un micro-corte de tu internet, lo ignoramos y reintentamos
           retries++;
         }
       }
