@@ -1166,11 +1166,14 @@ Future<void> downloadAudio(BuildContext context, dynamic item) async {
    // Le pasamos el trabajo pesado al sistema operativo Android
     final taskId = await FlutterDownloader.enqueue(
       url: audioUrl,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36'
+      },
       savedDir: file.parent.path, 
       fileName: file.path.split('/').last, 
-      showNotification: false, // Modo sigilo: sin notificaciones de Android
+      showNotification: false, 
       openFileFromNotification: false,
-    );
+    );    
 
     // Cerramos tu diálogo de descarga en la UI inmediatamente
     // --- INICIO DEL OBSERVADOR ---
