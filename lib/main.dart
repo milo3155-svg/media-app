@@ -1163,42 +1163,38 @@ Future<void> downloadAudio(BuildContext context, dynamic item) async {
     
     if (totalBytes <= 0) throw Exception('YouTube ocultó el tamaño.');
 
-   // Le pasamos el trabajo pesado al sistema operativo Android
-    final taskId = await FlutterDownloader.enqueue(
-      url: audioUrl,
+  final response = await http.get(
+      Uri.parse(audioUrl),
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36'
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36',
+        'Accept': '/',
       },
-      savedDir: file.parent.path, 
-      fileName: file.path.split('/').last, 
-      showNotification: true, 
-      openFileFromNotification: false,
-    );    
+    );
 
-    // Cerramos tu diálogo de descarga en la UI inmediatamente
-    // --- INICIO DEL OBSERVADOR ---
-    bool isDownloading = true;
-    while (isDownloading) {
-      await Future.delayed(const Duration(milliseconds: 500));
-      final tasks = await FlutterDownloader.loadTasks();
+    if (response.statusCode == 200) {
+      await file.writeAsBytes(response.bodyBytes);
       
-      if (tasks != null) {
-        for (var t in tasks) {
-          if (t.taskId == taskId) {
-            if (t.status == DownloadTaskStatus.running && t.progress > 0) {
-              // Revive tu barra de carga con el progreso real de Android
-              progressNotifier.value = t.progress / 100; 
-            } else if (t.status == DownloadTaskStatus.complete) {
-              progressNotifier.value = 1.0;
-              isDownloading = false; // Rompe el bucle para guardar en la bóveda
-            } else if (t.status == DownloadTaskStatus.failed || t.status == DownloadTaskStatus.canceled) {
-              throw Exception('Android canceló la descarga en segundo plano.'); 
-            }
-          }
-        }
-      }
-    }
-    // --- FIN DEL OBSERVADOR ---
+      final downloadsBox = Hive.box('downloads');
+      await downloadsBox.put(videoId, {
+        'id': videoId,
+        'title': videoTitle,
+        'artist': artist,
+        'artUri': artUri,
+        'duration': duration,
+        'localPath': savePath,
+      });
+      
+      closeDialog();
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text('✔️ ¡Descarga Offline completada!'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } else {
+      throw Exception('Error HTTP: ${response.statusCode}');
+    }   
+
 
     final downloadsBox = Hive.box('downloads');
     await downloadsBox.put(videoId, {
