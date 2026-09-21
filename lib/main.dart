@@ -1075,7 +1075,7 @@ Future<void> downloadAudio(BuildContext context, dynamic item) async {
     }
 
     final directory = await getApplicationDocumentsDirectory();
-    final savePath = '${directory.path}/$videoId.m4a';
+    final savePath = '${directory.path}/$videoId.m4a'; // M4A nativo para ExoPlayer
     final file = File(savePath);
 
     if (file.existsSync()) {
@@ -1110,7 +1110,7 @@ Future<void> downloadAudio(BuildContext context, dynamic item) async {
               mainAxisSize: MainAxisSize.min,
               children: [
                 const Text(
-                  'Buscando servidor libre...\nPor favor espere.',
+                  'Descarga fraccionada activada...\nEvadiendo bloqueos de YouTube.',
                   textAlign: TextAlign.center,
                   style: TextStyle(color: Colors.orangeAccent, fontWeight: FontWeight.bold),
                 ),
@@ -1142,75 +1142,51 @@ Future<void> downloadAudio(BuildContext context, dynamic item) async {
       },
     );
 
+    // 1. Obtenemos la URL secreta y directa del audio
     yt = YoutubeExplode();
-    await yt.videos.get(videoId); 
+    var manifest = await yt.videos.streamsClient.getManifest(videoId);
+    var audioStreams = manifest.audioOnly.where((s) => s.container.name.toString().toLowerCase().contains('mp4'));
+    if (audioStreams.isEmpty) throw Exception('No hay formato M4A compatible.');
+    
+    var streamInfo = audioStreams.withHighestBitrate();
+    final audioUrl = streamInfo.url.toString();
+    final totalBytes = streamInfo.size.totalBytes;
+    
     yt.close();
     yt = null;
 
-    // 🔥 ESCUADRÓN DE ROTACIÓN: Si uno falla, pasamos al siguiente al instante.
-    final instances = [
-      'https://pipedapi.garudalinux.org', // Muy estable, sin bloqueos severos
-      'https://pipedapi.adminforge.de',
-      'https://pipedapi.kavin.rocks'
-    ];
-    
-    String? responseBody;
-    
-    for (var instance in instances) {
-      try {
-        final res = await http.get(
-          Uri.parse('$instance/streams/$videoId'),
-          headers: {
-            'Accept': 'application/json',
-            // 🔥 El Disfraz Inquebrantable de Chrome
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
-          }
-        ).timeout(const Duration(seconds: 10));
+    if (totalBytes <= 0) throw Exception('YouTube ocultó el tamaño del archivo.');
+
+    // 🔥 2. DESCARGA POR BLOQUES (CHUNKED DOWNLOADING)
+    // Engañamos a YouTube pidiendo el archivo en fragmentos de 1 MB
+    int downloadedBytes = 0;
+    final chunkSize = 1024 * 1024; // 1 Megabyte
+    final fileStream = file.openWrite();
+
+    while (downloadedBytes < totalBytes) {
+      int end = downloadedBytes + chunkSize - 1;
+      if (end >= totalBytes) end = totalBytes - 1;
+
+      // Petición de Rango: "Mándame solo desde el byte X hasta el byte Y"
+      final response = await http.get(
+        Uri.parse(audioUrl),
+        headers: {
+          'Range': 'bytes=$downloadedBytes-$end',
+        },
+      ).timeout(const Duration(seconds: 15));
+
+      // El código 206 significa "Contenido Parcial" (¡Éxito!)
+      if (response.statusCode == 206 || response.statusCode == 200) {
+        fileStream.add(response.bodyBytes);
+        downloadedBytes += response.bodyBytes.length;
         
-        if (res.statusCode == 200) {
-          responseBody = res.body;
-          break; // ¡Bingo! Conexión exitosa, rompemos el bucle
-        }
-      } catch (_) {
-        continue; // Falló (403, Timeout, etc.), saltamos a la siguiente opción
+        double progress = downloadedBytes / totalBytes;
+        if (progress > 1.0) progress = 1.0;
+        progressNotifier.value = progress;
+      } else {
+        throw Exception('YouTube bloqueó el fragmento en el ${((downloadedBytes/totalBytes)*100).round()}%.');
       }
     }
-
-    if (responseBody == null) {
-      throw Exception('Todos los servidores están saturados. Intenta más tarde.');
-    }
-
-    final jsonResult = jsonDecode(responseBody);
-    
-    if (!jsonResult.containsKey('audioStreams') || (jsonResult['audioStreams'] as List).isEmpty) {
-      throw Exception('No se encontraron pistas de audio libres.');
-    }
-
-    final audioStreams = jsonResult['audioStreams'] as List;
-    var bestStream = audioStreams.firstWhere(
-      (stream) => stream['format'].toString().toLowerCase() == 'm4a',
-      orElse: () => audioStreams.first,
-    );
-
-    final String directAudioUrl = bestStream['url'];
-
-    // 3. DESCARGA PURA (También disfrazada)
-    final request = http.Request('GET', Uri.parse(directAudioUrl));
-    request.headers['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
-    
-    final response = await http.Client().send(request).timeout(const Duration(seconds: 20));
-    
-    final totalBytes = response.contentLength ?? 1;
-    int receivedBytes = 0;
-    final fileStream = file.openWrite();
-    
-    await response.stream.forEach((chunk) {
-      fileStream.add(chunk);
-      receivedBytes += chunk.length;
-      double progress = receivedBytes / totalBytes;
-      if (progress > 1.0) progress = 1.0;
-      progressNotifier.value = progress;
-    });
 
     await fileStream.flush();
     await fileStream.close();
@@ -1220,7 +1196,7 @@ Future<void> downloadAudio(BuildContext context, dynamic item) async {
        throw Exception('Archivo dañado. Se canceló la descarga.');
     }
 
-    // 4. GUARDADO EN BÓVEDA
+    // 3. GUARDADO EN BÓVEDA
     final downloadsBox = Hive.box('downloads');
     await downloadsBox.put(videoId, {
       'id': videoId,
