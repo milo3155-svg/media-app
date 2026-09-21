@@ -15,6 +15,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:http/http.dart' as http;
 import 'dart:async';
 import 'dart:convert';
+import 'package:flutter_downloader/flutter_downloader.dart';
 
 class VIPHttpOverrides extends HttpOverrides {
   @override HttpClient createHttpClient(SecurityContext? context) {
@@ -43,6 +44,10 @@ Future<void> main() async {
   await Hive.openBox('playlists'); 
   await Hive.openBox('downloads');
   final session = await AudioSession.instance; await session.configure(const AudioSessionConfiguration.music());
+  await FlutterDownloader.initialize(
+  debug: true, 
+  ignoreSsl: true,
+);
   
   audioHandler = await AudioService.init(
     builder: () => MyAudioHandler(), 
@@ -1158,63 +1163,17 @@ Future<void> downloadAudio(BuildContext context, dynamic item) async {
     
     if (totalBytes <= 0) throw Exception('YouTube ocultó el tamaño.');
 
-    int downloadedBytes = 0;
-    // 🔥 1. Reducimos el bocado a 256 KB exactos
-    final chunkSize = 256 * 1024; 
-    final fileStream = file.openWrite();
+   / Le pasamos el trabajo pesado al sistema operativo Android
+    final taskId = await FlutterDownloader.enqueue(
+      url: audioUrl,
+      savedDir: file.parent.path, 
+      fileName: file.path.split('/').last, 
+      showNotification: false, // Modo sigilo: sin notificaciones de Android
+      openFileFromNotification: false,
+    );
 
-    // 🔥 EL BUCLE INDESTRUCTIBLE (Modo Sigilo)
-    while (downloadedBytes < totalBytes) {
-      int end = downloadedBytes + chunkSize - 1;
-      if (end >= totalBytes) end = totalBytes - 1;
-
-      bool chunkSuccess = false;
-      int retries = 0;
-
-      while (!chunkSuccess && retries < 3) {
-        try {
-          final response = await http.get(
-            Uri.parse(audioUrl),
-            headers: {'Range': 'bytes=$downloadedBytes-$end'},
-          ).timeout(const Duration(seconds: 10));
-
-          if (response.statusCode == 206 || response.statusCode == 200) {
-            fileStream.add(response.bodyBytes);
-            downloadedBytes += response.bodyBytes.length;
-            
-            double progress = downloadedBytes / totalBytes;
-            if (progress > 1.0) progress = 1.0;
-            progressNotifier.value = progress;
-            
-            chunkSuccess = true; 
-
-            // 🔥 2. Freno de mano: Pausa obligatoria para emular a un humano
-            await Future.delayed(const Duration(milliseconds: 600));
-            
-          } else if (response.statusCode == 403) {
-            streamInfo = await getFreshStreamInfo();
-            audioUrl = streamInfo.url.toString();
-            retries++;
-          } else {
-            retries++;
-          }
-        } catch (e) {
-          retries++;
-        }
-      }
-
-      if (!chunkSuccess) {
-        throw Exception('Caída de red irrecuperable en el ${((downloadedBytes/totalBytes)*100).round()}%.');
-      }
-    }
-
-    await fileStream.flush();
-    await fileStream.close();
-
-    if (file.lengthSync() < 500000) {
-       file.deleteSync();
-       throw Exception('Archivo dañado. Se canceló la descarga.');
-    }
+    // Cerramos tu diálogo de descarga en la UI inmediatamente
+    progressNotifier.value = 1.0;
 
     final downloadsBox = Hive.box('downloads');
     await downloadsBox.put(videoId, {

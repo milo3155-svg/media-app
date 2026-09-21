@@ -23,12 +23,13 @@ dependencies:
   just_audio: ^0.9.36
   audio_session: ^0.1.18
   audio_service: ^0.18.13
+  flutter_downloader: ^1.11.6
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^3.0.0
   http: ^1.2.1
-
+  
 flutter:
   uses-material-design: true
