@@ -1054,8 +1054,8 @@ Future<void> downloadAudio(BuildContext context, dynamic item) async {
   
   bool isDialogShowing = false;
   void closeDialog() {
-    if (isDialogShowing && Navigator.canPop(context)) {
-      Navigator.pop(context);
+    if (isDialogShowing) {
+      Navigator.of(context, rootNavigator:true).pop();
       isDialogShowing = false;
     }
   }
