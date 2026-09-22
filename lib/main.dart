@@ -1102,7 +1102,7 @@ Future<void> downloadAudio(BuildContext context, dynamic item) async {
     final file = File(savePath);
 
 yt = YoutubeExplode();
-    var manifest = await yt.videos.streamsClient.getManifest(videoId);
+    var manifest = await yt.videos.streamsClient.getManifest(videoId).timeout(const Duration(seconds: 15));
     var audioStreamInfo = manifest.audioOnly.withHighestBitrate();
     
     // Descargamos los bytes directamente a la memoria sin límite de tiempo
