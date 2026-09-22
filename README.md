@@ -75,3 +75,22 @@ CI/CD: Codemagic
 *Próximos pasos (Siguiente Sprint):*
 1. Implementar estrangulamiento de red (Throttling): Reducir los bloques HTTP a 256 KB e introducir retardos aleatorios entre descargas para emular el buffering de un reproductor humano.
 2. Investigar la migración de la lógica de descarga manual en Dart hacia una delegación al sistema operativo mediante flutter_downloader (Native Android Download Manager) para aprovechar su resiliencia ante micro-cortes.
+
+## Bitácora de Desarrollo - Día 2 (Descargas Offline)
+**Estado:** Bloqueo por cifrado (2do día sin éxito en pistas oficiales).
+
+**Ajustes Implementados:**
+* **Migración a Memoria:** Se reemplazó el flujo directo (`.pipe`) por empaquetado en memoria RAM (`.fold`) para eliminar los choques de sistema de archivos (`StreamSink`).
+* **Depuración de Compilación:** Se resolvieron los errores de variables duplicadas en el *scope* que detenían el pipeline en Codemagic.
+* **Ajuste de Red:** Se eliminó el límite de tiempo (`timeout`) en la extracción de bytes para compensar el estrangulamiento de velocidad (*throttling*) impuesto por YouTube.
+* **Preparación Visual:** Se estructuró la carpeta `assets` para la inyección del logo personalizado mediante `flutter_launcher_icons`.
+
+**Obstáculos Activos (Roadblocks):**
+* **Firmas de Seguridad (VEVO/Oficial):** Las pistas de disqueras comerciales (Linkin Park, Nirvana) devuelven el error `VideoUnavailableException`. La librería está chocando contra la protección anti-bots actualizada de YouTube.
+* **Deadlock en la UI:** Si la extracción del audio falla por culpa del cifrado, el código actual no atrapa la excepción en la interfaz. Esto provoca que el diálogo "Descargando pista" nunca reciba la orden de cerrarse, dejando la app en un estado de carga infinita sin notificar al usuario.
+
+**Siguientes Pasos (Día 3):**
+1. Ejecutar `flutter pub upgrade youtube_explode_dart` en la terminal para forzar la descarga del último parche de evasión de firmas.
+2. Envolver la lógica del diálogo de carga en un `try/catch` estricto que destruya la ventana emergente y muestre un *SnackBar* rojo si el video está protegido.
+3. Retomar pruebas de flujo de datos exclusivamente con pistas sin copyright (NCS) para confirmar la estabilidad de escritura antes de volver a intentar con música comercial.
+
