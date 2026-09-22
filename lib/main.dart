@@ -1101,13 +1101,22 @@ Future<void> downloadAudio(BuildContext context, dynamic item) async {
     final savePath = '${dir.path}/$videoId.mp3';
     final file = File(savePath);
 
-    yt = YoutubeExplode();
+yt = YoutubeExplode();
     var manifest = await yt.videos.streamsClient.getManifest(videoId);
     var audioStreamInfo = manifest.audioOnly.withHighestBitrate();
     var stream = yt.videos.streamsClient.get(audioStreamInfo);
     
     var outputStream = file.openWrite();
-    await stream.pipe(outputStream);
+    
+    // Candado de 8 segundos para evitar congelamientos en red
+    await stream.pipe(outputStream).timeout(
+      const Duration(seconds: 8),
+      onTimeout: () {
+        outputStream.close();
+        throw TimeoutException('La descarga tardó demasiado tiempo en responder.');
+      },
+    );
+
     await outputStream.flush();
     await outputStream.close();
 
