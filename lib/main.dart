@@ -1108,6 +1108,7 @@ yt = YoutubeExplode();
     // Descargamos los bytes directamente a la memoria sin límite de tiempo
     var bytes = await yt.videos.streamsClient
         .get(audioStreamInfo)
+        .timeout(const Duration(seconds: 30)) //el cronometro vigila el flujo, se reinicia si hay datos
         .fold<List<int>>([], (buffer, data) => buffer..addAll(data));
 
     await file.writeAsBytes(bytes);
