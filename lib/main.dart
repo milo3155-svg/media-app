@@ -1054,17 +1054,18 @@ Future<void> downloadAudio(BuildContext context, dynamic item) async {
   
   bool isDialogShowing = false;
   void closeDialog() {
+    try {}
     if (isDialogShowing) {
       Navigator.of(context, rootNavigator:true).pop();
       isDialogShowing = false;
     }
-  }
+  } catch (ignore) {} //si falla al cerrar, ignoramos el choque para no trabar la app
 
   // Muestra tu diálogo de carga en la UI
   isDialogShowing = true;
   showDialog(
     context: context,
-    barrierDismissible: false,
+    barrierDismissible: true,
     builder: (context) => AlertDialog(
       title: const Text('Descargando pista'),
       content: Column(
@@ -1102,7 +1103,25 @@ Future<void> downloadAudio(BuildContext context, dynamic item) async {
     final file = File(savePath);
 
 yt = YoutubeExplode();
+    // --- PUNTO DE CONTROL 1 (AZUL) ---
+    messenger.showSnackBar(
+      const SnackBar(
+        content: Text('Paso 1: Conectando con YouTube...'),
+        backgroundColor: Colors.blue,
+        duration: Duration(seconds: 2),
+      ),
+    );
     var manifest = await yt.videos.streamsClient.getManifest(videoId).timeout(const Duration(seconds: 15));
+
+       // --- PUNTO DE CONTROL 2 (NARANJA) ---
+    messenger.showSnackBar(
+      const SnackBar(
+        content: Text('Paso 2: Datos recibidos, iniciando descarga...'),
+        backgroundColor: Colors.orange,
+        duration: Duration(seconds: 2),
+      ),
+    );
+    
     var audioStreamInfo = manifest.audioOnly.withHighestBitrate();
     
     // Descargamos los bytes directamente a la memoria sin límite de tiempo
@@ -1123,24 +1142,21 @@ yt = YoutubeExplode();
       'localPath': savePath,
     });
 
-    closeDialog();
-    messenger.showSnackBar(
-      const SnackBar(
-        content: Text('✔️ ¡Descarga Offline completada!'),
-        backgroundColor: Colors.green,
-      ),
-    );
-  } catch (e) {
-    closeDialog();
+} catch (e) {
+    // 1. Mostrar el mensaje rojo ANTES de tocar la ventana
     messenger.showSnackBar(
       SnackBar(
         content: Text('Error: $e'),
         backgroundColor: Colors.red,
-        duration: const Duration(seconds: 5),
+        duration: const Duration(seconds: 10),
       ),
     );
+    
+    // 2. Intentar destruirla después
+    closeDialog();
   } finally {
     yt?.close();
+  }
   }
 }
 
