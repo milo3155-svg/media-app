@@ -1104,21 +1104,18 @@ Future<void> downloadAudio(BuildContext context, dynamic item) async {
 yt = YoutubeExplode();
     var manifest = await yt.videos.streamsClient.getManifest(videoId);
     var audioStreamInfo = manifest.audioOnly.withHighestBitrate();
-    var stream = yt.videos.streamsClient.get(audioStreamInfo);
     
-    var outputStream = file.openWrite();
-    
-    // Candado de 8 segundos para evitar congelamientos en red
-    await stream.pipe(outputStream).timeout(
-      const Duration(seconds: 8),
-      onTimeout: () {
-        outputStream.close();
-        throw TimeoutException('La descarga tardó demasiado tiempo en responder.');
-      },
-    );
+    // Descargamos los bytes directamente con timeout de 8 segundos
+    var bytes = await yt.videos.streamsClient
+        .get(audioStreamInfo)
+        .fold<List<int>>([], (buffer, data) => buffer..addAll(data))
+        .timeout(
+          const Duration(seconds: 8),
+          onTimeout: () => throw TimeoutException('La descarga tardó demasiado.'),
+        );
 
-    await outputStream.flush();
-    await outputStream.close();
+    var file = File(savePath);
+    await file.writeAsBytes(bytes);
 
     final downloadsBox = Hive.box('downloads');
     await downloadsBox.put(videoId, {
