@@ -1060,11 +1060,29 @@ Future<void> downloadAudio(BuildContext context, dynamic item) async {
     }
   }
 
+  // Muestra tu diálogo de carga en la UI
+  isDialogShowing = true;
+  showDialog(
+    context: context,
+    barrierDismissible: false,
+    builder: (context) => AlertDialog(
+      title: const Text('Descargando pista'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: const [
+          Text('Descarga Blindada 3.0...\nOptimizando stream oficial.'),
+          SizedBox(height: 20),
+          LinearProgressIndicator(),
+        ],
+      ),
+    ),
+  );
+
   try {
     final isMediaItem = item is MediaItem;
     final String videoId = isMediaItem ? item.id : item.id.value;
     final String videoTitle = item.title;
-    
+
     String artist = 'Desconocido';
     String artUri = '';
     int duration = 0;
@@ -1074,138 +1092,42 @@ Future<void> downloadAudio(BuildContext context, dynamic item) async {
       artUri = item.artUri?.toString() ?? '';
       duration = item.duration?.inMilliseconds ?? 0;
     } else {
-      try { artist = item.author; } catch(_) {}
-      try { artUri = item.thumbnails.highResUrl; } catch(_) {}
-      try { duration = item.duration?.inMilliseconds ?? 0; } catch(_) {}
+      try { artist = item.author; } catch (_) {}
+      try { artUri = item.thumbnails.highestResUrl; } catch (_) {}
+      try { duration = item.duration.inMilliseconds; } catch (_) {}
     }
 
-    final directory = await getApplicationDocumentsDirectory();
-    final savePath = '${directory.path}/$videoId.m4a'; 
+    final dir = await getApplicationDocumentsDirectory();
+    final savePath = '${dir.path}/$videoId.mp3';
     final file = File(savePath);
 
-    if (file.existsSync()) {
-      if (file.lengthSync() < 500000) { 
-        file.deleteSync(); 
-      } else {
-        final box = Hive.box('downloads');
-        await box.put(videoId, {
-          'id': videoId, 'title': videoTitle, 'artist': artist,
-          'artUri': artUri, 'duration': duration, 'localPath': savePath,
-        });
-        messenger.showSnackBar(const SnackBar(
-          content: Text('✅ Este audio ya está en tu Bóveda.'),
-          backgroundColor: Colors.blue,
-        ));
-        return; 
-      }
-    }
-
-    final progressNotifier = ValueNotifier<double>(0.0);
-    isDialogShowing = true;
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) {
-        return WillPopScope(
-          onWillPop: () async => false,
-          child: AlertDialog(
-            backgroundColor: Colors.grey[900],
-            title: const Text('Descargando pista', style: TextStyle(color: Colors.white)),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Text(
-                  'Descarga Blindada 3.0...\nAuto-recuperando conexiones.',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(color: Colors.orangeAccent, fontWeight: FontWeight.bold),
-                ),
-                const SizedBox(height: 25),
-                ValueListenableBuilder<double>(
-                  valueListenable: progressNotifier,
-                  builder: (context, value, child) {
-                    return Column(
-                      children: [
-                        LinearProgressIndicator(
-                          value: value,
-                          backgroundColor: Colors.grey[700],
-                          valueColor: const AlwaysStoppedAnimation<Color>(Colors.blueAccent),
-                          minHeight: 8,
-                        ),
-                        const SizedBox(height: 12),
-                        Text(
-                          '${(value * 100).toStringAsFixed(1)}%', 
-                          style: const TextStyle(color: Colors.white, fontSize: 18)
-                        ),
-                      ],
-                    );
-                  },
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-
     yt = YoutubeExplode();
+    var manifest = await yt.videos.streamsClient.getManifest(videoId);
+    var audioStreamInfo = manifest.audioOnly.withHighestBitrate();
+    var stream = yt.videos.streamsClient.get(audioStreamInfo);
     
-    // 🔥 FUNCIÓN INTERNA: Consigue un link nuevo mágicamente si el anterior caduca
-    Future<StreamInfo> getFreshStreamInfo() async {
-      var manifest = await yt!.videos.streamsClient.getManifest(videoId);
-      var audioStreams = manifest.audioOnly.where((s) => s.container.name.toString().toLowerCase().contains('mp4'));
-      if (audioStreams.isEmpty) throw Exception('No hay formato M4A compatible.');
-      return audioStreams.withHighestBitrate();
-    }
+    var outputStream = file.openWrite();
+    await stream.pipe(outputStream);
+    await outputStream.flush();
+    await outputStream.close();
 
-    var streamInfo = await getFreshStreamInfo();
-    String audioUrl = streamInfo.url.toString();
-    final totalBytes = streamInfo.size.totalBytes;
-    
-    if (totalBytes <= 0) throw Exception('YouTube ocultó el tamaño.');
-
- final response = await http.get(
-      Uri.parse(audioUrl),
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,/;q=0.8',
-        'Accept-Language': 'es-ES,es;q=0.9',
-        'Referer': 'https://www.youtube.com/',
-      },
-    );
-
-    if (response.statusCode == 200) {
-      await file.writeAsBytes(response.bodyBytes);
-      
-      final downloadsBox = Hive.box('downloads');
-      await downloadsBox.put(videoId, {
-        'id': videoId,
-        'title': videoTitle,
-        'artist': artist,
-        'artUri': artUri,
-        'duration': duration,
-        'localPath': savePath,
-      });
-      
-      closeDialog();
-      messenger.showSnackBar(
-        const SnackBar(
-          content: Text('✔️ ¡Descarga Offline completada!'),
-          backgroundColor: Colors.green,
-        ),
-      );
-    } else {
-      throw Exception('Error HTTP: ${response.statusCode}');
-    }   
+    final downloadsBox = Hive.box('downloads');
+    await downloadsBox.put(videoId, {
+      'id': videoId,
+      'title': videoTitle,
+      'artist': artist,
+      'artUri': artUri,
+      'duration': duration,
+      'localPath': savePath,
+    });
 
     closeDialog();
-
     messenger.showSnackBar(
       const SnackBar(
-        content: Text('✅ ¡Descarga Offline completada!'),
+        content: Text('✔️ ¡Descarga Offline completada!'),
         backgroundColor: Colors.green,
       ),
     );
-
   } catch (e) {
     closeDialog();
     messenger.showSnackBar(
@@ -1216,7 +1138,6 @@ Future<void> downloadAudio(BuildContext context, dynamic item) async {
       ),
     );
   } finally {
-    closeDialog();
     yt?.close();
   }
 }
