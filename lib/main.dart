@@ -1159,7 +1159,6 @@ yt = YoutubeExplode();
     yt?.close();
   }
   }
-}
 
 class OfflineVaultScreen extends StatelessWidget {
   const OfflineVaultScreen({super.key});
