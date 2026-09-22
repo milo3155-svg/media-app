@@ -1103,35 +1103,59 @@ Future<void> downloadAudio(BuildContext context, dynamic item) async {
     final savePath = '${dir.path}/$videoId.mp3';
     final file = File(savePath);
 
-yt = YoutubeExplode();
-    // --- PUNTO DE CONTROL 1 (AZUL) ---
-    messenger.showSnackBar(
-      const SnackBar(
-        content: Text('Paso 1: Conectando con YouTube...'),
-        backgroundColor: Colors.blue,
-        duration: Duration(seconds: 2),
-      ),
-    );
-    var manifest = await yt.videos.streamsClient.getManifest(videoId).timeout(const Duration(seconds: 15));
+// --- Conexión con tu servidor proxy en Render ---
+messenger.showSnackBar(
+  const SnackBar(
+    content: Text('Paso 1: Conectando con el servidor proxy...'),
+    backgroundColor: Colors.blue,
+    duration: Duration(seconds: 2),
+  ),
+);
 
-       // --- PUNTO DE CONTROL 2 (NARANJA) ---
-    messenger.showSnackBar(
-      const SnackBar(
-        content: Text('Paso 2: Datos recibidos, iniciando descarga...'),
-        backgroundColor: Colors.orange,
-        duration: Duration(seconds: 2),
-      ),
-    );
+// Reemplaza 'videoId' por la variable o el texto con el ID del video que usabas antes
+final proxyUrl = Uri.parse('https://media-proxy-mjok.onrender.com/extraer?id=$videoId');
+final response = await http.get(proxyUrl);
 
-    var audioStreamInfo = manifest.audioOnly.withHighestBitrate();
-    
-    // Descargamos los bytes directamente a la memoria sin límite de tiempo
-    var bytes = await yt.videos.streamsClient
-        .get(audioStreamInfo)
-        .timeout(const Duration(seconds: 30)) //el cronometro vigila el flujo, se reinicia si hay datos
-        .fold<List<int>>([], (buffer, data) => buffer..addAll(data));
+if (response.statusCode == 200) {
+  final data = jsonDecode(response.body);
+  // Tomamos la URL directa que devuelve tu servidor en la nube
+  var audioUrl = data['url'] ?? data['url_directa']; 
 
-    await file.writeAsBytes(bytes);
+  // --- PUNTO DE CONTROL 2 (NARANJA) ---
+  messenger.showSnackBar(
+    const SnackBar(
+      content: Text('Paso 2: Datos recibidos, iniciando reproducción...'),
+      backgroundColor: Colors.orange,
+      duration: Duration(seconds: 2),
+    ),
+  );
+
+  // Aquí pasas 'audioUrl' directamente a tu reproductor de audio (ej. just_audio)
+} else {
+  throw Exception('Fallo en la respuesta del servidor proxy');
+}
+
+if (response.statusCode == 200) {
+  final data = jsonDecode(response.body);
+  var audioUrl = data['url'] ?? data['url_directa'];
+
+  messenger.showSnackBar(
+    const SnackBar(
+      content: Text('Paso 2: Datos recibidos, descargando audio desde el proxy...'),
+      backgroundColor: Colors.orange,
+      duration: Duration(seconds: 2),
+    ),
+  );
+
+  // Descargamos los bytes directamente desde la URL de tu servidor en Render
+  final streamResponse = await http.get(Uri.parse(audioUrl));
+  final bytes = streamResponse.bodyBytes;
+
+  await file.writeAsBytes(bytes);
+} else {
+  throw Exception('Fallo en la respuesta del servidor proxy');
+}
+
 
     final downloadsBox = Hive.box('downloads');
     await downloadsBox.put(videoId, {
@@ -1159,6 +1183,7 @@ yt = YoutubeExplode();
     yt?.close();
   }
   }
+
 
 class OfflineVaultScreen extends StatelessWidget {
   const OfflineVaultScreen({super.key});
