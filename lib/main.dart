@@ -1114,7 +1114,6 @@ yt = YoutubeExplode();
           onTimeout: () => throw TimeoutException('La descarga tardó demasiado.'),
         );
 
-    var file = File(savePath);
     await file.writeAsBytes(bytes);
 
     final downloadsBox = Hive.box('downloads');
