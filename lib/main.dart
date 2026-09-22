@@ -1105,12 +1105,12 @@ yt = YoutubeExplode();
     var manifest = await yt.videos.streamsClient.getManifest(videoId);
     var audioStreamInfo = manifest.audioOnly.withHighestBitrate();
     
-    // Descargamos los bytes directamente con timeout de 8 segundos
+    // Descargamos los bytes directamente con timeout de 60 segundos
     var bytes = await yt.videos.streamsClient
         .get(audioStreamInfo)
         .fold<List<int>>([], (buffer, data) => buffer..addAll(data))
         .timeout(
-          const Duration(seconds: 8),
+          const Duration(seconds: 60),
           onTimeout: () => throw TimeoutException('La descarga tardó demasiado.'),
         );
 
