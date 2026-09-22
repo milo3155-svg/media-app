@@ -1060,6 +1060,7 @@ Future<void> downloadAudio(BuildContext context, dynamic item) async {
       isDialogShowing = false;
     }
   } catch (ignore) {} //si falla al cerrar, ignoramos el choque para no trabar la app
+}
 
   // Muestra tu diálogo de carga en la UI
   isDialogShowing = true;
@@ -1121,7 +1122,7 @@ yt = YoutubeExplode();
         duration: Duration(seconds: 2),
       ),
     );
-    
+
     var audioStreamInfo = manifest.audioOnly.withHighestBitrate();
     
     // Descargamos los bytes directamente a la memoria sin límite de tiempo
