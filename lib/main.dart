@@ -29,7 +29,7 @@ final ValueNotifier<Color> appColor = ValueNotifier<Color>(Colors.cyanAccent);
 final ValueNotifier<int> sleepTimerRemaining = ValueNotifier<int>(0); 
 Future<String?> obtenerAudioDirecto(String videoId) async {
 // Usamos una instancia pública de Piped en lugar de Render
-final url = Uri.parse('https://pipedapi.kavin.rocks/streams/$videoId');
+final url = Uri.parse('https://pipedapi.adminforge.de/streams/$videoId');
 try {
 final response = await http.get(url);
 if (response.statusCode == 200) {
