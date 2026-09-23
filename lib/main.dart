@@ -27,25 +27,27 @@ late MyAudioHandler audioHandler;
 final ValueNotifier<bool> isHDMode = ValueNotifier<bool>(true);
 final ValueNotifier<Color> appColor = ValueNotifier<Color>(Colors.cyanAccent); 
 final ValueNotifier<int> sleepTimerRemaining = ValueNotifier<int>(0); 
+
 Future<String?> obtenerAudioDirecto(String videoId) async {
-// Usamos una instancia pública de Piped en lugar de Render
-final url = Uri.parse('https://pipedapi.adminforge.de/streams/$videoId');
-try {
-final response = await http.get(url);
-if (response.statusCode == 200) {
-final data = jsonDecode(response.body);
-final audioStreams = data['audioStreams'] as List;
-if (audioStreams.isNotEmpty) {
-// Retorna la URL directa del audio (formato m4a o webm)
-return audioStreams[0]['url'];
-}
-} else {
-print('Error de la API: ${response.statusCode}');
-}
-} catch (e) {
-print('Excepción al conectar: $e');
-}
-return null;
+  try {
+    // Usamos el extractor nativo que ya tienes instalado
+    final yt = YoutubeExplode();
+    
+    // Obtenemos los flujos directos del video
+    final manifest = await yt.videos.streamsClient.getManifest(videoId);
+    
+    // Filtramos para obtener solo el audio de mejor calidad
+    final streamInfo = manifest.audioOnly.withHighestBitrate();
+    
+    // Cerramos la instancia para liberar memoria
+    yt.close();
+    
+    // Retornamos la URL pura
+    return streamInfo.url.toString();
+  } catch (e) {
+    print('Error con YoutubeExplode: $e');
+    return null;
+  }
 }
 
 String formatGlobalDuration(Duration? d) {
