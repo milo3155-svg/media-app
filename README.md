@@ -98,5 +98,9 @@ CI/CD: Codemagic
 * *Conexión Directa:* Se eliminó el servidor proxy intermediario en Render para evitar los bloqueos persistentes de YouTube (Errores 403 y 429) y los límites de memoria.
 * *Extracción de Audio:* La aplicación ahora utiliza llamadas asíncronas mediante el paquete http hacia instancias públicas de la API de Piped (/streams/$videoId), obteniendo la URL directa del flujo de audio (audioStreams) sin pasar por servidores externos.
 * *Reproducción:* El enlace directo se integra de manera nativa en el reproductor just_audio dentro de la aplicación en el dispositivo.
-*
+*Bitácora de Desarrollo Técnico
+Registro de Actualizaciones
+23 de Septiembre de 2026
+Estado: Se ha actualizado la arquitectura de descarga. Después de abandonar el proxy en Render y comprobar que las instancias públicas de Piped (como kavin.rocks y adminforge.de) están bloqueadas o fallan incluso con pistas sin copyright (NCS), se ha descartado el uso del paquete http para extracción.
+Siguiente paso: Reemplazar el bloque inestable de obtenerAudioDirecto por una implementación nativa utilizando youtube_explode_dart. Esta librería romperá el cifrado directamente en el dispositivo (Pixel 10 Pro) para obtener el enlace y pasarlo al FlutterDownloader.
 
