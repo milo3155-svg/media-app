@@ -94,3 +94,9 @@ CI/CD: Codemagic
 2. Envolver la lógica del diálogo de carga en un `try/catch` estricto que destruya la ventana emergente y muestre un *SnackBar* rojo si el video está protegido.
 3. Retomar pruebas de flujo de datos exclusivamente con pistas sin copyright (NCS) para confirmar la estabilidad de escritura antes de volver a intentar con música comercial.
 
+## Arquitectura de Reproducción (Actualizada)
+* *Conexión Directa:* Se eliminó el servidor proxy intermediario en Render para evitar los bloqueos persistentes de YouTube (Errores 403 y 429) y los límites de memoria.
+* *Extracción de Audio:* La aplicación ahora utiliza llamadas asíncronas mediante el paquete http hacia instancias públicas de la API de Piped (/streams/$videoId), obteniendo la URL directa del flujo de audio (audioStreams) sin pasar por servidores externos.
+* *Reproducción:* El enlace directo se integra de manera nativa en el reproductor just_audio dentro de la aplicación en el dispositivo.
+*
+
