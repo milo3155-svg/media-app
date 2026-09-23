@@ -27,6 +27,26 @@ late MyAudioHandler audioHandler;
 final ValueNotifier<bool> isHDMode = ValueNotifier<bool>(true);
 final ValueNotifier<Color> appColor = ValueNotifier<Color>(Colors.cyanAccent); 
 final ValueNotifier<int> sleepTimerRemaining = ValueNotifier<int>(0); 
+Future<String?> obtenerAudioDirecto(String videoId) async {
+// Usamos una instancia pública de Piped en lugar de Render
+final url = Uri.parse('https://pipedapi.kavin.rocks/streams/$videoId');
+try {
+final response = await http.get(url);
+if (response.statusCode == 200) {
+final data = jsonDecode(response.body);
+final audioStreams = data['audioStreams'] as List;
+if (audioStreams.isNotEmpty) {
+// Retorna la URL directa del audio (formato m4a o webm)
+return audioStreams[0]['url'];
+}
+} else {
+print('Error de la API: ${response.statusCode}');
+}
+} catch (e) {
+print('Excepción al conectar: $e');
+}
+return null;
+}
 
 String formatGlobalDuration(Duration? d) {
   if (d == null) return "Live";
@@ -1112,41 +1132,29 @@ messenger.showSnackBar(
   ),
 );
 
-// Reemplaza 'videoId' por la variable o el texto con el ID del video que usabas antes
-final proxyUrl = Uri.parse('https://media-proxy-mjok.onrender.com/extraer?id=$videoId');
-final response = await http.get(proxyUrl);
-
-if (response.statusCode == 200) {
-  final data = jsonDecode(response.body);
-  // Tomamos la URL directa que devuelve tu servidor en la nube
-  var audioUrl = data['url'] ?? data['url_directa']; 
-
-  // --- PUNTO DE CONTROL 2 (NARANJA) ---
-  messenger.showSnackBar(
-    const SnackBar(
-      content: Text('Paso 2: Datos recibidos, iniciando reproducción...'),
-      backgroundColor: Colors.orange,
-      duration: Duration(seconds: 2),
-    ),
-  );
-
-  // Aquí pasas 'audioUrl' directamente a tu reproductor de audio (ej. just_audio)
+//Ahora
+final urlDirecta = await obtenerAudioDirecto(videoId);
+if (urlDirecta != null) {
+  await player.setUrl(urlDirecta); // o player.setAudioSource(...) según como lo tengas
 } else {
-  throw Exception('Fallo en la respuesta del servidor proxy');
+  print("No se pudo obtener el audio directo");
 }
 
-if (response.statusCode == 200) {
-  final data = jsonDecode(response.body);
-  var audioUrl = data['url'] ?? data['url_directa'];
-
+final urlDirecta = await obtenerAudioDirecto(videoId);
+if (urlDirecta != null) {
+  // Aquí le pasas la URL limpia a tu reproductor de just_audio
+  await player.setUrl(urlDirecta);
+  
   messenger.showSnackBar(
     const SnackBar(
-      content: Text('Paso 2: Datos recibidos, descargando audio desde el proxy...'),
-      backgroundColor: Colors.orange,
+      content: Text('¡Reproduciendo audio directo!'),
+      backgroundColor: Colors.green,
       duration: Duration(seconds: 2),
     ),
   );
-
+} else {
+  print("No se pudo obtener el audio directo");
+}
   // Descargamos los bytes directamente desde la URL de tu servidor en Render
   final streamResponse = await http.get(Uri.parse(audioUrl));
   final bytes = streamResponse.bodyBytes;
