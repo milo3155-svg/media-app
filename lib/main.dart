@@ -30,25 +30,23 @@ final ValueNotifier<int> sleepTimerRemaining = ValueNotifier<int>(0);
 
 Future<String?> obtenerAudioDirecto(String videoId) async {
   try {
-    // Usamos el extractor nativo que ya tienes instalado
     final yt = YoutubeExplode();
-    
-    // Obtenemos los flujos directos del video
     final manifest = await yt.videos.streamsClient.getManifest(videoId);
     
-    // Filtramos para obtener solo el audio de mejor calidad
-    final streamInfo = manifest.audioOnly.withHighestBitrate();
+    // Filtramos para obligar a YouTube a darnos solo formato MP4/M4A
+    final streamsMp4 = manifest.audioOnly.where((stream) => stream.container.name == 'mp4');
     
-    // Cerramos la instancia para liberar memoria
+    // Ahora sí, tomamos la mejor calidad de esa lista filtrada
+    final streamInfo = streamsMp4.withHighestBitrate();
+    
     yt.close();
-    
-    // Retornamos la URL pura
     return streamInfo.url.toString();
   } catch (e) {
     print('Error con YoutubeExplode: $e');
     return null;
   }
 }
+
 
 String formatGlobalDuration(Duration? d) {
   if (d == null) return "Live";
