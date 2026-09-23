@@ -1132,14 +1132,6 @@ messenger.showSnackBar(
   ),
 );
 
-//Ahora
-final urlDirecta = await obtenerAudioDirecto(videoId);
-if (urlDirecta != null) {
-  await player.setUrl(urlDirecta); // o player.setAudioSource(...) según como lo tengas
-} else {
-  print("No se pudo obtener el audio directo");
-}
-
 final urlDirecta = await obtenerAudioDirecto(videoId);
 
 if (urlDirecta != null) {
