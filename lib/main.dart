@@ -1141,29 +1141,34 @@ if (urlDirecta != null) {
 }
 
 final urlDirecta = await obtenerAudioDirecto(videoId);
+
 if (urlDirecta != null) {
-  // Aquí le pasas la URL limpia a tu reproductor de just_audio
-  await player.setUrl(urlDirecta);
-  
   messenger.showSnackBar(
     const SnackBar(
-      content: Text('¡Reproduciendo audio directo!'),
-      backgroundColor: Colors.green,
+      content: Text('Paso 2: Iniciando descarga en segundo plano...'),
+      backgroundColor: Colors.blue,
       duration: Duration(seconds: 2),
     ),
   );
-} else {
-  print("No se pudo obtener el audio directo");
-}
-  // Descargamos los bytes directamente desde la URL de tu servidor en Render
-  final streamResponse = await http.get(Uri.parse(audioUrl));
-  final bytes = streamResponse.bodyBytes;
 
-  await file.writeAsBytes(bytes);
-} else {
-  throw Exception('Fallo en la respuesta del servidor proxy');
-}
+  // Extraemos la carpeta y el nombre del archivo de tu savePath original
+  final directorio = File(savePath).parent.path;
+  final nombreArchivo = File(savePath).uri.pathSegments.last;
 
+  // Delegamos la descarga a Android para evadir el throttling
+  final taskId = await FlutterDownloader.enqueue(
+    url: urlDirecta,
+    savedDir: directorio,
+    fileName: nombreArchivo,
+    showNotification: false, 
+    openFileFromNotification: false,
+  );
+  
+  print("Descarga delegada al sistema con taskId: $taskId");
+  
+} else {
+  throw Exception('No se pudo obtener el enlace directo para descargar');
+}
 
     final downloadsBox = Hive.box('downloads');
     await downloadsBox.put(videoId, {
