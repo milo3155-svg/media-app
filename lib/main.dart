@@ -1188,7 +1188,15 @@ try {
   print('Error en la descarga: $e');
   Navigator.pop(context);
 }
-
+    final downloadsBox = Hive.box('downloads');
+    await downloadsBox.put(videoId, {
+      'id': videoId,
+      'title': videoTitle,
+      'artist': artist,
+      'artUri': artUri,
+      'duration': duration,
+      'localPath': savePath,
+    });
 
 } catch (e) {
     // 1. Mostrar el mensaje rojo ANTES de tocar la ventana
