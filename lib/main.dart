@@ -1189,10 +1189,11 @@ try {
   print('Error en la descarga: $e');
   Navigator.pop(context);
 }
-
+} catch (e) {
+    print('Error general: $e');
+  }
+);
   
-  
-
 class OfflineVaultScreen extends StatelessWidget {
   const OfflineVaultScreen({super.key});
 
