@@ -1147,6 +1147,7 @@ if (urlDirecta != null) {
   final directorio = File(savePath).parent.path;
   final nombreArchivo = File(savePath).uri.pathSegments.last;
 
+ //Descarga y guardado con YoutobeExplode
 try {
   final yt = YoutubeExplode();
   final manifest = await yt.videos.streamsClient.getManifest(videoId);
@@ -1190,7 +1191,7 @@ try {
 }
 
   }
-
+  }
 
 class OfflineVaultScreen extends StatelessWidget {
   const OfflineVaultScreen({super.key});
