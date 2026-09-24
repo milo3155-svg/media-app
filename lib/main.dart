@@ -1192,8 +1192,10 @@ try {
 } catch (e) {
     print('Error general: $e');
   }
+  });
+},
 );
-  
+
 class OfflineVaultScreen extends StatelessWidget {
   const OfflineVaultScreen({super.key});
 
