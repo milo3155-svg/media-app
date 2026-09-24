@@ -1100,7 +1100,7 @@ Future<void> downloadAudio(BuildContext context, dynamic item) async {
     ),
   );
 
-  try {
+
     final isMediaItem = item is MediaItem;
     final String videoId = isMediaItem ? item.id : item.id.value;
     final String videoTitle = item.title;
@@ -1192,7 +1192,7 @@ try {
 } catch (e) {
     print('Error general: $e');
   }
-  });
+
 
 class OfflineVaultScreen extends StatelessWidget {
   const OfflineVaultScreen({super.key});
