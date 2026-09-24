@@ -1191,7 +1191,7 @@ try {
 }
 
   }
-  }
+   }
 
 class OfflineVaultScreen extends StatelessWidget {
   const OfflineVaultScreen({super.key});
