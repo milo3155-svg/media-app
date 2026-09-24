@@ -1147,16 +1147,30 @@ if (urlDirecta != null) {
   final directorio = File(savePath).parent.path;
   final nombreArchivo = File(savePath).uri.pathSegments.last;
 
-  // Delegamos la descarga a Android para evadir el throttling
-  final taskId = await FlutterDownloader.enqueue(
-    url: urlDirecta,
-    savedDir: directorio,
-    fileName: nombreArchivo,
-    showNotification: false, 
-    openFileFromNotification: false,
-  );
-  
-  print("Descarga delegada al sistema con taskId: $taskId");
+ // Descargamos el archivo completo asegurando que baje al 100%
+final response = await http.get(Uri.parse(urlDirecta));
+final file = File(savePath);
+await file.writeAsBytes(response.bodyBytes);
+
+print("¡Archivo descargado y guardado exitosamente en: $savePath!");
+ 
+ final downloadsBox = Hive.box('downloads');
+await downloadsBox.put(videoId, {
+  'id': videoId,
+  'title': videoTitle,
+  'artist': artist,
+  'artUri': artUri,
+  'duration': duration,
+  'localPath': savePath,
+});
+
+messenger.showSnackBar(
+  const SnackBar(
+    content: Text('¡Descarga completada y lista para reproducir!'),
+    backgroundColor: Colors.green,
+    duration: Duration(seconds: 2),
+  ),
+);
   
 } else {
   throw Exception('No se pudo obtener el enlace directo para descargar');
