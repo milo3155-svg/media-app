@@ -1100,7 +1100,7 @@ Future<void> downloadAudio(BuildContext context, dynamic item) async {
     ),
   );
 
-
+  try {
     final isMediaItem = item is MediaItem;
     final String videoId = isMediaItem ? item.id : item.id.value;
     final String videoTitle = item.title;
@@ -1147,7 +1147,6 @@ if (urlDirecta != null) {
   final directorio = File(savePath).parent.path;
   final nombreArchivo = File(savePath).uri.pathSegments.last;
 
- //Descarga y guardado con YoutobeExplode
 try {
   final yt = YoutubeExplode();
   final manifest = await yt.videos.streamsClient.getManifest(videoId);
@@ -1189,8 +1188,23 @@ try {
   print('Error en la descarga: $e');
   Navigator.pop(context);
 }
+
+
 } catch (e) {
-    print('Error general: $e');
+    // 1. Mostrar el mensaje rojo ANTES de tocar la ventana
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text('Error: $e'),
+        backgroundColor: Colors.red,
+        duration: const Duration(seconds: 10),
+      ),
+    );
+    
+    // 2. Intentar destruirla después
+    closeDialog();
+  } finally {
+    yt?.close();
+  }
   }
 
 
