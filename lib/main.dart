@@ -1147,60 +1147,48 @@ if (urlDirecta != null) {
   final directorio = File(savePath).parent.path;
   final nombreArchivo = File(savePath).uri.pathSegments.last;
 
- // Descargamos el archivo completo asegurando que baje al 100%
-final response = await http.get(Uri.parse(urlDirecta));
-final file = File(savePath);
-await file.writeAsBytes(response.bodyBytes);
+try {
+  final yt = YoutubeExplode();
+  final manifest = await yt.videos.streamsClient.getManifest(videoId);
+  final streamsMp4 = manifest.audioOnly.where((stream) => stream.container.name == 'mp4');
+  final streamInfo = streamsMp4.withHighestBitrate();
 
-print("¡Archivo descargado y guardado exitosamente en: $savePath!");
- 
- final downloadsBox = Hive.box('downloads');
-await downloadsBox.put(videoId, {
-  'id': videoId,
-  'title': videoTitle,
-  'artist': artist,
-  'artUri': artUri,
-  'duration': duration,
-  'localPath': savePath,
-});
+  // Descarga limpia y real usando el cliente de YouTube
+  final stream = yt.videos.streamsClient.get(streamInfo);
+  final file = File(savePath);
+  final outputStream = file.openWrite();
+  await stream.pipe(outputStream);
+  await outputStream.flush();
+  await outputStream.close();
+  yt.close();
 
-messenger.showSnackBar(
-  const SnackBar(
-    content: Text('¡Descarga completada y lista para reproducir!'),
-    backgroundColor: Colors.green,
-    duration: Duration(seconds: 2),
-  ),
-);
-  
-} else {
-  throw Exception('No se pudo obtener el enlace directo para descargar');
-}
+  // Guardamos en Hive solo cuando el archivo ya bajó completo
+  final downloadsBox = Hive.box('downloads');
+  await downloadsBox.put(videoId, {
+    'id': videoId,
+    'title': videoTitle,
+    'artist': artist,
+    'artUri': artUri,
+    'duration': duration,
+    'localPath': savePath,
+  });
 
-    final downloadsBox = Hive.box('downloads');
-    await downloadsBox.put(videoId, {
-      'id': videoId,
-      'title': videoTitle,
-      'artist': artist,
-      'artUri': artUri,
-      'duration': duration,
-      'localPath': savePath,
-    });
+  ScaffoldMessenger.of(context).showSnackBar(
+    const SnackBar(
+      content: Text('¡Descarga completada y lista para reproducir!'),
+      backgroundColor: Colors.green,
+      duration: Duration(seconds: 2),
+    ),
+  );
+
+  // Cerramos el modal de carga automáticamente
+  Navigator.pop(context);
 
 } catch (e) {
-    // 1. Mostrar el mensaje rojo ANTES de tocar la ventana
-    messenger.showSnackBar(
-      SnackBar(
-        content: Text('Error: $e'),
-        backgroundColor: Colors.red,
-        duration: const Duration(seconds: 10),
-      ),
-    );
-    
-    // 2. Intentar destruirla después
-    closeDialog();
-  } finally {
-    yt?.close();
-  }
+  print('Error en la descarga: $e');
+  Navigator.pop(context);
+}
+
   }
 
 
