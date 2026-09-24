@@ -103,4 +103,7 @@ Registro de Actualizaciones
 23 de Septiembre de 2026
 Estado: Se ha actualizado la arquitectura de descarga. Después de abandonar el proxy en Render y comprobar que las instancias públicas de Piped (como kavin.rocks y adminforge.de) están bloqueadas o fallan incluso con pistas sin copyright (NCS), se ha descartado el uso del paquete http para extracción.
 Siguiente paso: Reemplazar el bloque inestable de obtenerAudioDirecto por una implementación nativa utilizando youtube_explode_dart. Esta librería romperá el cifrado directamente en el dispositivo (Pixel 10 Pro) para obtener el enlace y pasarlo al FlutterDownloader.
-
+## 🎵 Bóveda Offline (Modo Sin Conexión)
+- *Descarga Robusta:* Extracción y descarga de streams de audio utilizando youtube_explode_dart (stream.pipe), garantizando archivos completos y eliminando errores de caducidad de tokens.
+- *Persistencia de Metadatos:* Registro de información de las pistas (título, artista, uri, ruta local física) de manera permanente usando Hive (downloadsBox).
+- *Gestión de Interfaz:* Feedback en tiempo real con SnackBars y manejo automático de modales de carga durante el procesamiento de la pista
