@@ -1124,14 +1124,14 @@ Future<void> downloadAudio(BuildContext context, dynamic item) async {
     final file = File(savePath);
 
 // === 1. DESCARGA LIMPIA (YOUTUBE EXPLODE) ===
-      final file = File(savePath);
-      final manifest = await yt.videos.streamsClient.getManifest(videoId);
+      // (Ya usamos el 'file' que declaraste en la línea 1124)
+      final manifest = await yt!.videos.streamsClient.getManifest(videoId);
       
       // Filtramos para asegurar mp4 y mejor calidad de audio
       final streamMp4 = manifest.audioOnly.where((s) => s.container.name == 'mp4');
       final streamInfo = streamMp4.isNotEmpty ? streamMp4.withHighestBitrate() : manifest.audioOnly.withHighestBitrate();
       
-      final stream = yt.videos.streamsClient.get(streamInfo);
+      final stream = yt!.videos.streamsClient.get(streamInfo);
       final outputStream = file.openWrite();
       
       await stream.pipe(outputStream);
@@ -1158,7 +1158,7 @@ Future<void> downloadAudio(BuildContext context, dynamic item) async {
         ),
       );
       
-      closeDialog(); // ¡Esto quita la pantalla de carga trabada!
+      closeDialog(); // o Navigator.pop(context); dependiendo de qué uses
       
 } catch (e) {
     // 1. Mostrar el mensaje rojo ANTES de tocar la ventana
