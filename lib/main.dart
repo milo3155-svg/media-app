@@ -1123,62 +1123,43 @@ Future<void> downloadAudio(BuildContext context, dynamic item) async {
     final savePath = '${dir.path}/$videoId.m4a';
     final file = File(savePath);
 
-// --- Conexión con tu servidor proxy en Render ---
-messenger.showSnackBar(
-  const SnackBar(
-    content: Text('Paso 1: Conectando con el servidor proxy...'),
-    backgroundColor: Colors.blue,
-    duration: Duration(seconds: 2),
-  ),
-);
+// === 1. DESCARGA LIMPIA (YOUTUBE EXPLODE) ===
+      final file = File(savePath);
+      final manifest = await yt.videos.streamsClient.getManifest(videoId);
+      
+      // Filtramos para asegurar mp4 y mejor calidad de audio
+      final streamMp4 = manifest.audioOnly.where((s) => s.container.name == 'mp4');
+      final streamInfo = streamMp4.isNotEmpty ? streamMp4.withHighestBitrate() : manifest.audioOnly.withHighestBitrate();
+      
+      final stream = yt.videos.streamsClient.get(streamInfo);
+      final outputStream = file.openWrite();
+      
+      await stream.pipe(outputStream);
+      await outputStream.flush();
+      await outputStream.close();
 
-final urlDirecta = await obtenerAudioDirecto(videoId);
+      // === 2. GUARDADO EN HIVE ===
+      final downloadsBox = Hive.box('downloads');
+      await downloadsBox.put(videoId, {
+        'id': videoId,
+        'title': videoTitle,
+        'artist': artist,
+        'artUri': artUri,
+        'duration': duration,
+        'localPath': savePath,
+      });
 
-if (urlDirecta != null) {
-  messenger.showSnackBar(
-    const SnackBar(
-      content: Text('Paso 2: Iniciando descarga en segundo plano...'),
-      backgroundColor: Colors.blue,
-      duration: Duration(seconds: 2),
-    ),
-  );
-
-  // Extraemos la carpeta y el nombre del archivo de tu savePath original
-  final directorio = File(savePath).parent.path;
-  final nombreArchivo = File(savePath).uri.pathSegments.last;
-
- final downloadsBox = Hive.box('downloads');
-await downloadsBox.put(videoId, {
-  'id': videoId,
-  'title': videoTitle,
-  'artist': artist,
-  'artUri': artUri,
-  'duration': duration,
-  'localPath': savePath,
-});
-
-messenger.showSnackBar(
-  const SnackBar(
-    content: Text('¡Descarga completada y lista para reproducir!'),
-    backgroundColor: Colors.green,
-    duration: Duration(seconds: 2),
-  ),
-);
-  
-} else {
-  throw Exception('No se pudo obtener el enlace directo para descargar');
-}
-
-    final downloadsBox = Hive.box('downloads');
-    await downloadsBox.put(videoId, {
-      'id': videoId,
-      'title': videoTitle,
-      'artist': artist,
-      'artUri': artUri,
-      'duration': duration,
-      'localPath': savePath,
-    });
-
+      // === 3. ÉXITO Y CERRAR MODAL ===
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text('Descarga completada y lista para reproducir 🎵'),
+          backgroundColor: Colors.green,
+          duration: Duration(seconds: 2),
+        ),
+      );
+      
+      closeDialog(); // ¡Esto quita la pantalla de carga trabada!
+      
 } catch (e) {
     // 1. Mostrar el mensaje rojo ANTES de tocar la ventana
     messenger.showSnackBar(
