@@ -1124,19 +1124,22 @@ Future<void> downloadAudio(BuildContext context, dynamic item) async {
     final file = File(savePath);
 
 // === 1. DESCARGA LIMPIA (YOUTUBE EXPLODE) ===
-      // (Ya usamos el 'file' que declaraste en la línea 1124)
-      final manifest = await yt!.videos.streamsClient.getManifest(videoId);
+      // Instanciamos el cliente aquí mismo para que nunca sea null
+      final ytClient = YoutubeExplode(); 
+      
+      final manifest = await ytClient.videos.streamsClient.getManifest(videoId);
       
       // Filtramos para asegurar mp4 y mejor calidad de audio
       final streamMp4 = manifest.audioOnly.where((s) => s.container.name == 'mp4');
       final streamInfo = streamMp4.isNotEmpty ? streamMp4.withHighestBitrate() : manifest.audioOnly.withHighestBitrate();
       
-      final stream = yt!.videos.streamsClient.get(streamInfo);
+      final stream = ytClient.videos.streamsClient.get(streamInfo);
       final outputStream = file.openWrite();
       
       await stream.pipe(outputStream);
       await outputStream.flush();
       await outputStream.close();
+      ytClient.close(); // Cerramos el cliente para no dejar procesos colgados
 
       // === 2. GUARDADO EN HIVE ===
       final downloadsBox = Hive.box('downloads');
@@ -1158,7 +1161,8 @@ Future<void> downloadAudio(BuildContext context, dynamic item) async {
         ),
       );
       
-      closeDialog(); // o Navigator.pop(context); dependiendo de qué uses
+      // Cambia closeDialog() por tu función real si usas otra (ej. Navigator.pop(context);)
+      closeDialog();
       
 } catch (e) {
     // 1. Mostrar el mensaje rojo ANTES de tocar la ventana
