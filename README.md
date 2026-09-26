@@ -107,3 +107,8 @@ Siguiente paso: Reemplazar el bloque inestable de obtenerAudioDirecto por una im
 - *Descarga Robusta:* Extracción y descarga de streams de audio utilizando youtube_explode_dart (stream.pipe), garantizando archivos completos y eliminando errores de caducidad de tokens.
 - *Persistencia de Metadatos:* Registro de información de las pistas (título, artista, uri, ruta local física) de manera permanente usando Hive (downloadsBox).
 - *Gestión de Interfaz:* Feedback en tiempo real con SnackBars y manejo automático de modales de carga durante el procesamiento de la pista
+## 🎵 Bóveda Offline (Librería Local)
+- *Descarga Nativa de Streams:* Extracción directa del flujo de audio desde YouTube (youtube_explode_dart) hacia el almacenamiento local del dispositivo, garantizando archivos íntegros sin depender de proxies externos.
+- *Persistencia Rápida:* Base de datos NoSQL integrada con Hive para el almacenamiento y lectura instantánea de metadatos (título, artista, portadas y rutas físicas).
+- *Reproducción en Segundo Plano:* Integración completa con el servicio de audio del sistema operativo, permitiendo la reproducción de archivos locales con controles activos desde la pantalla de bloqueo o notificaciones.
+- *Gestión de Memoria Segura:* Instanciación dinámica de clientes de red por cada descarga y cierres automáticos de streams (flush y close) para prevenir fugas de memoria (memory leaks)
