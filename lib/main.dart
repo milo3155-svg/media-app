@@ -1186,26 +1186,6 @@ Future<void> downloadAudio(BuildContext context, dynamic item) async {
 
 
 
-                    IconButton(
-                      icon: const Icon(Icons.delete, color: Colors.redAccent),
-                      onPressed: () {
-                        // Eliminar el archivo físico (opcional por ahora, solo borramos el registro)
-                        try{
-                           final file = File(item['localPath']);
-                           if(file.existsSync()){
-                               file.deleteSync();
-                           }
-                        }catch(e){
-                           print("Error borrando archivo local: $e");
-                        }
-                        box.delete(key);
-                      },
-                    ),
-                  ],
-                ),
-              );
-            },
-          );
         },
       ),
     );

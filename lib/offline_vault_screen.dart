@@ -12,7 +12,7 @@ class OfflineVaultScreen extends StatelessWidget {
 
   // Modificamos el constructor para obligar a que se lo pasen
   const OfflineVaultScreen({Key? key, required this.audioHandler}) : super(key: key);
-  
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -77,3 +77,24 @@ class OfflineVaultScreen extends StatelessWidget {
     }
   },
 ),
+
+                    IconButton(
+                      icon: const Icon(Icons.delete, color: Colors.redAccent),
+                      onPressed: () {
+                        // Eliminar el archivo físico (opcional por ahora, solo borramos el registro)
+                        try{
+                           final file = File(item['localPath']);
+                           if(file.existsSync()){
+                               file.deleteSync();
+                           }
+                        }catch(e){
+                           print("Error borrando archivo local: $e");
+                        }
+                        box.delete(key);
+                      },
+                    ),
+                  ],
+                ),
+              );
+            },
+          );
