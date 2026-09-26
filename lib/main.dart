@@ -1125,6 +1125,8 @@ Future<void> downloadAudio(BuildContext context, dynamic item) async {
 
 // === 1. DESCARGA LIMPIA (YOUTUBE EXPLODE) ===
       // Instanciamos el cliente aquí mismo para que nunca sea null
+
+      messenger.showSnackBar(const SnackBar(content: Text('Iniciando descarga limpia... ⏳'), backgroundColor: Colors.blue));
       final ytClient = YoutubeExplode(); 
       
       final manifest = await ytClient.videos.streamsClient.getManifest(videoId);
@@ -1162,8 +1164,8 @@ Future<void> downloadAudio(BuildContext context, dynamic item) async {
       );
       
       // Cambia closeDialog() por tu función real si usas otra (ej. Navigator.pop(context);)
-      closeDialog();
-      
+      Navigator.of(context, rootNavigator: true).pop();
+
 } catch (e) {
     // 1. Mostrar el mensaje rojo ANTES de tocar la ventana
     messenger.showSnackBar(
@@ -1234,10 +1236,13 @@ class OfflineVaultScreen extends StatelessWidget {
     );
 
     try {
-      await audioHandler.customAction('playLocal', {
+    await audioHandler.customAction('playLocal', {
         'localPath': item['localPath'],
         'id': item['id'],
         'title': item['title'],
+        'artist': item['artist'] ?? 'Bóveda Offline',
+        'artUri': item['artUri'] ?? '',
+        'duration': item['duration'] ?? 0,
       });
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
