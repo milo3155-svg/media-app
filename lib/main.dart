@@ -1183,11 +1183,3 @@ Future<void> downloadAudio(BuildContext context, dynamic item) async {
     yt?.close();
   }
   }
-
-
-
-        },
-      ),
-    );
-  }
-}

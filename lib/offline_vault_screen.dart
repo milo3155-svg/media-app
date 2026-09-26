@@ -91,10 +91,11 @@ class OfflineVaultScreen extends StatelessWidget {
                            print("Error borrando archivo local: $e");
                         }
                         box.delete(key);
-                      },
-                    ),
                   ],
                 ),
               );
             },
-          );
+          ),
+      );
+  }
+}    
