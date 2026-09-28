@@ -234,6 +234,7 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
       } else { sleepTimerRemaining.value = 0; } 
     } 
   }
+  }
   @override Future<void> play() => _player.play(); 
   @override Future<void> pause() => _player.pause(); 
   @override Future<void> seek(Duration position) => _player.seek(position);
