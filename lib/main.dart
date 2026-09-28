@@ -409,3 +409,19 @@ Future<void> globalPlayQueue(List<MediaItem> items, int startIndex) async {
   await audioHandler.updateQueue(items);
   await audioHandler.playMediaItem(items[startIndex]);
 }
+class MediaApp extends StatelessWidget {
+  const MediaApp({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      title: 'Spotify Killer VIP',
+      debugShowCheckedModeBanner: false,
+      theme: ThemeData(
+        brightness: Brightness.dark,
+        primarySwatch: Colors.cyan,
+      ),
+      home: const OFFLineVaultScreen(audioHandler: audioHandler), // O tu pantalla principal
+    );
+  }
+}
