@@ -271,8 +271,9 @@ if (name == 'playLocal' && extras != null) {
       
       // --- SEGURO ANTI-REBOTES ---
       // Si el usuario cambió de pista mientras YouTube respondía, abortamos la carga vieja
-      if (mediaItem.value?.id != item.id) return;
-      
+      if (mediaItem.value?.id != item.id) {
+        return;
+      }
       var video = await _yt.videos.get(item.id); 
       StreamInfo streamInfo;
       if (manifest.muxed.isNotEmpty) { 
@@ -306,7 +307,7 @@ if (name == 'playLocal' && extras != null) {
       playbackState.add(playbackState.value.copyWith(processingState: AudioProcessingState.error, playing: false
       )); 
     }
-  }
+  } 
   @override
   Future<void> updateQueue(List<MediaItem> newQueue) async { queue.add(newQueue);
    }
