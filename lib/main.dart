@@ -83,44 +83,18 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
 
   MyAudioHandler() {
     _player.playbackEventStream.listen(_broadcastState);
-    
-    _player.processingStateStream.listen((state) {
-      if (state == ProcessingState.completed) skipToNext();
-    });
-
-    _player.positionStream.listen((position) {
-      final currentState = playbackState.value;
-      playbackState.add(currentState.copyWith(updatePosition: position));
-    });
+    _player.processingStateStream.listen((state) { if (state == ProcessingState.completed) skipToNext(); });
+    _player.positionStream.listen((position) { final currentState = playbackState.value; playbackState.add(currentState.copyWith(updatePosition: position)); });
   }
 
   void _broadcastState(PlaybackEvent event) {
     final playing = _player.playing;
     playbackState.add(playbackState.value.copyWith(
-      controls: [
-        MediaControl.skipToPrevious,
-        if (playing) MediaControl.pause else MediaControl.play,
-        MediaControl.stop,
-        MediaControl.skipToNext,
-      ],
-      systemActions: const {
-        MediaAction.seek,
-        MediaAction.seekForward,
-        MediaAction.seekBackward,
-      },
+      controls: [MediaControl.skipToPrevious, if (playing) MediaControl.pause else MediaControl.play, MediaControl.stop, MediaControl.skipToNext],
+      systemActions: const {MediaAction.seek, MediaAction.seekForward, MediaAction.seekBackward},
       androidCompactActionIndices: const [0, 1, 3],
-      processingState: const {
-        ProcessingState.idle: AudioProcessingState.idle,
-        ProcessingState.loading: AudioProcessingState.loading,
-        ProcessingState.buffering: AudioProcessingState.buffering,
-        ProcessingState.ready: AudioProcessingState.ready,
-        ProcessingState.completed: AudioProcessingState.completed,
-      }[_player.processingState]!,
-      playing: playing,
-      updatePosition: _player.position,
-      bufferedPosition: _player.bufferedPosition,
-      speed: _player.speed,
-      queueIndex: event.currentIndex,
+      processingState: const {ProcessingState.idle: AudioProcessingState.idle, ProcessingState.loading: AudioProcessingState.loading, ProcessingState.buffering: AudioProcessingState.buffering, ProcessingState.ready: AudioProcessingState.ready, ProcessingState.completed: AudioProcessingState.completed}[_player.processingState]!,
+      playing: playing, updatePosition: _player.position, bufferedPosition: _player.bufferedPosition, speed: _player.speed, queueIndex: event.currentIndex,
     ));
   }
 
@@ -128,58 +102,25 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
   Future<void> customAction(String name, [Map<String, dynamic>? extras]) async {
     if (name == 'playLocal' && extras != null) {
       final localPath = extras['localPath'] as String;
-      final title = extras['title'] as String;
-      final artist = extras['artist'] as String;
-      final artUri = extras['artUri'] as String;
-      final duration = extras['duration'] as int? ?? 0;
-      
-      final newItem = MediaItem(
-        id: localPath,
-        title: title,
-        artist: artist,
-        artUri: Uri.parse(artUri),
-        duration: Duration(seconds: duration),
-        extras: {'isLocal': true},
-      );
-      
-      mediaItem.add(newItem);
-      await _player.setFilePath(localPath);
-      play();
+      final newItem = MediaItem(id: localPath, title: extras['title'] as String, artist: extras['artist'] as String, artUri: Uri.parse(extras['artUri'] as String), duration: Duration(seconds: extras['duration'] as int? ?? 0), extras: {'isLocal': true});
+      mediaItem.add(newItem); await _player.setFilePath(localPath); play();
     }
   }
 
   @override
   Future<void> playMediaItem(MediaItem item) async {
     final now = DateTime.now();
-    if (_lastPlayedId == item.id && _lastPlayTime != null) {
-      if (now.difference(_lastPlayTime!).inSeconds < 2) return;
-    }
-    
-    _lastPlayedId = item.id;
-    _lastPlayTime = now;
-    mediaItem.add(item);
+    if (_lastPlayedId == item.id && _lastPlayTime != null) { if (now.difference(_lastPlayTime!).inSeconds < 2) return; }
+    _lastPlayedId = item.id; _lastPlayTime = now; mediaItem.add(item);
     
     final historyBox = Hive.box('history');
-    final itemMap = {
-      'id': item.id,
-      'title': item.title,
-      'artist': item.artist ?? 'Desconocido',
-      'duration': item.duration?.inSeconds ?? 0,
-      'artUri': item.artUri?.toString() ?? '',
-    };
-    
-    historyBox.put(item.id, itemMap);
+    historyBox.put(item.id, {'id': item.id, 'title': item.title, 'artist': item.artist ?? 'Desconocido', 'duration': item.duration?.inSeconds ?? 0, 'artUri': item.artUri?.toString() ?? ''});
     if (historyBox.length > 50) historyBox.deleteAt(0);
 
     try {
       final url = await obtenerAudioDirecto(item.id);
-      if (url != null) {
-        await _player.setUrl(url);
-        play();
-      }
-    } catch (e) {
-      print("Error en playMediaItem: $e");
-    }
+      if (url != null) { await _player.setUrl(url); play(); }
+    } catch (e) { print("Error en playMediaItem: $e"); }
   }
 
   @override Future<void> play() => _player.play();
@@ -190,30 +131,17 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
 
   @override
   Future<void> skipToNext() async {
-    final queueList = queue.value;
-    if (queueList.isEmpty) return;
-    
-    final currentItem = mediaItem.value;
-    final currentIndex = queueList.indexWhere((item) => item.id == currentItem?.id);
-    
-    if (currentIndex != -1 && currentIndex < queueList.length - 1) {
-      await playMediaItem(queueList[currentIndex + 1]);
-    } else if (_isAutoPlayEnabled && currentItem != null && currentItem.extras?['isLocal'] != true) {
-      await _autoPlayNext(currentItem.id);
-    }
+    final queueList = queue.value; if (queueList.isEmpty) return;
+    final currentItem = mediaItem.value; final currentIndex = queueList.indexWhere((item) => item.id == currentItem?.id);
+    if (currentIndex != -1 && currentIndex < queueList.length - 1) { await playMediaItem(queueList[currentIndex + 1]); } 
+    else if (_isAutoPlayEnabled && currentItem != null && currentItem.extras?['isLocal'] != true) { await _autoPlayNext(currentItem.id); }
   }
 
   @override
   Future<void> skipToPrevious() async {
-    final queueList = queue.value;
-    if (queueList.isEmpty) return;
-    
-    final currentItem = mediaItem.value;
-    final currentIndex = queueList.indexWhere((item) => item.id == currentItem?.id);
-    
-    if (currentIndex > 0) {
-      await playMediaItem(queueList[currentIndex - 1]);
-    }
+    final queueList = queue.value; if (queueList.isEmpty) return;
+    final currentItem = mediaItem.value; final currentIndex = queueList.indexWhere((item) => item.id == currentItem?.id);
+    if (currentIndex > 0) { await playMediaItem(queueList[currentIndex - 1]); }
   }
 
   Future<void> _autoPlayNext(String videoId) async {
@@ -222,43 +150,16 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
       final relatedList = await _yt.videos.getRelatedVideos(video);
       if (relatedList == null || relatedList.isEmpty) return;
       final related = relatedList.first;
-      
-      final nextItem = MediaItem(
-        id: related.id.value,
-        title: related.title,
-        artist: related.author,
-        duration: related.duration,
-        artUri: Uri.parse(related.thumbnails.highResUrl),
-      );
-      
-      final currentQueue = queue.value.toList();
-      currentQueue.add(nextItem);
-      queue.add(currentQueue);
-      
+      final nextItem = MediaItem(id: related.id.value, title: related.title, artist: related.author, duration: related.duration, artUri: Uri.parse(related.thumbnails.highResUrl));
+      final currentQueue = queue.value.toList(); currentQueue.add(nextItem); queue.add(currentQueue);
       await playMediaItem(nextItem);
-    } catch (e) {
-      print("Error en AutoPlay: $e");
-    }
+    } catch (e) { print("Error en AutoPlay: $e"); }
   }
 }
 
-Future<void> globalPlay(MediaItem item) async {
-  await audioHandler.updateQueue([item]);
-  await audioHandler.playMediaItem(item);
-}
-
-Future<void> globalPlayQueue(List<MediaItem> items, int startIndex) async {
-  await audioHandler.updateQueue(items);
-  await audioHandler.playMediaItem(items[startIndex]);
-}
-
-
-String formatGlobalDuration(Duration? d) {
-  if (d == null) return "Live";
-  final minutes = d.inMinutes.remainder(60).toString().padLeft(2, '0');
-  final seconds = d.inSeconds.remainder(60).toString().padLeft(2, '0');
-  return "${d.inHours > 0 ? '${d.inHours}:' : ''}$minutes:$seconds";
-}
+Future<void> globalPlay(MediaItem item) async { await audioHandler.updateQueue([item]); await audioHandler.playMediaItem(item); }
+Future<void> globalPlayQueue(List<MediaItem> items, int startIndex) async { await audioHandler.updateQueue(items); await audioHandler.playMediaItem(items[startIndex]); }
+String formatGlobalDuration(Duration? d) { if (d == null) return "Live"; final minutes = d.inMinutes.remainder(60).toString().padLeft(2, '0'); final seconds = d.inSeconds.remainder(60).toString().padLeft(2, '0'); return "${d.inHours > 0 ? '${d.inHours}:' : ''}$minutes:$seconds"; }
 
 class ConspiracyLogo extends StatelessWidget {
   final double size; final Color color; const ConspiracyLogo({super.key, this.size = 150.0, required this.color});
@@ -286,6 +187,30 @@ class _OsirisEyePainter extends CustomPainter {
   @override bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
 }
 
+Future<void> downloadAudio(BuildContext context, dynamic item) async {
+  final messenger = ScaffoldMessenger.of(context); YoutubeExplode? yt; bool isDialogShowing = false;
+  void closeDialog() { try { if (isDialogShowing) { Navigator.of(context, rootNavigator:true).pop(); isDialogShowing = false; } } catch (ignore) {} }
+  isDialogShowing = true;
+  showDialog(context: context, barrierDismissible: true, builder: (context) => AlertDialog(title: const Text('Descargando pista'), content: Column(mainAxisSize: MainAxisSize.min, children: const [Text('Descarga Blindada 3.0...\nOptimizando stream oficial.'), SizedBox(height: 20), LinearProgressIndicator()])));
+  try {
+    final isMediaItem = item is MediaItem; final String videoId = isMediaItem ? item.id : item.id.value; final String videoTitle = item.title;
+    String artist = 'Desconocido'; String artUri = ''; int duration = 0;
+    if (isMediaItem) { artist = item.artist ?? 'Desconocido'; artUri = item.artUri?.toString() ?? ''; duration = item.duration?.inMilliseconds ?? 0; } 
+    else { try { artist = item.author; } catch () {} try { artUri = item.thumbnails.highestResUrl; } catch () {} try { duration = item.duration.inMilliseconds; } catch (_) {} }
+    final dir = await getApplicationDocumentsDirectory(); final savePath = '${dir.path}/$videoId.m4a'; final file = File(savePath);
+    messenger.showSnackBar(const SnackBar(content: Text('Iniciando descarga limpia... ⏳'), backgroundColor: Colors.blue));
+    final ytClient = YoutubeExplode(); 
+    final manifest = await ytClient.videos.streamsClient.getManifest(videoId);
+    final streamMp4 = manifest.audioOnly.where((s) => s.container.name == 'mp4');
+    final streamInfo = streamMp4.isNotEmpty ? streamMp4.withHighestBitrate() : manifest.audioOnly.withHighestBitrate();
+    final stream = ytClient.videos.streamsClient.get(streamInfo); final outputStream = file.openWrite();
+    await stream.pipe(outputStream); await outputStream.flush(); await outputStream.close(); ytClient.close();
+    final downloadsBox = Hive.box('downloads');
+    await downloadsBox.put(videoId, {'id': videoId, 'title': videoTitle, 'artist': artist, 'artUri': artUri, 'duration': duration, 'localPath': savePath});
+    messenger.showSnackBar(const SnackBar(content: Text('Descarga completada y lista para reproducir 🎵'), backgroundColor: Colors.green, duration: Duration(seconds: 2)));
+    Navigator.of(context, rootNavigator: true).pop();
+  } catch (e) { messenger.showSnackBar(SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red, duration: const Duration(seconds: 10))); closeDialog(); } finally { yt?.close(); }
+}
 void globalShowOptions(BuildContext context, Video video, Color color) {
   showModalBottomSheet(
     context: context, backgroundColor: const Color(0xFF1A1A1A), isScrollControlled: true,
@@ -428,4 +353,291 @@ class _SuperAppSkeletonState extends State<SuperAppSkeleton> {
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
-  Widget _buildHorizontalList(List<Map> items) { return SizedBox(height: 180, child: ListView.builder(scrollDirection: Axis.horizontal, padding: const E
+  Widget _buildHorizontalList(List<Map> items) { return SizedBox(height: 180, child: ListView.builder(scrollDirection: Axis.horizontal, padding: const EdgeInsets.symmetric(horizontal: 16), itemCount: items.length, itemBuilder: (context, index) { final item = items[index]; return GestureDetector(onTap: () async { final mediaItem = MediaItem(id: item['id'], title: item['title'], artist: item['artist'], artUri: Uri.parse(item['artUri']), duration: Duration(milliseconds: item['duration'])); await globalPlay(mediaItem); }, child: Container(width: 120, margin: const EdgeInsets.only(right: 16), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [ClipRRect(borderRadius: BorderRadius.circular(12), child: Image.network(item['artUri'], width: 120, height: 120, fit: BoxFit.cover)), const SizedBox(height: 8), Text(item['title'], maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.white)), Text(item['artist'], maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.grey, fontSize: 11))]))); })); }
+  @override Widget build(BuildContext context) {
+    return Scaffold(body: SafeArea(child: SingleChildScrollView(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Padding(padding: const EdgeInsets.all(16.0), child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [ValueListenableBuilder<Color>(valueListenable: appColor, builder: (context, color, _) => ConspiracyLogo(size: 60, color: color)), IconButton(icon: const Icon(Icons.settings, color: Colors.grey, size: 28), onPressed: () { showModalBottomSheet(context: context, backgroundColor: const Color(0xFF1A1A1A), builder: (context) => Padding(padding: const EdgeInsets.all(20), child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [const Text("Ajustes VIP", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white)), const SizedBox(height: 20), const Text("Color del Neón", style: TextStyle(color: Colors.grey)), const SizedBox(height: 10), Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [Colors.cyanAccent, Colors.purpleAccent, Colors.greenAccent, Colors.amberAccent, Colors.blueAccent, Colors.white].map((c) => GestureDetector(onTap: () { appColor.value = c; Navigator.pop(context); }, child: Container(width: 40, height: 40, decoration: BoxDecoration(color: c, shape: BoxShape.circle, boxShadow: [BoxShadow(color: c, blurRadius: 10)], border: Border.all(color: Colors.white24, width: 2))))).toList()), const SizedBox(height: 20), const Divider(color: Colors.white24), const SizedBox(height: 10), ListTile(leading: const Icon(Icons.delete_forever, color: Colors.redAccent), title: const Text("Botón Nuclear (Borrar Todo)", style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold)), subtitle: const Text("Resetea todo el algoritmo y bóveda", style: TextStyle(color: Colors.grey, fontSize: 12)), onTap: () { Hive.box('history').clear(); Hive.box('favorites').clear(); Hive.box('search_history').clear(); Hive.box('playlists').clear(); audioHandler.updateQueue([]); Navigator.pop(context); ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Memoria de la app borrada. Renacimiento VIP.'), backgroundColor: Colors.redAccent)); })]))); })])), ValueListenableBuilder(valueListenable: Hive.box('history').listenable(), builder: (context, Box box, _) { if (box.isEmpty) return const Padding(padding: EdgeInsets.all(20), child: Text("Comienza a escuchar música para activar el radar.", style: TextStyle(color: Colors.grey))); final allItems = box.values.toList().cast<Map>(); final recentItems = List<Map>.from(allItems)..sort((a, b) => (b['timestamp'] as int? ?? 0).compareTo(a['timestamp'] as int? ?? 0)); final topItems = List<Map>.from(allItems)..sort((a, b) => (b['playCount'] as int? ?? 0).compareTo(a['playCount'] as int? ?? 0)); return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [const Padding(padding: EdgeInsets.symmetric(horizontal: 16, vertical: 10), child: Text("Escuchado Recientemente", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white))), _buildHorizontalList(recentItems), const Padding(padding: EdgeInsets.symmetric(horizontal: 16, vertical: 10), child: Text("Tu Frecuencia Máxima (Top 25)", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white))), _buildHorizontalList(topItems.take(25).toList()), const SizedBox(height: 100)]); })]))));
+  }
+}
+
+class SearchScreen extends StatefulWidget { const SearchScreen({super.key}); @override State<SearchScreen> createState() => _SearchScreenState(); }
+class _SearchScreenState extends State<SearchScreen> {
+  final searchController = TextEditingController(); late final YoutubeExplode yt; 
+  List<Video> videos = []; List<String> searchSuggestions = []; bool isLoading = false;
+  Timer? _debounce; 
+  
+  @override void initState() { super.initState(); yt = YoutubeExplode(); Permission.notification.request(); }
+  @override void dispose() { _debounce?.cancel(); searchController.dispose(); super.dispose(); }
+  
+  void _saveSearchHistory(String query) { if (query.trim().isEmpty) return; final box = Hive.box('search_history'); List<String> searches = box.values.cast<String>().toList(); searches.remove(query); searches.insert(0, query); if (searches.length > 15) searches = searches.sublist(0, 15); box.clear(); box.addAll(searches); }
+  void searchVideos(String query) async {
+    if (query.trim().isEmpty) return;
+    FocusScope.of(context).unfocus();
+    _saveSearchHistory(query);
+    setState(() { isLoading = true; videos.clear(); });
+    try {
+      final results = await yt.search.search(query);
+      setState(() { videos = results.toList(); isLoading = false; });
+    } catch (e) {
+      setState(() { isLoading = false; });
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error de conexión con YouTube: $e'), backgroundColor: Colors.red, duration: const Duration(seconds: 6)));
+    }
+  }
+  
+  Widget _buildSearchHistory() {
+    return ListView(
+      children: [
+        ValueListenableBuilder(
+          valueListenable: Hive.box('search_history').listenable(),
+          builder: (context, Box box, _) {
+            if (box.isEmpty) return const SizedBox.shrink();
+            final history = box.values.cast<String>().toList();
+            return Column(
+              children: history.map((query) {
+                int index = history.indexOf(query);
+                return ListTile(leading: const Icon(Icons.history, color: Colors.grey), title: Text(query, style: const TextStyle(color: Colors.white)), onTap: () { searchController.text = query; searchVideos(query); }, trailing: Row(mainAxisSize: MainAxisSize.min, children: [ IconButton(icon: const Icon(Icons.north_west, color: Colors.grey, size: 20), onPressed: () { searchController.text = query; searchController.selection = TextSelection.fromPosition(TextPosition(offset: searchController.text.length)); }), IconButton(icon: const Icon(Icons.close, color: Colors.grey, size: 20), onPressed: () { final newHistory = List<String>.from(history)..removeAt(index); box.clear(); box.addAll(newHistory); }), ]));
+              }).toList(),
+            );
+          }
+        ),
+        const Padding(padding: EdgeInsets.symmetric(horizontal: 16, vertical: 10), child: Text("Escuchado Recientemente", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 16))),
+        ValueListenableBuilder(
+          valueListenable: Hive.box('history').listenable(),
+          builder: (context, Box box, _) {
+            if (box.isEmpty) return const Padding(padding: EdgeInsets.all(16), child: Text("Aún no hay canciones en tu registro.", style: TextStyle(color: Colors.grey)));
+            final items = box.values.toList().cast<Map>()..sort((a, b) => (b['timestamp'] as int? ?? 0).compareTo(a['timestamp'] as int? ?? 0));
+            return Column(
+              children: items.take(15).map((item) {
+                return ListTile(
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                  leading: ClipRRect(borderRadius: BorderRadius.circular(8), child: Image.network(item['artUri'], width: 50, height: 50, fit: BoxFit.cover)),
+                  title: Text(item['title'], maxLines: 1, overflow: TextOverflow.ellipsis), subtitle: Text(item['artist'], maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.grey, fontSize: 12)),
+                  trailing: IconButton(icon: const Icon(Icons.close, color: Colors.grey, size: 20), onPressed: () => box.delete(item['id'])),
+                  onTap: () async { final mediaItem = MediaItem(id: item['id'], title: item['title'], artist: item['artist'], artUri: Uri.parse(item['artUri']), duration: Duration(milliseconds: item['duration'])); await globalPlay(mediaItem); }
+                );
+              }).toList(),
+            );
+          }
+        ),
+        const SizedBox(height: 100),
+      ],
+    );
+  }
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Buscador VIP', style: TextStyle(fontWeight: FontWeight.bold))),
+      body: Column(
+        children: [
+          Padding(padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0), child: Row(children: [ Expanded(child: TextField(controller: searchController, decoration: InputDecoration(hintText: 'Buscar...', border: OutlineInputBorder(borderRadius: BorderRadius.circular(10))), onSubmitted: (val) { if (val.trim().isNotEmpty) { _saveSearchHistory(val); searchVideos(val); } })) ])),
+          if (isLoading) const Expanded(child: Center(child: CircularProgressIndicator()))
+          else if (searchSuggestions.isNotEmpty && videos.isEmpty) Expanded(child: ListView.builder(itemCount: searchSuggestions.length, itemBuilder: (context, index) => ListTile(title: Text(searchSuggestions[index]), onTap: () { searchController.text = searchSuggestions[index]; searchVideos(searchSuggestions[index]); })))
+          else if (videos.isEmpty && searchController.text.isEmpty) Expanded(child: _buildSearchHistory())
+          else Expanded(
+            child: StreamBuilder<MediaItem?>(
+              stream: audioHandler.mediaItem,
+              builder: (context, snapshot) {
+                final currentId = snapshot.data?.id;
+                return ListView.builder(
+                  padding: const EdgeInsets.only(bottom: 100),
+                  itemCount: videos.length,
+                  itemBuilder: (context, index) {
+                    final video = videos[index];
+                    final isPlaying = currentId == video.id.value;
+                    return ListTile(
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                      leading: Stack(
+                        children: [
+                          ClipRRect(borderRadius: BorderRadius.circular(8), child: Image.network(video.thumbnails.mediumResUrl, width: 80, height: 50, fit: BoxFit.cover)),
+                          Positioned(
+                          bottom: 2,
+                          right: 2,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: Colors.black87,
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: Text(
+                              formatGlobalDuration(video.duration),
+                              style: const TextStyle(color: Colors.white, fontSize: 10),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    title: Text(
+                      video.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(color: Colors.white),
+                    ),
+                    subtitle: Text(
+                      video.author,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(color: Colors.grey),
+                    ),
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (isPlaying)
+                          ValueListenableBuilder<Color>(
+                            valueListenable: appColor,
+                            builder: (context, color, _) => Icon(Icons.equalizer, color: color, size: 24),
+                          ),
+                        ValueListenableBuilder<Color>(
+                          valueListenable: appColor,
+                          builder: (context, color, _) => IconButton(
+                            icon: const Icon(Icons.more_vert, color: Colors.grey),
+                            onPressed: () => globalShowOptions(context, video, color),
+                          ),
+                        ),
+                      ],
+                    ),
+                    onTap: () async {
+                      final queueItems = videos
+                          .map((vid) => MediaItem(
+                                id: vid.id.value,
+                                title: vid.title,
+                                artist: vid.author,
+                                duration: vid.duration,
+                                artUri: Uri.parse(vid.thumbnails.highResUrl),
+                              ))
+                          .toList();
+                      await globalPlayQueue(queueItems, index);
+                    },
+                  );
+                },
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+}
+class VaultScreen extends StatelessWidget {          
+  const VaultScreen({super.key}); 
+  @override Widget build(BuildContext context) { 
+    return DefaultTabController(length: 3, child: Scaffold(
+      appBar: AppBar(title: const Text('La Bóveda', style: TextStyle(fontWeight: FontWeight.bold)), bottom: TabBar(indicatorColor: appColor.value, tabs: const [Tab(icon: Icon(Icons.history), text: "Historial"), Tab(icon: Icon(Icons.favorite), text: "Favoritos"), Tab(icon: Icon(Icons.queue_music), text: "Playlists")])), 
+      body: TabBarView(children: [
+        ValueListenableBuilder(valueListenable: Hive.box('history').listenable(), builder: (context, Box box, _) { 
+          if (box.isEmpty) return const Center(child: Text("Sin historial aún", style: TextStyle(color: Colors.grey))); 
+          final items = box.values.toList().cast<Map>()..sort((a, b) => (b['timestamp'] as int? ?? 0).compareTo(a['timestamp'] as int? ?? 0)); 
+          return ListView.builder(padding: const EdgeInsets.only(bottom: 100), itemCount: items.length, itemBuilder: (context, index) { 
+            final item = items[index]; 
+            return ListTile(
+              leading: ClipRRect(borderRadius: BorderRadius.circular(8), child: Image.network(item['artUri'], width: 50, height: 50, fit: BoxFit.cover)), 
+              title: Text(item['title'], maxLines: 1, overflow: TextOverflow.ellipsis), subtitle: Text(item['artist'], maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.grey)), 
+              trailing: IconButton(icon: const Icon(Icons.close, color: Colors.grey, size: 20), onPressed: () => box.delete(item['id'])), 
+              onTap: () async { final mediaItem = MediaItem(id: item['id'], title: item['title'], artist: item['artist'], artUri: Uri.parse(item['artUri']), duration: Duration(milliseconds: item['duration'])); await globalPlay(mediaItem); }
+            ); 
+          }); 
+        }), 
+        ValueListenableBuilder(valueListenable: Hive.box('favorites').listenable(), builder: (context, Box box, _) { 
+          if (box.isEmpty) return const Center(child: Text("Sin favoritos aún", style: TextStyle(color: Colors.grey))); 
+          final items = box.values.toList().cast<Map>(); 
+          return ListView.builder(padding: const EdgeInsets.only(bottom: 100), itemCount: items.length, itemBuilder: (context, index) { 
+            final item = items[index]; 
+            return ListTile(
+              leading: ClipRRect(borderRadius: BorderRadius.circular(8), child: Image.network(item['artUri'], width: 50, height: 50, fit: BoxFit.cover)), 
+              title: Text(item['title'], maxLines: 1, overflow: TextOverflow.ellipsis), subtitle: Text(item['artist'], maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.grey)), 
+              trailing: IconButton(icon: const Icon(Icons.favorite, color: Colors.redAccent), onPressed: () => box.delete(item['id'])), 
+              onTap: () async { 
+                List<MediaItem> allFavs = items.map((e) => MediaItem(id: e['id'], title: e['title'], artist: e['artist'], artUri: Uri.parse(e['artUri']), duration: Duration(milliseconds: e['duration']))).toList();
+                await globalPlayQueue(allFavs, index); 
+              }
+            ); 
+          }); 
+        }),
+        ValueListenableBuilder(valueListenable: Hive.box('playlists').listenable(), builder: (context, Box box, _) { 
+          if (box.isEmpty) return const Center(child: Text("Toca los 3 puntitos en una canción para armar listas", style: TextStyle(color: Colors.grey))); 
+          final keys = box.keys.toList(); 
+          return ListView.builder(padding: const EdgeInsets.only(bottom: 100), itemCount: keys.length, itemBuilder: (context, index) { 
+            final playlistName = keys[index].toString();
+            final List tracks = box.get(playlistName) ?? [];
+            return ExpansionTile(
+              leading: ValueListenableBuilder<Color>(valueListenable: appColor, builder: (context, color, _) => Icon(Icons.album, color: color)),
+              title: Row(
+                children: [
+                  Expanded(child: Text(playlistName, style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white))),
+                  ValueListenableBuilder<Color>(valueListenable: appColor, builder: (context, color, _) => IconButton(icon: Icon(Icons.play_circle_fill, color: color, size: 28), onPressed: () async {
+                    if (tracks.isEmpty) return;
+                    List<MediaItem> allTracks = tracks.map((e) => MediaItem(id: e['id'], title: e['title'], artist: e['artist'], artUri: Uri.parse(e['artUri']), duration: Duration(milliseconds: e['duration']))).toList();
+                    await globalPlayQueue(allTracks, 0);
+                  }))
+                ],
+              ),
+              subtitle: Text("${tracks.length} pistas", style: const TextStyle(color: Colors.grey)),
+              trailing: IconButton(icon: const Icon(Icons.delete, color: Colors.redAccent), onPressed: () => box.delete(playlistName)),
+              children: tracks.asMap().entries.map((entry) {
+                int trackIndex = entry.key;
+                final item = entry.value as Map;
+                return ListTile(
+                  contentPadding: const EdgeInsets.only(left: 40, right: 16),
+                  leading: ClipRRect(borderRadius: BorderRadius.circular(4), child: Image.network(item['artUri'], width: 40, height: 40, fit: BoxFit.cover)),
+                  title: Text(item['title'], maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 14)), subtitle: Text(item['artist'], maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.grey, fontSize: 12)),
+                  trailing: IconButton(icon: const Icon(Icons.remove_circle_outline, color: Colors.grey, size: 20), onPressed: () { tracks.removeWhere((s) => s['id'] == item['id']); box.put(playlistName, tracks); }),
+                  onTap: () async { 
+                    List<MediaItem> allTracks = tracks.map((e) => MediaItem(id: e['id'], title: e['title'], artist: e['artist'], artUri: Uri.parse(e['artUri']), duration: Duration(milliseconds: e['duration']))).toList();
+                    await globalPlayQueue(allTracks, trackIndex); 
+                  }
+                );
+              }).toList(),
+            ); 
+          }); 
+        })
+      ]
+    ))); 
+  } 
+}
+
+class SportsScreen extends StatelessWidget { const SportsScreen({super.key}); @override Widget build(BuildContext context) => Scaffold(backgroundColor: const Color(0xFF0A1910), body: Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [Icon(Icons.sports_soccer, size: 80, color: Colors.greenAccent), const SizedBox(height: 20), const Text('Tablero VIP Deportivo', style: TextStyle(color: Colors.white, fontSize: 18))]))); }
+
+class MiniPlayer extends StatelessWidget {
+  const MiniPlayer({super.key});
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<MediaItem?>(
+      stream: audioHandler.mediaItem,
+      builder: (context, snapshot) {
+        final mediaItem = snapshot.data;
+        if (mediaItem == null) return const SizedBox.shrink();
+        return Dismissible(
+          key: const Key('miniplayer_dismiss'), direction: DismissDirection.down, onDismissed: (_) => audioHandler.customAction('kill'),
+          child: GestureDetector(
+            onTap: () => showModalBottomSheet(context: context, isScrollControlled: true, backgroundColor: Colors.transparent, builder: (context) => const FullScreenPlayer()),
+            child: ValueListenableBuilder<Color>(
+              valueListenable: appColor,
+              builder: (context, color, _) {
+                return Container(
+                  margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                  decoration: BoxDecoration(color: Colors.black.withOpacity(0.95), borderRadius: BorderRadius.circular(16), border: Border.all(color: color, width: 1.5), boxShadow: [BoxShadow(color: color.withOpacity(0.5), blurRadius: 12, spreadRadius: 3)]),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(16),
+                    child: BackdropFilter(
+                      filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+                      child: Padding(
+                        padding: const EdgeInsets.all(8.0),
+                        child: Row(
+                          children: [
+                            ClipRRect(borderRadius: BorderRadius.circular(10), child: Image.network(mediaItem.artUri.toString(), width: 45, height: 45, fit: BoxFit.cover)),
+                            const SizedBox(width: 12),
+                            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [Text(mediaItem.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14)), Text(mediaItem.artist ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.grey, fontSize: 12))])),
+                            StreamBuilder<PlaybackState>(stream: audioHandler.playbackState, builder: (context, snapshot) { final playing = snapshot.data?.playing ?? false; return IconButton(icon: Icon(playing ? Icons.pause_rounded : Icons.play_arrow_rounded, color: Colors.white, size: 32), onPressed: () => playing ? audioHandler.pause() : audioHandler.play()); }),
+                            IconButton(icon: const Icon(Icons.skip_next_rounded, color: Colors.white, size: 32), onPressed: () => audioHandler.skipToNext()),
+                          ]
+                        )
+                      )
+                    )
+                  )
+                );
+              }
+            )
+          )
+        );
+      }
+    );
+  }
+}
