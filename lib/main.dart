@@ -270,7 +270,9 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
   Future<void> _autoPlayNext(String videoId) async {
     try {
       final video = await _yt.videos.get(videoId);
-      final related = await _yt.videos.getRelatedVideos(video).first;
+      final relatedList = await _yt.videos.getRelatedVideos(video);
+if (relatedList == null || relatedList.isEmpty) return;
+final related = relatedList.first;
       
       final nextItem = MediaItem(
         id: related.id.value,
