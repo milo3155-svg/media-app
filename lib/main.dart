@@ -221,7 +221,6 @@ if (name == 'playLocal' && extras != null) {
     duration: fileDuration, 
   ));
   return;
-}
 
     if (name == 'setSleepTimer' && extras != null) { 
       int minutes = extras['minutes']; _countdownTimer?.cancel(); 
