@@ -303,12 +303,16 @@ if (name == 'playLocal' && extras != null) {
       if (savedPosition > 0) { await _player.seek(Duration(milliseconds: savedPosition)); } 
       await _player.play();
     } catch (e) { 
-      playbackState.add(playbackState.value.copyWith(processingState: AudioProcessingState.error, playing: false)); 
+      playbackState.add(playbackState.value.copyWith(processingState: AudioProcessingState.error, playing: false
+      )); 
     }
   }
-  @override Future<void> updateQueue(List<MediaItem> newQueue) async { queue.add(newQueue); }
-  void shuffleQueue() { final currentQueue = queue.value.toList()..shuffle(); queue.add(currentQueue); }
-}
+  @override
+  Future<void> updateQueue(List<MediaItem> newQueue) async { queue.add(newQueue);
+   }
+  void shuffleQueue() {
+     final currentQueue = queue.value.toList()..shuffle(); queue.add(currentQueue);
+      }
 
 Future<void> globalPlay(MediaItem item) async {
   await audioHandler.updateQueue([item]); 
