@@ -16,7 +16,6 @@ import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:flutter_downloader/flutter_downloader.dart';
 
-// Importa tu Bóveda Offline
 import 'offline_vault_screen.dart';
 
 class VIPHttpOverrides extends HttpOverrides {
@@ -26,7 +25,6 @@ class VIPHttpOverrides extends HttpOverrides {
   }
 }
 
-// Variables Globales
 late MyAudioHandler audioHandler;
 final ValueNotifier<bool> isHDMode = ValueNotifier<bool>(true);
 final ValueNotifier<Color> appColor = ValueNotifier<Color>(Colors.cyanAccent);
@@ -41,7 +39,7 @@ Future<String?> obtenerAudioDirecto(String videoId) async {
     yt.close();
     return streamInfo.url.toString();
   } catch (e) {
-    print("Error obteniendo URL: \$e");
+    print("Error obteniendo URL: $e");
     return null;
   }
 }
@@ -50,13 +48,13 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   HttpOverrides.global = VIPHttpOverrides();
 
-  await Hive.openBox('cerrojo_box');
   await Hive.initFlutter();
   await Hive.openBox('favorites');
   await Hive.openBox('history');
   await Hive.openBox('search_history');
   await Hive.openBox('playlists');
-  await Hive.openBox('downloads'); // Caja para la Bóveda Offline
+  await Hive.openBox('downloads');
+  await Hive.openBox('cerrojo_box'); 
 
   await FlutterDownloader.initialize(debug: true, ignoreSsl: true);
 
@@ -87,9 +85,7 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
     _player.playbackEventStream.listen(_broadcastState);
     
     _player.processingStateStream.listen((state) {
-      if (state == ProcessingState.completed) {
-        skipToNext();
-      }
+      if (state == ProcessingState.completed) skipToNext();
     });
 
     _player.positionStream.listen((position) {
@@ -156,10 +152,7 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
   Future<void> playMediaItem(MediaItem item) async {
     final now = DateTime.now();
     if (_lastPlayedId == item.id && _lastPlayTime != null) {
-      if (now.difference(_lastPlayTime!).inSeconds < 2) {
-        print("Bloqueo anti-rebote activado para: \${item.title}");
-        return;
-      }
+      if (now.difference(_lastPlayTime!).inSeconds < 2) return;
     }
     
     _lastPlayedId = item.id;
@@ -176,42 +169,24 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
     };
     
     historyBox.put(item.id, itemMap);
-    if (historyBox.length > 50) {
-      historyBox.deleteAt(0);
-    }
+    if (historyBox.length > 50) historyBox.deleteAt(0);
 
     try {
       final url = await obtenerAudioDirecto(item.id);
       if (url != null) {
         await _player.setUrl(url);
         play();
-      } else {
-        print("No se pudo obtener URL para: \${item.title}");
       }
     } catch (e) {
-      print("Error en playMediaItem: \$e");
+      print("Error en playMediaItem: $e");
     }
   }
 
-  @override
-  Future<void> play() => _player.play();
-
-  @override
-  Future<void> pause() => _player.pause();
-
-  @override
-  Future<void> seek(Duration position) => _player.seek(position);
-
-  @override
-  Future<void> stop() async {
-    await _player.stop();
-    return super.stop();
-  }
-
-  @override
-  Future<void> updateQueue(List<MediaItem> newQueue) async {
-    queue.add(newQueue);
-  }
+  @override Future<void> play() => _player.play();
+  @override Future<void> pause() => _player.pause();
+  @override Future<void> seek(Duration position) => _player.seek(position);
+  @override Future<void> stop() async { await _player.stop(); return super.stop(); }
+  @override Future<void> updateQueue(List<MediaItem> newQueue) async { queue.add(newQueue); }
 
   @override
   Future<void> skipToNext() async {
@@ -245,8 +220,8 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
     try {
       final video = await _yt.videos.get(videoId);
       final relatedList = await _yt.videos.getRelatedVideos(video);
-if (relatedList == null || relatedList.isEmpty) return;
-final related = relatedList.first;
+      if (relatedList == null || relatedList.isEmpty) return;
+      final related = relatedList.first;
       
       final nextItem = MediaItem(
         id: related.id.value,
@@ -262,12 +237,11 @@ final related = relatedList.first;
       
       await playMediaItem(nextItem);
     } catch (e) {
-      print("Error en AutoPlay: \$e");
+      print("Error en AutoPlay: $e");
     }
   }
 }
 
-// --- Funciones Globales para acceder desde la UI ---
 Future<void> globalPlay(MediaItem item) async {
   await audioHandler.updateQueue([item]);
   await audioHandler.playMediaItem(item);
@@ -277,12 +251,7 @@ Future<void> globalPlayQueue(List<MediaItem> items, int startIndex) async {
   await audioHandler.updateQueue(items);
   await audioHandler.playMediaItem(items[startIndex]);
 }
-class MainScreen extends StatefulWidget {
-  const MainScreen({super.key});
 
-  @override
-  State<MainScreen> createState() => _MainScreenState();
-}
 
 String formatGlobalDuration(Duration? d) {
   if (d == null) return "Live";
@@ -459,60 +428,4 @@ class _SuperAppSkeletonState extends State<SuperAppSkeleton> {
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
-  Widget _buildHorizontalList(List<Map> items) { return SizedBox(height: 180, child: ListView.builder(scrollDirection: Axis.horizontal, padding: const EdgeInsets.symmetric(horizontal: 16), itemCount: items.length, itemBuilder: (context, index) { final item = items[index]; return GestureDetector(onTap: () async { final mediaItem = MediaItem(id: item['id'], title: item['title'], artist: item['artist'], artUri: Uri.parse(item['artUri']), duration: Duration(milliseconds: item['duration'])); await globalPlay(mediaItem); }, child: Container(width: 120, margin: const EdgeInsets.only(right: 16), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [ClipRRect(borderRadius: BorderRadius.circular(12), child: Image.network(item['artUri'], width: 120, height: 120, fit: BoxFit.cover)), const SizedBox(height: 8), Text(item['title'], maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.white)), Text(item['artist'], maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.grey, fontSize: 11))]))); })); }
-  @override Widget build(BuildContext context) {
-    return Scaffold(body: SafeArea(child: SingleChildScrollView(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Padding(padding: const EdgeInsets.all(16.0), child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [ValueListenableBuilder<Color>(valueListenable: appColor, builder: (context, color, _) => ConspiracyLogo(size: 60, color: color)), IconButton(icon: const Icon(Icons.settings, color: Colors.grey, size: 28), onPressed: () { showModalBottomSheet(context: context, backgroundColor: const Color(0xFF1A1A1A), builder: (context) => Padding(padding: const EdgeInsets.all(20), child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [const Text("Ajustes VIP", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white)), const SizedBox(height: 20), const Text("Color del Neón", style: TextStyle(color: Colors.grey)), const SizedBox(height: 10), Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [Colors.cyanAccent, Colors.purpleAccent, Colors.greenAccent, Colors.amberAccent, Colors.blueAccent, Colors.white].map((c) => GestureDetector(onTap: () { appColor.value = c; Navigator.pop(context); }, child: Container(width: 40, height: 40, decoration: BoxDecoration(color: c, shape: BoxShape.circle, boxShadow: [BoxShadow(color: c, blurRadius: 10)], border: Border.all(color: Colors.white24, width: 2))))).toList()), const SizedBox(height: 20), const Divider(color: Colors.white24), const SizedBox(height: 10), ListTile(leading: const Icon(Icons.delete_forever, color: Colors.redAccent), title: const Text("Botón Nuclear (Borrar Todo)", style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold)), subtitle: const Text("Resetea todo el algoritmo y bóveda", style: TextStyle(color: Colors.grey, fontSize: 12)), onTap: () { Hive.box('history').clear(); Hive.box('favorites').clear(); Hive.box('search_history').clear(); Hive.box('playlists').clear(); audioHandler.updateQueue([]); Navigator.pop(context); ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Memoria de la app borrada. Renacimiento VIP.'), backgroundColor: Colors.redAccent)); })]))); })])), ValueListenableBuilder(valueListenable: Hive.box('history').listenable(), builder: (context, Box box, _) { if (box.isEmpty) return const Padding(padding: EdgeInsets.all(20), child: Text("Comienza a escuchar música para activar el radar.", style: TextStyle(color: Colors.grey))); final allItems = box.values.toList().cast<Map>(); final recentItems = List<Map>.from(allItems)..sort((a, b) => (b['timestamp'] as int? ?? 0).compareTo(a['timestamp'] as int? ?? 0)); final topItems = List<Map>.from(allItems)..sort((a, b) => (b['playCount'] as int? ?? 0).compareTo(a['playCount'] as int? ?? 0)); return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [const Padding(padding: EdgeInsets.symmetric(horizontal: 16, vertical: 10), child: Text("Escuchado Recientemente", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white))), _buildHorizontalList(recentItems), const Padding(padding: EdgeInsets.symmetric(horizontal: 16, vertical: 10), child: Text("Tu Frecuencia Máxima (Top 25)", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white))), _buildHorizontalList(topItems.take(25).toList()), const SizedBox(height: 100)]); })]))));
-  }
-}
-
-class SearchScreen extends StatefulWidget { const SearchScreen({super.key}); @override State<SearchScreen> createState() => _SearchScreenState(); }
-class _SearchScreenState extends State<SearchScreen> {
-  final searchController = TextEditingController(); late final YoutubeExplode yt; 
-  List<Video> videos = []; List<String> searchSuggestions = []; bool isLoading = false;
-  Timer? _debounce; 
-  
-  @override void initState() { super.initState(); yt = YoutubeExplode(); Permission.notification.request(); }
-  @override void dispose() { _debounce?.cancel(); searchController.dispose(); super.dispose(); }
-  
-  void _saveSearchHistory(String query) { if (query.trim().isEmpty) return; final box = Hive.box('search_history'); List<String> searches = box.values.cast<String>().toList(); searches.remove(query); searches.insert(0, query); if (searches.length > 15) searches = searches.sublist(0, 15); box.clear(); box.addAll(searches); }
-  void searchVideos(String query) async {
-    if (query.trim().isEmpty) return;
-    FocusScope.of(context).unfocus();
-    _saveSearchHistory(query);
-    setState(() { isLoading = true; videos.clear(); });
-    try {
-      final results = await yt.search.search(query);
-      setState(() { videos = results.toList(); isLoading = false; });
-    } catch (e) {
-      setState(() { isLoading = false; });
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error de conexión con YouTube: $e'), backgroundColor: Colors.red, duration: const Duration(seconds: 6)));
-    }
-  }
-  
-  Widget _buildSearchHistory() {
-    return ListView(
-      children: [
-        ValueListenableBuilder(
-          valueListenable: Hive.box('search_history').listenable(),
-          builder: (context, Box box, _) {
-            if (box.isEmpty) return const SizedBox.shrink();
-            final history = box.values.cast<String>().toList();
-            return Column(
-              children: history.map((query) {
-                int index = history.indexOf(query);
-                return ListTile(leading: const Icon(Icons.history, color: Colors.grey), title: Text(query, style: const TextStyle(color: Colors.white)), onTap: () { searchController.text = query; searchVideos(query); }, trailing: Row(mainAxisSize: MainAxisSize.min, children: [ IconButton(icon: const Icon(Icons.north_west, color: Colors.grey, size: 20), onPressed: () { searchController.text = query; searchController.selection = TextSelection.fromPosition(TextPosition(offset: searchController.text.length)); }), IconButton(icon: const Icon(Icons.close, color: Colors.grey, size: 20), onPressed: () { final newHistory = List<String>.from(history)..removeAt(index); box.clear(); box.addAll(newHistory); }), ]));
-              }).toList(),
-            );
-          }
-        ),
-        const Padding(padding: EdgeInsets.symmetric(horizontal: 16, vertical: 10), child: Text("Escuchado Recientemente", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 16))),
-        ValueListenableBuilder(
-          valueListenable: Hive.box('history').listenable(),
-          builder: (context, Box box, _) {
-            if (box.isEmpty) return const Padding(padding: EdgeInsets.all(16), child: Text("Aún no hay canciones en tu registro.", style: TextStyle(color: Colors.grey)));
-            final items = box.values.toList().cast<Map>()..sort((a, b) => (b['timestamp'] as int? ?? 0).compareTo(a['timestamp'] as int? ?? 0));
-            return Column(
-              children: items.take(15).map((item) {
-                return ListTile(
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                  leading: ClipRRect(borderRadius: BorderRadius.circular(8), child: Image.network(item['artUri'], width: 50, height: 50, fit: BoxFit.cover)),
+  Widget _buildHorizontalList(List<Map> items) { return SizedBox(height: 180, child: ListView.builder(scrollDirection: Axis.horizontal, padding: const E
