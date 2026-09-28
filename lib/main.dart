@@ -421,7 +421,7 @@ class MediaApp extends StatelessWidget {
         brightness: Brightness.dark,
         primarySwatch: Colors.cyan,
       ),
-      home: OFFlineVaultScreen(audioHandler: audioHandler), // O tu pantalla principal
+      home: OfflineVaultScreen(audioHandler: audioHandler), // O tu pantalla principal
     );
   }
 }
