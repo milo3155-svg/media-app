@@ -208,19 +208,20 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
       return;
     }
 if (name == 'playLocal' && extras != null) {
-  await _player.stop();
-  // 1. Guardamos el tiempo exacto que devuelve setFilePath al leer el archivo
-  final fileDuration = await _player.setFilePath(extras['localPath']);
-  _player.play();
-
-  mediaItem.add(MediaItem(
-    id: extras['id']?.toString() ?? 'offline',
-    title: extras['title']?.toString() ?? 'Audio Local',
-    artist: 'Bóveda Offline',
-    // 2. Le inyectamos la duración a la interfaz para revivir el reloj
-    duration: fileDuration, 
-  ));
-  return;
+      await _player.stop();
+      // 1. Guardamos el tiempo exacto que devuelve setFilePath al leer el archivo
+      final fileDuration = await _player.setFilePath(extras['localPath']);
+      _player.play();
+      
+      mediaItem.add(MediaItem(
+        id: extras['id']?.toString() ?? 'offline',
+        title: extras['title']?.toString() ?? 'Audio Local',
+        artist: 'Bóveda Offline',
+        // 2. Le inyectamos la duración a la interfaz para revivir el reloj
+        duration: fileDuration, 
+      ));
+      return;
+    }
 
     if (name == 'setSleepTimer' && extras != null) { 
       int minutes = extras['minutes']; _countdownTimer?.cancel(); 
@@ -248,23 +249,39 @@ if (name == 'playLocal' && extras != null) {
 
   @override Future<void> skipToPrevious() async { final queueList = queue.value; if (queueList.isEmpty) return; final currentItem = mediaItem.value; final currentIndex = queueList.indexWhere((item) => item.id == currentItem?.id); if (currentIndex > 0) await playMediaItem(queueList[currentIndex - 1]); }
 
-  @override
+ @override
   Future<void> playMediaItem(MediaItem item) async {
     mediaItem.add(item); 
     final historyBox = Hive.box('history'); 
     int playCount = 1; int savedPosition = 0; 
-    if (historyBox.containsKey(item.id)) { final existingItem = historyBox.get(item.id); playCount = (existingItem['playCount'] ?? 0) + 1; savedPosition = existingItem['savedPosition'] ?? 0; }
+    
+    if (historyBox.containsKey(item.id)) { 
+      final existingItem = historyBox.get(item.id); 
+      playCount = (existingItem['playCount'] ?? 0) + 1; 
+      savedPosition = existingItem['savedPosition'] ?? 0; 
+    }
     historyBox.put(item.id, {'id': item.id, 'title': item.title, 'artist': item.artist, 'artUri': item.artUri.toString(), 'duration': item.duration?.inMilliseconds ?? 0, 'timestamp': DateTime.now().millisecondsSinceEpoch, 'playCount': playCount, 'savedPosition': 0});
+    
     try {
       playbackState.add(playbackState.value.copyWith(processingState: AudioProcessingState.loading, playing: true));
       await _player.stop(); 
       await _player.seek(Duration.zero); 
-            var manifest = await _yt.videos.streamsClient.getManifest(item.id); 
+      
+      var manifest = await _yt.videos.streamsClient.getManifest(item.id); 
+      
+      // --- SEGURO ANTI-REBOTES ---
+      // Si el usuario cambió de pista mientras YouTube respondía, abortamos la carga vieja
+      if (mediaItem.value?.id != item.id) return;
+      
       var video = await _yt.videos.get(item.id); 
       StreamInfo streamInfo;
-      if (manifest.muxed.isNotEmpty) { streamInfo = isHDMode.value ? manifest.muxed.withHighestBitrate() : manifest.muxed.reduce((a, b) => a.bitrate.bitsPerSecond < b.bitrate.bitsPerSecond ? a : b); } 
-      else if (manifest.audioOnly.isNotEmpty) { streamInfo = isHDMode.value ? manifest.audioOnly.withHighestBitrate() : manifest.audioOnly.reduce((a, b) => a.bitrate.bitsPerSecond < b.bitrate.bitsPerSecond ? a : b); } 
-      else { throw Exception("No streams"); }
+      if (manifest.muxed.isNotEmpty) { 
+        streamInfo = isHDMode.value ? manifest.muxed.withHighestBitrate() : manifest.muxed.reduce((a, b) => a.bitrate.bitsPerSecond < b.bitrate.bitsPerSecond ? a : b); 
+      } else if (manifest.audioOnly.isNotEmpty) { 
+        streamInfo = isHDMode.value ? manifest.audioOnly.withHighestBitrate() : manifest.audioOnly.reduce((a, b) => a.bitrate.bitsPerSecond < b.bitrate.bitsPerSecond ? a : b); 
+      } else { 
+        throw Exception("No streams"); 
+      }
       
       final cachingSource = LockCachingAudioSource(
         Uri.parse(streamInfo.url.toString()),
@@ -285,7 +302,9 @@ if (name == 'playLocal' && extras != null) {
       
       if (savedPosition > 0) { await _player.seek(Duration(milliseconds: savedPosition)); } 
       await _player.play();
-    } catch (e) { playbackState.add(playbackState.value.copyWith(processingState: AudioProcessingState.error, playing: false)); }
+    } catch (e) { 
+      playbackState.add(playbackState.value.copyWith(processingState: AudioProcessingState.error, playing: false)); 
+    }
   }
   @override Future<void> updateQueue(List<MediaItem> newQueue) async { queue.add(newQueue); }
   void shuffleQueue() { final currentQueue = queue.value.toList()..shuffle(); queue.add(currentQueue); }
@@ -1074,18 +1093,17 @@ class _CerrojoScreenState extends State<CerrojoScreen> {
 Future<void> downloadAudio(BuildContext context, dynamic item) async {
   final messenger = ScaffoldMessenger.of(context);
   YoutubeExplode? yt;
-  
   bool isDialogShowing = false;
+
   void closeDialog() {
     try {
-    if (isDialogShowing) {
-      Navigator.of(context, rootNavigator:true).pop();
-      isDialogShowing = false;
-    }
-  } catch (ignore) {} //si falla al cerrar, ignoramos el choque para no trabar la app
-}
+      if (isDialogShowing) {
+        Navigator.of(context, rootNavigator: true).pop();
+        isDialogShowing = false;
+      }
+    } catch (ignore) {} 
+  }
 
-  // Muestra tu diálogo de carga en la UI
   isDialogShowing = true;
   showDialog(
     context: context,
@@ -1095,7 +1113,7 @@ Future<void> downloadAudio(BuildContext context, dynamic item) async {
       content: Column(
         mainAxisSize: MainAxisSize.min,
         children: const [
-          Text('Descarga Blindada 3.0...\nOptimizando stream oficial.'),
+          Text('Descarga Blindada 3.0... optimizando stream oficial.'),
           SizedBox(height: 20),
           LinearProgressIndicator(),
         ],
@@ -1106,8 +1124,8 @@ Future<void> downloadAudio(BuildContext context, dynamic item) async {
   try {
     final isMediaItem = item is MediaItem;
     final String videoId = isMediaItem ? item.id : item.id.value;
-    final String videoTitle = item.title;
-
+    final String videoTitle = isMediaItem ? item.title : item.title;
+    
     String artist = 'Desconocido';
     String artUri = '';
     int duration = 0;
@@ -1126,62 +1144,45 @@ Future<void> downloadAudio(BuildContext context, dynamic item) async {
     final savePath = '${dir.path}/$videoId.m4a';
     final file = File(savePath);
 
-// === 1. DESCARGA LIMPIA (YOUTUBE EXPLODE) ===
-      // Instanciamos el cliente aquí mismo para que nunca sea null
-
-      messenger.showSnackBar(const SnackBar(content: Text('Iniciando descarga limpia... ⏳'), backgroundColor: Colors.blue));
-      final ytClient = YoutubeExplode(); 
-      
-      final manifest = await ytClient.videos.streamsClient.getManifest(videoId);
-      
-      // Filtramos para asegurar mp4 y mejor calidad de audio
-      final streamMp4 = manifest.audioOnly.where((s) => s.container.name == 'mp4');
-      final streamInfo = streamMp4.isNotEmpty ? streamMp4.withHighestBitrate() : manifest.audioOnly.withHighestBitrate();
-      
-      final stream = ytClient.videos.streamsClient.get(streamInfo);
-      final outputStream = file.openWrite();
-      
-      await stream.pipe(outputStream);
-      await outputStream.flush();
-      await outputStream.close();
-      ytClient.close(); // Cerramos el cliente para no dejar procesos colgados
-
-      // === 2. GUARDADO EN HIVE ===
-      final downloadsBox = Hive.box('downloads');
-      await downloadsBox.put(videoId, {
-        'id': videoId,
-        'title': videoTitle,
-        'artist': artist,
-        'artUri': artUri,
-        'duration': duration,
-        'localPath': savePath,
-      });
-
-      // === 3. ÉXITO Y CERRAR MODAL ===
-      messenger.showSnackBar(
-        const SnackBar(
-          content: Text('Descarga completada y lista para reproducir 🎵'),
-          backgroundColor: Colors.green,
-          duration: Duration(seconds: 2),
-        ),
-      );
-      
-      // Cambia closeDialog() por tu función real si usas otra (ej. Navigator.pop(context);)
-      Navigator.of(context, rootNavigator: true).pop();
-
-} catch (e) {
-    // 1. Mostrar el mensaje rojo ANTES de tocar la ventana
-    messenger.showSnackBar(
-      SnackBar(
-        content: Text('Error: $e'),
-        backgroundColor: Colors.red,
-        duration: const Duration(seconds: 10),
-      ),
-    );
+    yt = YoutubeExplode();
+    final manifest = await yt.videos.streamsClient.getManifest(videoId);
+    final streamsMp4 = manifest.audioOnly.where((s) => s.container.name == 'mp4');
+    final streamInfo = streamsMp4.isNotEmpty ? streamsMp4.withHighestBitrate() : manifest.audioOnly.withHighestBitrate();
     
-    // 2. Intentar destruirla después
+    final stream = yt.videos.streamsClient.get(streamInfo);
+    final outputStream = file.openWrite();
+
+    // --- BYPASS DE MEMORIA RAM (Adiós al Tarpitting) ---
+    final memoryBuffer = await stream.fold<List<int>>(
+      <int>[], 
+      (buffer, chunk) => buffer..addAll(chunk),
+    );
+    outputStream.add(memoryBuffer);
+    await outputStream.flush();
+    await outputStream.close();
+    yt.close();
+
+    final downloadsBox = Hive.box('downloads');
+    await downloadsBox.put(videoId, {
+      'id': videoId,
+      'title': videoTitle,
+      'artist': artist,
+      'artUri': artUri,
+      'duration': duration,
+      'localPath': savePath,
+    });
+
     closeDialog();
-  } finally {
+    messenger.showSnackBar(
+      const SnackBar(
+        content: Text('Descarga completada y lista para reproducir'),
+        backgroundColor: Colors.green,
+        duration: Duration(seconds: 2),
+      )
+    );
+  } catch (e) {
+    closeDialog();
     yt?.close();
+    messenger.showSnackBar(SnackBar(content: Text('Error en la descarga: $e'), backgroundColor: Colors.red));
   }
-  }
+}
