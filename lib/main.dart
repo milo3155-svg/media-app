@@ -207,24 +207,21 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
       queue.add([]);
       return;
     }
-
-   if (name == 'playLocal' && extras != null) {
-  await _player.stop(); // Detiene cualquier pista fantasma anterior
-  
-  // 1. Cargamos el archivo físico y capturamos su duración real
+if (name == 'playLocal' && extras != null) {
+  await _player.stop();
+  // 1. Guardamos el tiempo exacto que devuelve setFilePath al leer el archivo
   final fileDuration = await _player.setFilePath(extras['localPath']);
-  
-  // 2. Actualizamos el reproductor y la pantalla de bloqueo CON la duración
+  _player.play();
+
   mediaItem.add(MediaItem(
     id: extras['id']?.toString() ?? 'offline',
-    title: extras['title'] ?? 'Audio Local',
-    artist: extras['artist'] ?? 'Bóveda Offline',
-    artUri: extras['artUri'] != null && extras['artUri'].toString().isNotEmpty 
-        ? Uri.parse(extras['artUri']) 
-        : null,
-    // Aquí está la magia: le inyectamos la duración física que acabamos de leer
-    duration: fileDuration ?? Duration(milliseconds: extras['duration'] ?? 0),
+    title: extras['title']?.toString() ?? 'Audio Local',
+    artist: 'Bóveda Offline',
+    // 2. Le inyectamos la duración a la interfaz para revivir el reloj
+    duration: fileDuration, 
   ));
+  return;
+}
 
     if (name == 'setSleepTimer' && extras != null) { 
       int minutes = extras['minutes']; _countdownTimer?.cancel(); 
@@ -234,7 +231,7 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
       } else { sleepTimerRemaining.value = 0; } 
     } 
   }
-  }
+}
   @override Future<void> play() => _player.play(); 
   @override Future<void> pause() => _player.pause(); 
   @override Future<void> seek(Duration position) => _player.seek(position);
