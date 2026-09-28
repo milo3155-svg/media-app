@@ -1,7 +1,7 @@
 import 'dart:io';
-import 'dart:ui'; 
+import 'dart:ui';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart'; 
+import 'package:flutter/services.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:audio_session/audio_session.dart';
 import 'package:audio_service/audio_service.dart';
@@ -9,24 +9,28 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'dart:math' as math;
-import 'dart:async'; 
+import 'dart:async';
 import 'package:dio/dio.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:flutter_downloader/flutter_downloader.dart';
+
+// Importa tu Bóveda Offline
 import 'offline_vault_screen.dart';
 
 class VIPHttpOverrides extends HttpOverrides {
-  @override HttpClient createHttpClient(SecurityContext? context) {
-    return super.createHttpClient(context)..userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36';
+  @override
+  HttpClient createHttpClient(SecurityContext? context) {
+    return super.createHttpClient(context)..userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)';
   }
 }
 
+// Variables Globales
 late MyAudioHandler audioHandler;
 final ValueNotifier<bool> isHDMode = ValueNotifier<bool>(true);
-final ValueNotifier<Color> appColor = ValueNotifier<Color>(Colors.cyanAccent); 
-final ValueNotifier<int> sleepTimerRemaining = ValueNotifier<int>(0); 
+final ValueNotifier<Color> appColor = ValueNotifier<Color>(Colors.cyanAccent);
+final ValueNotifier<int> sleepTimerRemaining = ValueNotifier<int>(0);
 
 Future<String?> obtenerAudioDirecto(String videoId) async {
   try {
@@ -37,371 +41,259 @@ Future<String?> obtenerAudioDirecto(String videoId) async {
     yt.close();
     return streamInfo.url.toString();
   } catch (e) {
-    print('Error con YoutubeExplode: $e');
+    print("Error obteniendo URL: \$e");
     return null;
   }
 }
 
-String formatGlobalDuration(Duration? d) {
-  if (d == null) return "Live";
-  final minutes = d.inMinutes.remainder(60).toString().padLeft(2, '0');
-  final seconds = d.inSeconds.remainder(60).toString().padLeft(2, '0');
-  return "${d.inHours > 0 ? '${d.inHours}:' : ''}$minutes:$seconds";
-}
-
-Future<void> main() async {
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   HttpOverrides.global = VIPHttpOverrides();
+
   await Hive.initFlutter();
-  await Hive.openBox('cerrojo_box');
-  await Hive.openBox('favorites'); 
-  await Hive.openBox('history'); 
-  await Hive.openBox('search_history'); 
-  await Hive.openBox('playlists'); 
-  await Hive.openBox('downloads');
-  final session = await AudioSession.instance; 
-  await session.configure(const AudioSessionConfiguration.music());
+  await Hive.openBox('favorites');
+  await Hive.openBox('history');
+  await Hive.openBox('search_history');
+  await Hive.openBox('playlists');
+  await Hive.openBox('downloads'); // Caja para la Bóveda Offline
+
   await FlutterDownloader.initialize(debug: true, ignoreSsl: true);
-  
+
+  final session = await AudioSession.instance;
+  await session.configure(const AudioSessionConfiguration.music());
+
   audioHandler = await AudioService.init(
-    builder: () => MyAudioHandler(), 
+    builder: () => MyAudioHandler(),
     config: const AudioServiceConfig(
-      androidNotificationChannelId: 'com.example.media_app.audio_master_v62', 
-      androidNotificationChannelName: 'Spotify Killer VIP', 
-      androidNotificationOngoing: false, 
-      androidShowNotificationBadge: true, 
-      androidStopForegroundOnPause: false, 
-      androidNotificationIcon: 'drawable/ic_notification' 
-    )
+      androidNotificationChannelId: 'com.tuapp.audio',
+      androidNotificationChannelName: 'Spotify Killer VIP',
+      androidNotificationOngoing: true,
+      androidStopForegroundOnPause: true,
+    ),
   );
+
   runApp(const MediaApp());
 }
 
-class ConspiracyLogo extends StatelessWidget {
-  final double size; 
-  final Color color; 
-  const ConspiracyLogo({super.key, this.size = 150.0, required this.color});
-  
-  @override 
-  Widget build(BuildContext context) { 
-    return SizedBox(width: size, height: size, child: CustomPaint(painter: _OsirisEyePainter(color: color))); 
+class MediaApp extends StatelessWidget {
+  const MediaApp({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return ValueListenableBuilder<Color>(
+      valueListenable: appColor,
+      builder: (context, color, child) {
+        return MaterialApp(
+          title: 'Spotify Killer VIP',
+          debugShowCheckedModeBanner: false,
+          theme: ThemeData(
+            brightness: Brightness.dark,
+            primaryColor: color,
+            scaffoldBackgroundColor: const Color(0xFF121212),
+            appBarTheme: const AppBarTheme(
+              backgroundColor: Color(0xFF121212),
+              elevation: 0,
+            ),
+          ),
+          // Aquí arranca tu pantalla visual principal
+          home: const MainScreen(),
+        );
+      },
+    );
   }
 }
-
-class _OsirisEyePainter extends CustomPainter {
-  final Color color; 
-  _OsirisEyePainter({required this.color});
-  
-  void _drawTextOnLine(Canvas canvas, String text, Offset start, Offset end, double fontSize) {
-    final midPoint = Offset((start.dx + end.dx) / 2, (start.dy + end.dy) / 2); 
-    final angle = math.atan2(end.dy - start.dy, end.dx - start.dx);
-    canvas.save(); 
-    canvas.translate(midPoint.dx, midPoint.dy); 
-    canvas.rotate(angle);
-    final textSpan = TextSpan(text: text, style: TextStyle(color: color, fontSize: fontSize, fontWeight: FontWeight.bold, letterSpacing: 2, fontFamily: 'Courier'));
-    final textPainter = TextPainter(text: textSpan, textDirection: TextDirection.ltr); 
-    textPainter.layout(); 
-    textPainter.paint(canvas, Offset(-textPainter.width / 2, -textPainter.height - 2)); 
-    canvas.restore();
-  }
-  
-  @override 
-  void paint(Canvas canvas, Size size) {
-    final w = size.width; 
-    final h = size.height;
-    final paint = Paint()..color = color..style = PaintingStyle.stroke..strokeWidth = w * 0.05..strokeJoin = StrokeJoin.round..strokeCap = StrokeCap.round;
-    final p1 = Offset(w * 0.15, h * 0.15); 
-    final p2 = Offset(w * 0.15, h * 0.85); 
-    final p3 = Offset(w * 0.90, h * 0.50); 
-    final playPath = Path()..moveTo(p1.dx, p1.dy)..lineTo(p2.dx, p2.dy)..lineTo(p3.dx, p3.dy)..close(); 
-    canvas.drawPath(playPath, paint);
-    
-    final fontSize = w * 0.08; 
-    _drawTextOnLine(canvas, "Θ ⅃ Θ", p1, p2, fontSize); 
-    _drawTextOnLine(canvas, "Δ Ξ", p2, p3, fontSize); 
-    _drawTextOnLine(canvas, "Θ Ϟ Ι ℟ Ι Ϟ", p3, p1, fontSize);
-    
-    final eyeLeft = w * 0.28; 
-    final eyeRight = w * 0.62; 
-    final eyeY = h * 0.50; 
-    final eyeCenterX = w * 0.45;
-    final eyePath = Path()..moveTo(eyeLeft, eyeY)..quadraticBezierTo(eyeCenterX, h * 0.32, eyeRight, eyeY)..quadraticBezierTo(eyeCenterX, h * 0.68, eyeLeft, eyeY); 
-    canvas.drawPath(eyePath, paint);
-    
-    final wavePaint = Paint()..color = color..style = PaintingStyle.stroke..strokeWidth = w * 0.03; 
-    canvas.drawCircle(Offset(eyeCenterX, h * 0.50), w * 0.08, wavePaint); 
-    canvas.drawCircle(Offset(eyeCenterX, h * 0.50), w * 0.03, wavePaint); 
-    canvas.drawLine(Offset(eyeCenterX - w * 0.12, h * 0.50), Offset(eyeCenterX + w * 0.12, h * 0.50), wavePaint);
-  }
-  
-  @override 
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
-}
-
 class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
-  final _player = AudioPlayer(); 
-  late final YoutubeExplode _yt; 
-  Timer? _countdownTimer; 
-  bool _isTransitioning = false; 
+  final _player = AudioPlayer();
+  final _yt = YoutubeExplode();
+  bool _isAutoPlayEnabled = true;
+  String? _lastPlayedId;
+  DateTime? _lastPlayTime;
 
   MyAudioHandler() {
-    _yt = YoutubeExplode();
-    _player.setSkipSilenceEnabled(true);
-    _player.playbackEventStream.listen((PlaybackEvent event) {
-      final playing = _player.playing; 
-      if (!playing && mediaItem.value != null) { 
-        _saveResumePosition(mediaItem.value!.id, _player.position.inMilliseconds); 
+    _player.playbackEventStream.listen(_broadcastState);
+    
+    _player.processingStateStream.listen((state) {
+      if (state == ProcessingState.completed) {
+        skipToNext();
       }
-      playbackState.add(playbackState.value.copyWith(
-        controls: [MediaControl.skipToPrevious, if (playing) MediaControl.pause else MediaControl.play, MediaControl.skipToNext], 
-        systemActions: const {MediaAction.seek, MediaAction.seekForward, MediaAction.seekBackward}, 
-        androidCompactActionIndices: const [0, 1, 2], 
-        processingState: const { ProcessingState.idle: AudioProcessingState.idle, ProcessingState.loading: AudioProcessingState.loading, ProcessingState.buffering: AudioProcessingState.buffering, ProcessingState.ready: AudioProcessingState.ready, ProcessingState.completed: AudioProcessingState.completed }[_player.processingState]!, 
-        playing: playing, updatePosition: _player.position, bufferedPosition: _player.bufferedPosition, speed: _player.speed
-      ));
     });
-    _player.processingStateStream.listen((state) { if (state == ProcessingState.completed) { _onTrackFinished(); } });
-    _player.positionStream.listen((pos) {
-      final dur = _player.duration;
-      if (dur != null && dur.inSeconds > 10) {
-        if (dur.inMilliseconds - pos.inMilliseconds <= 800 && !_isTransitioning) { _onTrackFinished(); }
-      }
+
+    _player.positionStream.listen((position) {
+      final currentState = playbackState.value;
+      playbackState.add(currentState.copyWith(updatePosition: position));
     });
   }
 
-  void _onTrackFinished() {
-    if (_isTransitioning) return;
-    _isTransitioning = true;
-    _handleAutoPlayRadio();
+  void _broadcastState(PlaybackEvent event) {
+    final playing = _player.playing;
+    playbackState.add(playbackState.value.copyWith(
+      controls: [
+        MediaControl.skipToPrevious,
+        if (playing) MediaControl.pause else MediaControl.play,
+        MediaControl.stop,
+        MediaControl.skipToNext,
+      ],
+      systemActions: const {
+        MediaAction.seek,
+        MediaAction.seekForward,
+        MediaAction.seekBackward,
+      },
+      androidCompactActionIndices: const [0, 1, 3],
+      processingState: const {
+        ProcessingState.idle: AudioProcessingState.idle,
+        ProcessingState.loading: AudioProcessingState.loading,
+        ProcessingState.buffering: AudioProcessingState.buffering,
+        ProcessingState.ready: AudioProcessingState.ready,
+        ProcessingState.completed: AudioProcessingState.completed,
+      }[_player.processingState]!,
+      playing: playing,
+      updatePosition: _player.position,
+      bufferedPosition: _player.bufferedPosition,
+      speed: _player.speed,
+      queueIndex: event.currentIndex,
+    ));
   }
 
-  Future<void> _handleAutoPlayRadio() async {
-    final currentQueue = queue.value; 
-    final currentItem = mediaItem.value; 
-    if (currentItem == null) { _isTransitioning = false; return; }
-
-    final currentIndex = currentQueue.indexWhere((item) => item.id == currentItem.id);
-    if (currentIndex != -1 && currentIndex < currentQueue.length - 1) { 
-      await skipToNextBase(); 
-      _isTransitioning = false; 
-      return;
-    }
-
-    try {
-      Video? nextVideo;
-      try {
-        var currentVideo = await _yt.videos.get(currentItem.id);
-        var relatedVideos = await _yt.videos.getRelatedVideos(currentVideo);
-        if (relatedVideos != null && relatedVideos.isNotEmpty) {
-          String clean1 = currentItem.title.toLowerCase().replaceAll(RegExp(r'[^a-z0-9áéíóúñ\s]'), ''); 
-          Set<String> words1 = clean1.split(' ').where((w) => w.length > 2).toSet();
-          for (var v in relatedVideos) {
-            bool isClone = false; 
-            String clean2 = v.title.toLowerCase().replaceAll(RegExp(r'[^a-z0-9áéíóúñ\s]'), ''); 
-            Set<String> words2 = clean2.split(' ').where((w) => w.length > 2).toSet();
-            if (words1.isNotEmpty && words2.isNotEmpty) { 
-              int matches = words1.intersection(words2).length; 
-              double similarity = matches / math.min(words1.length, words2.length); 
-              if (similarity >= 0.5) isClone = true; 
-            }
-            if (isClone) continue; 
-            nextVideo = v; 
-            break; 
-          }
-          nextVideo ??= relatedVideos.first;
-        }
-      } catch (_) {}
-
-      if (nextVideo == null) {
-        final query = "${currentItem.artist} mix";
-        final searchResults = await _yt.search.search(query);
-        final list = searchResults.where((v) => v.id.value != currentItem.id).toList();
-        if (list.isNotEmpty) nextVideo = list.first;
-      }
-
-      if (nextVideo != null) {
-        final newItem = MediaItem(id: nextVideo.id.value, title: nextVideo.title, artist: nextVideo.author, duration: nextVideo.duration, artUri: Uri.parse(nextVideo.thumbnails.highResUrl));
-        final newQueue = List<MediaItem>.from(currentQueue)..add(newItem); 
-        await updateQueue(newQueue); 
-        await playMediaItem(newItem);
-      }
-    } catch (e) { } finally { _isTransitioning = false; }
-  }
-
-  void _saveResumePosition(String id, int milliseconds) { 
-    final historyBox = Hive.box('history'); 
-    if (historyBox.containsKey(id)) { 
-      final item = Map<String, dynamic>.from(historyBox.get(id)); 
-      item['savedPosition'] = milliseconds; 
-      historyBox.put(id, item); 
-    } 
-  }
-  
-  @override 
-  Future<void> customAction(String name, [Map<String, dynamic>? extras]) async { 
-    if (name == 'kill') {
-      await _player.stop();
-      mediaItem.add(null);
-      queue.add([]);
-      return;
-    }
+  @override
+  Future<void> customAction(String name, [Map<String, dynamic>? extras]) async {
     if (name == 'playLocal' && extras != null) {
-      await _player.stop();
-      final fileDuration = await _player.setFilePath(extras['localPath']);
-      _player.play();
+      final localPath = extras['localPath'] as String;
+      final title = extras['title'] as String;
+      final artist = extras['artist'] as String;
+      final artUri = extras['artUri'] as String;
+      final duration = extras['duration'] as int? ?? 0;
       
-      mediaItem.add(MediaItem(
-        id: extras['id']?.toString() ?? 'offline',
-        title: extras['title']?.toString() ?? 'Audio Local',
-        artist: 'Bóveda Offline',
-        duration: fileDuration, 
-      ));
-      return;
+      final newItem = MediaItem(
+        id: localPath,
+        title: title,
+        artist: artist,
+        artUri: Uri.parse(artUri),
+        duration: Duration(seconds: duration),
+        extras: {'isLocal': true},
+      );
+      
+      mediaItem.add(newItem);
+      await _player.setFilePath(localPath);
+      play();
     }
-
-    if (name == 'setSleepTimer' && extras != null) { 
-      int minutes = extras['minutes']; 
-      _countdownTimer?.cancel(); 
-      if (minutes > 0) { 
-        sleepTimerRemaining.value = minutes * 60; 
-        _countdownTimer = Timer.periodic(const Duration(seconds: 1), (timer) { 
-          if (sleepTimerRemaining.value > 0) { 
-            sleepTimerRemaining.value--; 
-          } else { 
-            pause(); 
-            timer.cancel(); 
-          } 
-        }); 
-      } else { 
-        sleepTimerRemaining.value = 0; 
-      } 
-    } 
   }
 
   @override
   Future<void> playMediaItem(MediaItem item) async {
-    mediaItem.add(item); 
-    final historyBox = Hive.box('history'); 
-    int playCount = 1; 
-    int savedPosition = 0; 
-    
-    if (historyBox.containsKey(item.id)) { 
-      final existingItem = historyBox.get(item.id); 
-      playCount = (existingItem['playCount'] ?? 0) + 1; 
-      savedPosition = existingItem['savedPosition'] ?? 0; 
-    }
-    historyBox.put(item.id, {
-      'id': item.id, 
-      'title': item.title, 
-      'artist': item.artist, 
-      'artUri': item.artUri.toString(), 
-      'duration': item.duration?.inMilliseconds ?? 0, 
-      'timestamp': DateTime.now().millisecondsSinceEpoch, 
-      'playCount': playCount, 
-      'savedPosition': 0
-    });
-    
-    try {
-      playbackState.add(playbackState.value.copyWith(processingState: AudioProcessingState.loading, playing: true));
-      await _player.stop(); 
-      await _player.seek(Duration.zero); 
-      
-      var manifest = await _yt.videos.streamsClient.getManifest(item.id); 
-      
-      // --- SEGURO ANTI-REBOTES ---
-      if (mediaItem.value?.id != item.id) {
+    final now = DateTime.now();
+    if (_lastPlayedId == item.id && _lastPlayTime != null) {
+      if (now.difference(_lastPlayTime!).inSeconds < 2) {
+        print("Bloqueo anti-rebote activado para: \${item.title}");
         return;
       }
-      
-      var video = await _yt.videos.get(item.id); 
-      StreamInfo streamInfo;
-      if (manifest.muxed.isNotEmpty) { 
-        streamInfo = isHDMode.value ? manifest.muxed.withHighestBitrate() : manifest.muxed.reduce((a, b) => a.bitrate.bitsPerSecond < b.bitrate.bitsPerSecond ? a : b); 
-      } else if (manifest.audioOnly.isNotEmpty) { 
-        streamInfo = isHDMode.value ? manifest.audioOnly.withHighestBitrate() : manifest.audioOnly.reduce((a, b) => a.bitrate.bitsPerSecond < b.bitrate.bitsPerSecond ? a : b); 
-      } else { 
-        throw Exception("No streams"); 
+    }
+    
+    _lastPlayedId = item.id;
+    _lastPlayTime = now;
+    mediaItem.add(item);
+    
+    final historyBox = Hive.box('history');
+    final itemMap = {
+      'id': item.id,
+      'title': item.title,
+      'artist': item.artist ?? 'Desconocido',
+      'duration': item.duration?.inSeconds ?? 0,
+      'artUri': item.artUri?.toString() ?? '',
+    };
+    
+    historyBox.put(item.id, itemMap);
+    if (historyBox.length > 50) {
+      historyBox.deleteAt(0);
+    }
+
+    try {
+      final url = await obtenerAudioDirecto(item.id);
+      if (url != null) {
+        await _player.setUrl(url);
+        play();
+      } else {
+        print("No se pudo obtener URL para: \${item.title}");
       }
-      
-      final cachingSource = LockCachingAudioSource(
-        Uri.parse(streamInfo.url.toString()),
-        tag: item.copyWith(
-          duration: video.duration ?? Duration.zero, 
-          title: video.title,       
-        ),
-      );
-      
-      mediaItem.add(
-        item.copyWith(
-          duration: video.duration ?? Duration.zero,
-          title: video.title,
-        )
-      );
-      await _player.setAudioSource(cachingSource);
-      
-      if (savedPosition > 0) { 
-        await _player.seek(Duration(milliseconds: savedPosition)); 
-      } 
-      await _player.play();
-    } catch (e) { 
-      playbackState.add(playbackState.value.copyWith(processingState: AudioProcessingState.error, playing: false)); 
+    } catch (e) {
+      print("Error en playMediaItem: \$e");
     }
   }
 
-  @override 
-  Future<void> updateQueue(List<MediaItem> newQueue) async { 
-    queue.add(newQueue); 
-  }
+  @override
+  Future<void> play() => _player.play();
 
-  void shuffleQueue() { 
-    final currentQueue = queue.value.toList()..shuffle(); 
-    queue.add(currentQueue); 
-  }
+  @override
+  Future<void> pause() => _player.pause();
 
-  @override 
-  Future<void> play() => _player.play(); 
-
-  @override 
-  Future<void> pause() => _player.pause(); 
-
-  @override 
+  @override
   Future<void> seek(Duration position) => _player.seek(position);
-  
-  @override 
-  Future<void> skipToNext() async { 
-    final queueList = queue.value; 
-    final currentItem = mediaItem.value; 
-    final currentIndex = queueList.indexWhere((item) => item.id == currentItem?.id); 
-    if (currentIndex != -1 && currentIndex < queueList.length - 1) { 
-      await playMediaItem(queueList[currentIndex + 1]); 
-    } else { 
-      _onTrackFinished(); 
-    }
+
+  @override
+  Future<void> stop() async {
+    await _player.stop();
+    return super.stop();
   }
 
-  Future<void> skipToNextBase() async {
-    final queueList = queue.value; 
-    final currentItem = mediaItem.value; 
-    final currentIndex = queueList.indexWhere((item) => item.id == currentItem?.id); 
+  @override
+  Future<void> updateQueue(List<MediaItem> newQueue) async {
+    queue.add(newQueue);
+  }
+
+  @override
+  Future<void> skipToNext() async {
+    final queueList = queue.value;
+    if (queueList.isEmpty) return;
+    
+    final currentItem = mediaItem.value;
+    final currentIndex = queueList.indexWhere((item) => item.id == currentItem?.id);
+    
     if (currentIndex != -1 && currentIndex < queueList.length - 1) {
       await playMediaItem(queueList[currentIndex + 1]);
+    } else if (_isAutoPlayEnabled && currentItem != null && currentItem.extras?['isLocal'] != true) {
+      await _autoPlayNext(currentItem.id);
     }
   }
 
-  @override 
-  Future<void> skipToPrevious() async { 
-    final queueList = queue.value; 
-    if (queueList.isEmpty) return; 
-    final currentItem = mediaItem.value; 
-    final currentIndex = queueList.indexWhere((item) => item.id == currentItem?.id); 
+  @override
+  Future<void> skipToPrevious() async {
+    final queueList = queue.value;
+    if (queueList.isEmpty) return;
+    
+    final currentItem = mediaItem.value;
+    final currentIndex = queueList.indexWhere((item) => item.id == currentItem?.id);
+    
     if (currentIndex > 0) {
-      await playMediaItem(queueList[currentIndex - 1]); 
+      await playMediaItem(queueList[currentIndex - 1]);
+    }
+  }
+
+  Future<void> _autoPlayNext(String videoId) async {
+    try {
+      final video = await _yt.videos.get(videoId);
+      final related = await _yt.videos.getRelatedVideos(video).first;
+      
+      final nextItem = MediaItem(
+        id: related.id.value,
+        title: related.title,
+        artist: related.author,
+        duration: related.duration,
+        artUri: Uri.parse(related.thumbnails.highResUrl),
+      );
+      
+      final currentQueue = queue.value.toList();
+      currentQueue.add(nextItem);
+      queue.add(currentQueue);
+      
+      await playMediaItem(nextItem);
+    } catch (e) {
+      print("Error en AutoPlay: \$e");
     }
   }
 }
 
+// --- Funciones Globales para acceder desde la UI ---
 Future<void> globalPlay(MediaItem item) async {
-  await audioHandler.updateQueue([item]); 
+  await audioHandler.updateQueue([item]);
   await audioHandler.playMediaItem(item);
 }
 
@@ -409,19 +301,211 @@ Future<void> globalPlayQueue(List<MediaItem> items, int startIndex) async {
   await audioHandler.updateQueue(items);
   await audioHandler.playMediaItem(items[startIndex]);
 }
-class MediaApp extends StatelessWidget {
-  const MediaApp({super.key});
+class MainScreen extends StatefulWidget {
+  const MainScreen({super.key});
+
+  @override
+  State<MainScreen> createState() => _MainScreenState();
+}
+
+class _MainScreenState extends State<MainScreen> {
+  final TextEditingController _tokenController = TextEditingController();
+  bool _error = false;
+  bool _accesoPermitido = false;
+
+  void _validarToken() {
+    // Si necesitas validación real, cámbialo aquí.
+    if (_tokenController.text.trim().isNotEmpty) {
+      setState(() {
+        _accesoPermitido = true;
+        _error = false;
+      });
+    } else {
+      setState(() {
+        _error = true;
+      });
+    }
+  }
+
+  Future<void> downloadAudio(BuildContext context, dynamic item) async {
+    final messenger = ScaffoldMessenger.of(context);
+    YoutubeExplode? yt;
+    
+    bool isDialogShowing = false;
+    void closeDialog() {
+      if (isDialogShowing && mounted) {
+        Navigator.of(context, rootNavigator: true).pop();
+        isDialogShowing = false;
+      }
+    }
+
+    try {
+      isDialogShowing = true;
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (c) => const Center(
+          child: CircularProgressIndicator(color: Color(0xFF4ADE80)),
+        ),
+      );
+
+      var status = await Permission.storage.request();
+      if (!status.isGranted) {
+        closeDialog();
+        messenger.showSnackBar(const SnackBar(content: Text('Permiso de almacenamiento denegado')));
+        return;
+      }
+
+      yt = YoutubeExplode();
+      final manifest = await yt.videos.streamsClient.getManifest(item['id']);
+      final audioStreamInfo = manifest.audioOnly.withHighestBitrate();
+
+      final directory = await getExternalStorageDirectory();
+      if (directory == null) {
+        closeDialog();
+        messenger.showSnackBar(const SnackBar(content: Text('No se pudo acceder al almacenamiento')));
+        return;
+      }
+
+      final String safeTitle = (item['title'] as String).replaceAll(RegExp(r'[\\/:*?"<>|]'), '');
+      final String fileName = '\$safeTitle.mp3';
+      final String savePath = '\${directory.path}/\$fileName';
+
+      closeDialog(); // Cerramos el loader antes de mostrar el mensaje de inicio
+
+      messenger.showSnackBar(SnackBar(content: Text('Iniciando descarga: \$safeTitle...')));
+
+      final taskId = await FlutterDownloader.enqueue(
+        url: audioStreamInfo.url.toString(),
+        savedDir: directory.path,
+        fileName: fileName,
+        showNotification: true,
+        openFileFromNotification: false,
+      );
+
+      if (taskId != null) {
+        final box = Hive.box('downloads');
+        final downloadData = {
+          'id': item['id'],
+          'title': item['title'],
+          'artist': item['artist'] ?? 'Desconocido',
+          'artUri': item['artUri'] ?? '',
+          'duration': item['duration'] ?? 0,
+          'localPath': savePath,
+        };
+        await box.put(item['id'], downloadData);
+        messenger.showSnackBar(const SnackBar(content: Text('¡Descarga finalizada! Agregada a tu Bóveda.')));
+      }
+    } catch (e) {
+      closeDialog();
+      print("Error en descarga: \$e");
+      messenger.showSnackBar(SnackBar(content: Text('Error en la descarga: \$e')));
+    } finally {
+      yt?.close();
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Spotify Killer VIP',
-      debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        brightness: Brightness.dark,
-        primarySwatch: Colors.cyan,
+    if (!_accesoPermitido) {
+      return Scaffold(
+        backgroundColor: const Color(0xFF111111),
+        body: Padding(
+          padding: const EdgeInsets.all(32.0),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Icon(Icons.lock_outline, size: 80, color: Color(0xFF4ADE80)),
+              const SizedBox(height: 24),
+              const Text(
+                'ACCESO RESTRINGIDO',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Colors.white, fontSize: 28, letterSpacing: 2.0),
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                'Ingresa tu token de seguridad para continuar.',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Colors.grey, fontSize: 16),
+              ),
+              const SizedBox(height: 48),
+              TextField(
+                controller: _tokenController,
+                style: const TextStyle(color: Color(0xFF4ADE80), fontSize: 18, letterSpacing: 3.0),
+                decoration: InputDecoration(
+                  hintText: 'Pega tu TKN aquí...',
+                  hintStyle: const TextStyle(color: Colors.white24),
+                  errorText: _error ? 'Token inválido o sin permisos' : null,
+                  enabledBorder: const UnderlineInputBorder(borderSide: BorderSide(color: Colors.grey)),
+                  focusedBorder: const UnderlineInputBorder(borderSide: BorderSide(color: Color(0xFF4ADE80))),
+                ),
+              ),
+              const SizedBox(height: 32),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF4ADE80),
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                ),
+                onPressed: _validarToken,
+                child: const Text(
+                  'VALIDAR ACCESO', 
+                  style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 16),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Spotify Killer VIP', style: TextStyle(color: Colors.white)),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.offline_pin, color: Color(0xFF4ADE80)),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => OfflineVaultScreen(audioHandler: audioHandler)),
+              );
+            },
+            tooltip: 'Bóveda Offline',
+          ),
+        ],
       ),
-      home: OfflineVaultScreen(audioHandler: audioHandler), // O tu pantalla principal
+      body: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.music_note, size: 100, color: Colors.cyanAccent),
+            const SizedBox(height: 20),
+            const Text(
+              '¡Bienvenido al sistema principal!',
+              style: TextStyle(fontSize: 24, color: Colors.white),
+            ),
+            const SizedBox(height: 20),
+            ElevatedButton.icon(
+              onPressed: () {
+                // Ejemplo de prueba: Reproducir una canción global
+                final testItem = MediaItem(
+                  id: 'dQw4w9WgXcQ',
+                  title: 'Prueba de Conexión',
+                  artist: 'Sistema',
+                  artUri: Uri.parse('https://img.youtube.com/vi/dQw4w9WgXcQ/0.jpg'),
+                  duration: const Duration(minutes: 3, seconds: 32),
+                );
+                globalPlay(testItem);
+              },
+              icon: const Icon(Icons.play_arrow, color: Colors.black),
+              label: const Text('Reproducir Audio de Prueba', style: TextStyle(color: Colors.black)),
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.cyanAccent),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
