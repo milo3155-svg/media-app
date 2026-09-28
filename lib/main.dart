@@ -249,7 +249,16 @@ if (name == 'playLocal' && extras != null) {
 
   @override Future<void> skipToPrevious() async { final queueList = queue.value; if (queueList.isEmpty) return; final currentItem = mediaItem.value; final currentIndex = queueList.indexWhere((item) => item.id == currentItem?.id); if (currentIndex > 0) await playMediaItem(queueList[currentIndex - 1]); }
 
- @override
+ @override 
+  Future<void> skipToPrevious() async { 
+    final queueList = queue.value; 
+    if (queueList.isEmpty) return; 
+    final currentItem = mediaItem.value; 
+    final currentIndex = queueList.indexWhere((item) => item.id == currentItem?.id); 
+    if (currentIndex > 0) await playMediaItem(queueList[currentIndex - 1]); 
+  }
+
+  @override
   Future<void> playMediaItem(MediaItem item) async {
     mediaItem.add(item); 
     final historyBox = Hive.box('history'); 
@@ -270,10 +279,10 @@ if (name == 'playLocal' && extras != null) {
       var manifest = await _yt.videos.streamsClient.getManifest(item.id); 
       
       // --- SEGURO ANTI-REBOTES ---
-      // Si el usuario cambió de pista mientras YouTube respondía, abortamos la carga vieja
       if (mediaItem.value?.id != item.id) {
         return;
       }
+      
       var video = await _yt.videos.get(item.id); 
       StreamInfo streamInfo;
       if (manifest.muxed.isNotEmpty) { 
@@ -304,17 +313,20 @@ if (name == 'playLocal' && extras != null) {
       if (savedPosition > 0) { await _player.seek(Duration(milliseconds: savedPosition)); } 
       await _player.play();
     } catch (e) { 
-      playbackState.add(playbackState.value.copyWith(processingState: AudioProcessingState.error, playing: false
-      )); 
+      playbackState.add(playbackState.value.copyWith(processingState: AudioProcessingState.error, playing: false)); 
     }
-  } 
-  @override
-  Future<void> updateQueue(List<MediaItem> newQueue) async { queue.add(newQueue);
-   }
-  void shuffleQueue() {
-     final currentQueue = queue.value.toList()..shuffle(); queue.add(currentQueue);
-      }
+  }
 
+  @override 
+  Future<void> updateQueue(List<MediaItem> newQueue) async { 
+    queue.add(newQueue); 
+  }
+
+  void shuffleQueue() { 
+    final currentQueue = queue.value.toList()..shuffle(); 
+    queue.add(currentQueue); 
+  }
+  
 Future<void> globalPlay(MediaItem item) async {
   await audioHandler.updateQueue([item]); 
   await audioHandler.playMediaItem(item);
