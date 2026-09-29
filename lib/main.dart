@@ -1069,21 +1069,19 @@ class _CerrojoScreenState extends State<CerrojoScreen> {
 }
 
 Future<void> downloadAudio(BuildContext context, dynamic item) async {
-  // 1. EXTRAER CONTEXTO AL INICIO (Previene el crash por pérdida de contexto)
   final scaffoldMessenger = ScaffoldMessenger.of(context);
-  final navigator = Navigator.of(context, rootNavigator: true);
-  bool isDialogShowing = true;
-
+  
+  // ¡Ahora sí se puede cerrar tocando afuera!
   showDialog(
     context: context,
-    barrierDismissible: false,
+    barrierDismissible: true, 
     builder: (context) => const AlertDialog(
       backgroundColor: Color(0xFF1A1A1A),
       title: Text('Descargando pista', style: TextStyle(color: Colors.white)),
       content: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Text('Extrayendo audio de alta calidad...', style: TextStyle(color: Colors.grey, fontSize: 14)),
+          Text('Extrayendo audio...', style: TextStyle(color: Colors.grey, fontSize: 14)),
           SizedBox(height: 20),
           LinearProgressIndicator(color: Color(0xFF4ADE80)),
         ],
@@ -1109,17 +1107,23 @@ Future<void> downloadAudio(BuildContext context, dynamic item) async {
       try { artUri = item.thumbnails.highestResUrl; } catch (_) {}
       try { duration = item.duration.inMilliseconds; } catch (_) {}
     }
-  
-    final dir = await getApplicationDocumentsDirectory();
-    final savePath = '${dir.path}/$videoId.m4a';
 
-    // === PASO A: DESCARGA NATIVA (YoutubeExplode 3.1.0) ===
+    // Limpiamos el ID por si trae caracteres inválidos que causen crash al crear el archivo
+    final safeFileId = videoId.replaceAll(RegExp(r'[^a-zA-Z0-9_\-]'), '');
+    final dir = await getApplicationDocumentsDirectory();
+    final savePath = '${dir.path}/$safeFileId.m4a';
+
+    scaffoldMessenger.showSnackBar(const SnackBar(content: Text('Paso 1: Obteniendo enlace...'), duration: Duration(seconds: 1)));
+
+    // === PASO A: DESCARGA NATIVA ===
     final ytClient = YoutubeExplode(); 
     final manifest = await ytClient.videos.streamsClient.getManifest(videoId);
     final streamMp4 = manifest.audioOnly.where((s) => s.container.name == 'mp4');
     final streamInfo = streamMp4.isNotEmpty ? streamMp4.withHighestBitrate() : manifest.audioOnly.withHighestBitrate();
     final audioStream = ytClient.videos.streamsClient.get(streamInfo);
     
+    scaffoldMessenger.showSnackBar(const SnackBar(content: Text('Paso 2: Descargando y escribiendo...'), duration: Duration(seconds: 1)));
+
     final file = File(savePath);
     final fileStream = file.openWrite();
     await for (final data in audioStream) {
@@ -1129,9 +1133,10 @@ Future<void> downloadAudio(BuildContext context, dynamic item) async {
     await fileStream.close();
     ytClient.close(); 
 
+    scaffoldMessenger.showSnackBar(const SnackBar(content: Text('Paso 3: Guardando en bóveda...'), duration: Duration(seconds: 1)));
+
     // === PASO B: GUARDADO SEGURO EN HIVE ===
-    // IMPORTANTE: Asegúrate de que 'offline_media' es el nombre que usas en tu Bóveda. Si es otro, cámbialo aquí.
-    const boxName = 'offline_media'; 
+    const boxName = 'offline_media'; // <-- REVISA QUE ESTE SEA EL NOMBRE DE TU BÓVEDA
     final downloadsBox = Hive.isBoxOpen(boxName) ? Hive.box(boxName) : await Hive.openBox(boxName);
     
     await downloadsBox.put(videoId, {
@@ -1143,15 +1148,12 @@ Future<void> downloadAudio(BuildContext context, dynamic item) async {
       'localPath': savePath,
     });
   
-    // === PASO C: CERRAR Y NOTIFICAR ÉXITO ===
-    if (isDialogShowing) {
-      navigator.pop();
-      isDialogShowing = false;
-    }
+    // === PASO C: CERRAR Y ÉXITO ===
+    try { Navigator.of(context, rootNavigator: true).pop(); } catch (_) {}
     
     scaffoldMessenger.showSnackBar(
       const SnackBar(
-        content: Text('¡Descarga completada! Lista en tu Bóveda 🎵'),
+        content: Text('¡Descarga completada! 🎵'),
         backgroundColor: Colors.green,
         duration: Duration(seconds: 4),
       ),
@@ -1159,15 +1161,14 @@ Future<void> downloadAudio(BuildContext context, dynamic item) async {
 
   } catch (e) {
     // === PASO D: MANEJO DE ERRORES BLINDADO ===
-    if (isDialogShowing) {
-      navigator.pop();
-      isDialogShowing = false;
-    }
+    // Envolvemos el cierre en un try-catch para que si falla, el código NO se detenga y pinte el error rojo
+    try { Navigator.of(context, rootNavigator: true).pop(); } catch (_) {}
+    
     scaffoldMessenger.showSnackBar(
       SnackBar(
-        content: Text('Error al descargar: $e'),
+        content: Text('🛑 ERROR EXACTO: $e'),
         backgroundColor: Colors.red,
-        duration: const Duration(seconds: 8), 
+        duration: const Duration(seconds: 10), 
       ),
     );
   }
