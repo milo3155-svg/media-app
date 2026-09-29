@@ -1070,13 +1070,11 @@ class _CerrojoScreenState extends State<CerrojoScreen> {
 
 Future<void> downloadAudio(BuildContext context, dynamic item) async {
   final scaffoldMessenger = ScaffoldMessenger.of(context);
-  
-  // Guardamos el contexto del Navigator para cerrarlo de forma segura
   final navigator = Navigator.of(context, rootNavigator: true);
 
   showDialog(
     context: context,
-    barrierDismissible: true, // Te permite cerrarlo tocando fuera por si acaso
+    barrierDismissible: true,
     builder: (context) => const AlertDialog(
       backgroundColor: Color(0xFF1A1A1A),
       title: Text('Descargando pista', style: TextStyle(color: Colors.white)),
@@ -1110,42 +1108,46 @@ Future<void> downloadAudio(BuildContext context, dynamic item) async {
       try { duration = item.duration.inMilliseconds; } catch (_) {}
     }
 
+    // Filtramos caracteres raros en el nombre de archivo
     final safeFileId = videoId.replaceAll(RegExp(r'[^a-zA-Z0-9_\-]'), '');
     final dir = await getApplicationDocumentsDirectory();
-    final savePath = '${dir.path}/$safeFileId.m4a';
-
-    // === PASO 1: OBTENER URL SEGURA (YoutubeExplode) ===
+    
+    // === 1. CONEXIÓN DIRECTA YOUTUBE_EXPLODE ===
     final ytClient = YoutubeExplode(); 
     final manifest = await ytClient.videos.streamsClient.getManifest(videoId);
-    final streamMp4 = manifest.audioOnly.where((s) => s.container.name == 'mp4');
-    final streamInfo = streamMp4.isNotEmpty ? streamMp4.withHighestBitrate() : manifest.audioOnly.withHighestBitrate();
-    final downloadUrl = streamInfo.url.toString();
+    
+    // Dejamos que la librería use el mejor contenedor disponible (.webm o .m4a)
+    final streamInfo = manifest.audioOnly.withHighestBitrate();
+    final ext = streamInfo.container.name; 
+    final savePath = '${dir.path}/$safeFileId.$ext';
+
+    // === 2. DESCARGA NATIVA RAPIDA ===
+    final audioStream = ytClient.videos.streamsClient.get(streamInfo);
+    final file = File(savePath);
+    final fileStream = file.openWrite();
+    
+    await audioStream.pipe(fileStream);
+    await fileStream.flush();
+    await fileStream.close();
     ytClient.close(); 
 
-    // === PASO 2: DESCARGA BLINDADA CON DIO Y CABECERA 'RANGE' ===
-    final dio = Dio();
-    
-    // Si el servidor se queda en silencio por 30 segundos, Dio aborta y arroja error visible.
-    dio.options.connectTimeout = const Duration(seconds: 15);
-    dio.options.receiveTimeout = const Duration(seconds: 30);
-    
-    await dio.download(
-      downloadUrl,
-      savePath,
-      options: Options(
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-          'Accept': '/',
-          'Range': 'bytes=0-', // <-- LA LLAVE MAESTRA CONTRA EL ERROR 403 Y LOS CONGELAMIENTOS
-        },
-        // Permitimos códigos de éxito estándar
-        validateStatus: (status) => status != null && status < 400,
-      ),
-    );
+    // === 3. VALIDADOR ANTI-CORRUPCIÓN ===
+    final size = await file.length();
+    if (size == 0) {
+      throw Exception('YouTube bloqueó el archivo (0 bytes). Intenta otra pista.');
+    }
 
-    // === PASO 3: GUARDADO EN BÓVEDA LOCAL (HIVE) ===
-    const boxName = 'offline_media'; // Asegúrate de que coincida con tu pantalla de bóveda
-    final downloadsBox = Hive.isBoxOpen(boxName) ? Hive.box(boxName) : await Hive.openBox(boxName);
+    // === 4. GUARDADO EN HIVE ANTI-CONGELAMIENTO ===
+    // 🚨 ¡CUIDADO! CAMBIA LA SIGUIENTE PALABRA AL NOMBRE EXACTO DE TU BÓVEDA 🚨
+    // Si tu pantalla de Bóveda lee de 'offline_media', cámbialo abajo.
+    const boxName = 'offline_media'; 
+    
+    Box downloadsBox;
+    if (Hive.isBoxOpen(boxName)) {
+      downloadsBox = Hive.box(boxName);
+    } else {
+      downloadsBox = await Hive.openBox(boxName);
+    }
     
     await downloadsBox.put(videoId, {
       'id': videoId,
@@ -1156,9 +1158,8 @@ Future<void> downloadAudio(BuildContext context, dynamic item) async {
       'localPath': savePath,
     });
   
-    // === PASO 4: CERRAR CAJA Y NOTIFICAR ÉXITO ===
+    // === 5. ÉXITO Y CIERRE ===
     try { navigator.pop(); } catch (_) {}
-    
     scaffoldMessenger.showSnackBar(
       const SnackBar(
         content: Text('¡Descarga completada! 🎵'),
@@ -1168,19 +1169,17 @@ Future<void> downloadAudio(BuildContext context, dynamic item) async {
     );
 
   } catch (e) {
-    // === MANEJO DE ERRORES: GARANTIZA CIERRE Y NOTIFICACIÓN VISIBLE ===
+    // Si hay error, cierra la caja y muestra el rojo
     try { navigator.pop(); } catch (_) {}
-    
     scaffoldMessenger.showSnackBar(
       SnackBar(
-        content: Text('🛑 ERROR EXACTO: $e'),
+        content: Text('🛑 ERROR: $e'),
         backgroundColor: Colors.red,
         duration: const Duration(seconds: 10), 
       ),
     );
   }
 }
-
 class OfflineVaultScreen extends StatelessWidget {
   const OfflineVaultScreen({super.key});
 
