@@ -651,7 +651,7 @@ class FullScreenPlayer extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.black95,
+      backgroundColor: Colors.black,
       body: Center(
         child: Text('Reproductor Completo VIP', style: TextStyle(color: Colors.white, fontSize: 20)),
       ),
