@@ -1122,30 +1122,29 @@ Future<void> downloadAudio(BuildContext context, dynamic item) async {
 
     messenger.showSnackBar(const SnackBar(content: Text('Extrayendo enlace de alta calidad... ⏳'), backgroundColor: Colors.blue));
 
-    // === PASO A: OBTENER URL PURA (YoutubeExplode) ===
+// === PASO A: OBTENER EL FLUJO DE AUDIO (YoutubeExplode) ===
     final ytClient = YoutubeExplode(); 
     final manifest = await ytClient.videos.streamsClient.getManifest(videoId);
     
     final streamMp4 = manifest.audioOnly.where((s) => s.container.name == 'mp4');
     final streamInfo = streamMp4.isNotEmpty ? streamMp4.withHighestBitrate() : manifest.audioOnly.withHighestBitrate();
-    final downloadUrl = streamInfo.url.toString();
     
-    ytClient.close(); // Cerramos el cliente rápido para liberar memoria
-
-    // === PASO B: DESCARGA ESTABLE CON DIO ===
-    // Esto resuelve de raíz el congelamiento de la aplicación
-    final dio = Dio();
-    await dio.download(
-      downloadUrl, 
-      savePath,
-      options: Options(
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-          'Referer': 'https://www.youtube.com/',
-        },
-      ),
-    );
-
+    // Obtenemos los datos directos en lugar de la URL
+    final audioStream = ytClient.videos.streamsClient.get(streamInfo);
+    
+    // === PASO B: ESCRITURA BLINDADA (Sin usar .pipe) ===
+    final file = File(savePath);
+    final fileStream = file.openWrite();
+    
+    // Descargamos y escribimos fragmento por fragmento
+    await for (final data in audioStream) {
+      fileStream.add(data);
+    }
+    
+    await fileStream.flush();
+    await fileStream.close();
+    ytClient.close();
+    
     // === PASO C: GUARDADO EN BÓVEDA LOCAL (HIVE) ===
     final downloadsBox = Hive.box('downloads');
     await downloadsBox.put(videoId, {
