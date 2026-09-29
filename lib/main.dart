@@ -422,9 +422,16 @@ class _SearchScreenState extends State<SearchScreen> {
       ],
     );
   }
+  
 @override
   Widget build(BuildContext context) {
-   
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Buscador VIP', style: TextStyle(fontWeight: FontWeight.bold)),
+      ),
+      body: Column(
+
+        children: [
           Padding(padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0), child: Row(children: [ Expanded(child: TextField(controller: searchController, decoration: InputDecoration(hintText: 'Buscar...', border: OutlineInputBorder(borderRadius: BorderRadius.circular(10))), onSubmitted: (val) { if (val.trim().isNotEmpty) { _saveSearchHistory(val); searchVideos(val); } })) ])),
           if (isLoading) const Expanded(child: Center(child: CircularProgressIndicator()))
           else if (searchSuggestions.isNotEmpty && videos.isEmpty) Expanded(child: ListView.builder(itemCount: searchSuggestions.length, itemBuilder: (context, index) => ListTile(title: Text(searchSuggestions[index]), onTap: () { searchController.text = searchSuggestions[index]; searchVideos(searchSuggestions[index]); })))
