@@ -10,7 +10,6 @@ import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'dart:math' as math;
 import 'dart:async'; 
-import 'package:dio/dio.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:http/http.dart' as http;
 import 'dart:async';
@@ -1115,29 +1114,29 @@ Future<void> downloadAudio(BuildContext context, dynamic item) async {
 
     scaffoldMessenger.showSnackBar(const SnackBar(content: Text('Paso 1: Obteniendo enlace...'), duration: Duration(seconds: 1)));
 
-   // === PASO A: OBTENER URL SEGURA (YoutubeExplode 3.1.0) ===
+ scaffoldMessenger.showSnackBar(const SnackBar(content: Text('Paso 1: Obteniendo enlace seguro...'), duration: Duration(seconds: 1)));
+
+    // === PASO A: DESCARGA NATIVA COMPLETA CON YOUTUBE_EXPLODE (Cero Dio) ===
     final ytClient = YoutubeExplode(); 
     final manifest = await ytClient.videos.streamsClient.getManifest(videoId);
     final streamMp4 = manifest.audioOnly.where((s) => s.container.name == 'mp4');
     final streamInfo = streamMp4.isNotEmpty ? streamMp4.withHighestBitrate() : manifest.audioOnly.withHighestBitrate();
     
-    // En lugar de leer los bytes a mano, sacamos la URL autorizada
-    final downloadUrl = streamInfo.url.toString();
+    scaffoldMessenger.showSnackBar(const SnackBar(content: Text('Paso 2: Descargando audio nativo...'), duration: Duration(seconds: 1)));
+
+    // Extraemos el flujo directamente desde YouTube
+    final audioStream = ytClient.videos.streamsClient.get(streamInfo);
+    
+    // Lo conectamos (pipe) directo al archivo. Pipe gestiona la memoria y cierra el archivo solo.
+    final file = File(savePath);
+    final fileStream = file.openWrite();
+    
+    await audioStream.pipe(fileStream);
+    
+    // Cerramos el cliente de YouTube
     ytClient.close(); 
 
-    scaffoldMessenger.showSnackBar(const SnackBar(content: Text('Paso 2: Descargando con Dio...'), duration: Duration(seconds: 1)));
-
-    // === PASO A.2: DESCARGA CON DIO (Sin colgados) ===
-    final dio = Dio();
-    await dio.download(
-      downloadUrl,
-      savePath,
-      options: Options(
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        },
-      ),
-    );
+    scaffoldMessenger.showSnackBar(const SnackBar(content: Text('Paso 3: Guardando en bóveda...'), duration: Duration(seconds: 1)));
 
     // === PASO B: GUARDADO SEGURO EN HIVE ===
     const boxName = 'offline_media'; // <-- REVISA QUE ESTE SEA EL NOMBRE DE TU BÓVEDA
