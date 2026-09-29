@@ -417,7 +417,7 @@ Future<void> downloadAudio(BuildContext context, dynamic item) async {
   try {
     final isMediaItem = item is MediaItem; final String originalVideoId = isMediaItem ? item.id : item.id.value; final String videoTitle = item.title;
     String artist = 'Desconocido'; String artUri = ''; int duration = 0;
-    if (isMediaItem) { artist = item.artist ?? 'Desconocido'; artUri = item.artUri?.toString() ?? ''; duration = item.duration?.inMilliseconds ?? 0; } else { try { artist = item.author; } catch () {} try { artUri = item.thumbnails.highestResUrl; } catch () {} try { duration = item.duration.inMilliseconds; } catch (_) {} }
+    if (isMediaItem) { artist = item.artist ?? 'Desconocido'; artUri = item.artUri?.toString() ?? ''; duration = item.duration?.inMilliseconds ?? 0; } else { try { artist = item.author; } catch (e) {} try { artUri = item.thumbnails.highestResUrl; } catch (e) {} try { duration = item.duration.inMilliseconds; } catch (e) {} }
     final ytClient = YoutubeExplode(); final searchQuery = '$videoTitle $artist audio'; final searchResults = await ytClient.search.search(searchQuery);
     if (searchResults.isEmpty) throw Exception('No se encontró una versión alternativa de esta pista.');
     final ghostVideo = searchResults.first; final ghostVideoId = ghostVideo.id.value;
