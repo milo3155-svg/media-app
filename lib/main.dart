@@ -16,7 +16,6 @@ import 'package:http/http.dart' as http;
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter_downloader/flutter_downloader.dart';
-import 'offline_vault_screen.dart';
 
 class VIPHttpOverrides extends HttpOverrides {
   @override HttpClient createHttpClient(SecurityContext? context) {
@@ -416,7 +415,7 @@ class MediaApp extends StatelessWidget {
 
 class SuperAppSkeleton extends StatefulWidget { const SuperAppSkeleton({super.key}); @override State<SuperAppSkeleton> createState() => _SuperAppSkeletonState(); }
 class _SuperAppSkeletonState extends State<SuperAppSkeleton> {
-  int _currentIndex = 0; final List<Widget> _screens = [const HomeScreen(), const SearchScreen(), OfflineVaultScreen(audioHandler: audioHandler), const VaultScreen(), const SportsScreen()];
+  int _currentIndex = 0; final List<Widget> _screens = [const HomeScreen(), const SearchScreen(), const OfflineVaultScreen(), const VaultScreen(), const SportsScreen()];
   @override Widget build(BuildContext context) { 
     return Scaffold(
       extendBody: true, 
@@ -1185,43 +1184,9 @@ Future<void> downloadAudio(BuildContext context, dynamic item) async {
   }
 
 
-
-                    IconButton(
-                      icon: const Icon(Icons.delete, color: Colors.redAccent),
-                      onPressed: () {
-                        // Eliminar el archivo físico (opcional por ahora, solo borramos el registro)
-                        try{
-                           final file = File(item['localPath']);
-                           if(file.existsSync()){
-                               file.deleteSync();
-                           }
-                        }catch(e){
-                           print("Error borrando archivo local: $e");
-                        }
-                        box.delete(key);
-                      },
-                    ),
-                  ],
-                ),
-              );
-            },
-          );
-        },
-      ),
-    );
-  }
-}
-
-
-
-en la linea 1187 estaba
 class OfflineVaultScreen extends StatelessWidget {
-  // Declaramos que esta pantalla necesita recibir el audioHandler
-  final dynamic audioHandler; 
+  const OfflineVaultScreen({super.key});
 
-  // Modificamos el constructor para obligar a que se lo pasen
-  const OfflineVaultScreen({Key? key, required this.audioHandler}) : super(key: key);
-  
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -1286,3 +1251,28 @@ class OfflineVaultScreen extends StatelessWidget {
     }
   },
 ),
+                    IconButton(
+                      icon: const Icon(Icons.delete, color: Colors.redAccent),
+                      onPressed: () {
+                        // Eliminar el archivo físico (opcional por ahora, solo borramos el registro)
+                        try{
+                           final file = File(item['localPath']);
+                           if(file.existsSync()){
+                               file.deleteSync();
+                           }
+                        }catch(e){
+                           print("Error borrando archivo local: $e");
+                        }
+                        box.delete(key);
+                      },
+                    ),
+                  ],
+                ),
+              );
+            },
+          );
+        },
+      ),
+    );
+  }
+}
