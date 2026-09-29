@@ -1108,39 +1108,46 @@ Future<void> downloadAudio(BuildContext context, dynamic item) async {
       try { duration = item.duration.inMilliseconds; } catch (_) {}
     }
 
-    // Filtramos caracteres raros en el nombre de archivo
     final safeFileId = videoId.replaceAll(RegExp(r'[^a-zA-Z0-9_\-]'), '');
     final dir = await getApplicationDocumentsDirectory();
     
-    // === 1. CONEXIÓN DIRECTA YOUTUBE_EXPLODE ===
+    // === 1. CONEXIÓN YOUTUBE EXPLODE ===
     final ytClient = YoutubeExplode(); 
     final manifest = await ytClient.videos.streamsClient.getManifest(videoId);
     
-    // Dejamos que la librería use el mejor contenedor disponible (.webm o .m4a)
-    final streamInfo = manifest.audioOnly.withHighestBitrate();
+    // TRUCO ANTI-ESTRANGULAMIENTO: Forzar M4A (MP4) para evadir los servidores WebM más vigilados
+    final streamMp4 = manifest.audioOnly.where((s) => s.container.name == 'mp4');
+    final streamInfo = streamMp4.isNotEmpty ? streamMp4.withHighestBitrate() : manifest.audioOnly.withHighestBitrate();
+    
     final ext = streamInfo.container.name; 
     final savePath = '${dir.path}/$safeFileId.$ext';
 
-    // === 2. DESCARGA NATIVA RAPIDA ===
+    // === 2. LECTURA MANUAL CON VÁLVULA DE SEGURIDAD ===
     final audioStream = ytClient.videos.streamsClient.get(streamInfo);
     final file = File(savePath);
     final fileStream = file.openWrite();
     
-    await audioStream.pipe(fileStream);
-    await fileStream.flush();
-    await fileStream.close();
-    ytClient.close(); 
+    try {
+      // Leemos los bytes. Si YouTube deja de enviar información por 10 segundos, aborta.
+      await for (final chunk in audioStream.timeout(const Duration(seconds: 10))) {
+        fileStream.add(chunk);
+      }
+      await fileStream.flush();
+    } catch (e) {
+      throw Exception('YouTube estranguló la descarga (Tarpit). Intenta otra pista o cambia tu IP.');
+    } finally {
+      await fileStream.close();
+      ytClient.close(); 
+    }
 
     // === 3. VALIDADOR ANTI-CORRUPCIÓN ===
     final size = await file.length();
     if (size == 0) {
-      throw Exception('YouTube bloqueó el archivo (0 bytes). Intenta otra pista.');
+      throw Exception('YouTube bloqueó el archivo (0 bytes).');
     }
 
-    // === 4. GUARDADO EN HIVE ANTI-CONGELAMIENTO ===
-    // 🚨 ¡CUIDADO! CAMBIA LA SIGUIENTE PALABRA AL NOMBRE EXACTO DE TU BÓVEDA 🚨
-    // Si tu pantalla de Bóveda lee de 'offline_media', cámbialo abajo.
-    const boxName = 'offline_media'; 
+    // === 4. GUARDADO EN HIVE ===
+    const boxName = 'downloads'; // ¡Recuerda cambiarlo si usas otro nombre en tu Bóveda!
     
     Box downloadsBox;
     if (Hive.isBoxOpen(boxName)) {
@@ -1169,17 +1176,17 @@ Future<void> downloadAudio(BuildContext context, dynamic item) async {
     );
 
   } catch (e) {
-    // Si hay error, cierra la caja y muestra el rojo
     try { navigator.pop(); } catch (_) {}
     scaffoldMessenger.showSnackBar(
       SnackBar(
         content: Text('🛑 ERROR: $e'),
         backgroundColor: Colors.red,
-        duration: const Duration(seconds: 10), 
+        duration: const Duration(seconds: 8), 
       ),
     );
   }
 }
+
 class OfflineVaultScreen extends StatelessWidget {
   const OfflineVaultScreen({super.key});
 
