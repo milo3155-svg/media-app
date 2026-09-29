@@ -1144,7 +1144,7 @@ Future<void> downloadAudio(BuildContext context, dynamic item) async {
     await fileStream.flush();
     await fileStream.close();
     ytClient.close();
-    
+
     // === PASO C: GUARDADO EN BÓVEDA LOCAL (HIVE) ===
     final downloadsBox = Hive.box('downloads');
     await downloadsBox.put(videoId, {
