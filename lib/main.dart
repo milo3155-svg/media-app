@@ -1069,18 +1069,11 @@ class _CerrojoScreenState extends State<CerrojoScreen> {
 }
 
 Future<void> downloadAudio(BuildContext context, dynamic item) async {
-  final messenger = ScaffoldMessenger.of(context);
-  bool isDialogShowing = false;
+  // 1. EXTRAER CONTEXTO AL INICIO (Previene el crash por pérdida de contexto)
+  final scaffoldMessenger = ScaffoldMessenger.of(context);
+  final navigator = Navigator.of(context, rootNavigator: true);
+  bool isDialogShowing = true;
 
-  void closeDialog() {
-    if (isDialogShowing) {
-      try { Navigator.of(context, rootNavigator: true).pop(); } catch (_) {}
-      isDialogShowing = false;
-    }
-  }
-
-  // 1. Mostrar diálogo inamovible (barrierDismissible = false)
-  isDialogShowing = true;
   showDialog(
     context: context,
     barrierDismissible: false,
@@ -1090,7 +1083,7 @@ Future<void> downloadAudio(BuildContext context, dynamic item) async {
       content: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Text('Descarga Blindada 3.0...\nObteniendo audio original.', style: TextStyle(color: Colors.grey, fontSize: 14)),
+          Text('Extrayendo audio de alta calidad...', style: TextStyle(color: Colors.grey, fontSize: 14)),
           SizedBox(height: 20),
           LinearProgressIndicator(color: Color(0xFF4ADE80)),
         ],
@@ -1120,33 +1113,27 @@ Future<void> downloadAudio(BuildContext context, dynamic item) async {
     final dir = await getApplicationDocumentsDirectory();
     final savePath = '${dir.path}/$videoId.m4a';
 
-    messenger.showSnackBar(const SnackBar(content: Text('Extrayendo enlace de alta calidad... ⏳'), backgroundColor: Colors.blue));
-
-// === PASO A: OBTENER EL FLUJO DE AUDIO (YoutubeExplode) ===
+    // === PASO A: DESCARGA NATIVA (YoutubeExplode 3.1.0) ===
     final ytClient = YoutubeExplode(); 
     final manifest = await ytClient.videos.streamsClient.getManifest(videoId);
-    
     final streamMp4 = manifest.audioOnly.where((s) => s.container.name == 'mp4');
     final streamInfo = streamMp4.isNotEmpty ? streamMp4.withHighestBitrate() : manifest.audioOnly.withHighestBitrate();
-    
-    // Obtenemos los datos directos en lugar de la URL
     final audioStream = ytClient.videos.streamsClient.get(streamInfo);
     
-    // === PASO B: ESCRITURA BLINDADA (Sin usar .pipe) ===
     final file = File(savePath);
     final fileStream = file.openWrite();
-    
-    // Descargamos y escribimos fragmento por fragmento
     await for (final data in audioStream) {
       fileStream.add(data);
     }
-    
     await fileStream.flush();
     await fileStream.close();
-    ytClient.close();
+    ytClient.close(); 
 
-    // === PASO C: GUARDADO EN BÓVEDA LOCAL (HIVE) ===
-    final downloadsBox = Hive.box('downloads');
+    // === PASO B: GUARDADO SEGURO EN HIVE ===
+    // IMPORTANTE: Asegúrate de que 'offline_media' es el nombre que usas en tu Bóveda. Si es otro, cámbialo aquí.
+    const boxName = 'offline_media'; 
+    final downloadsBox = Hive.isBoxOpen(boxName) ? Hive.box(boxName) : await Hive.openBox(boxName);
+    
     await downloadsBox.put(videoId, {
       'id': videoId,
       'title': videoTitle,
@@ -1156,23 +1143,31 @@ Future<void> downloadAudio(BuildContext context, dynamic item) async {
       'localPath': savePath,
     });
   
-    // === PASO D: ÉXITO Y CERRAR ===
-    closeDialog();
-    messenger.showSnackBar(
+    // === PASO C: CERRAR Y NOTIFICAR ÉXITO ===
+    if (isDialogShowing) {
+      navigator.pop();
+      isDialogShowing = false;
+    }
+    
+    scaffoldMessenger.showSnackBar(
       const SnackBar(
         content: Text('¡Descarga completada! Lista en tu Bóveda 🎵'),
         backgroundColor: Colors.green,
-        duration: Duration(seconds: 3),
+        duration: Duration(seconds: 4),
       ),
     );
 
   } catch (e) {
-    closeDialog();
-    messenger.showSnackBar(
+    // === PASO D: MANEJO DE ERRORES BLINDADO ===
+    if (isDialogShowing) {
+      navigator.pop();
+      isDialogShowing = false;
+    }
+    scaffoldMessenger.showSnackBar(
       SnackBar(
         content: Text('Error al descargar: $e'),
         backgroundColor: Colors.red,
-        duration: const Duration(seconds: 5),
+        duration: const Duration(seconds: 8), 
       ),
     );
   }
