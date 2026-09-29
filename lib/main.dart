@@ -1081,7 +1081,7 @@ Future<void> downloadAudio(BuildContext context, dynamic item) async {
       content: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Text('Extrayendo audio...', style: TextStyle(color: Colors.grey, fontSize: 14)),
+          Text('Buscando fuente alternativa segura...', style: TextStyle(color: Colors.grey, fontSize: 14)),
           SizedBox(height: 20),
           LinearProgressIndicator(color: Color(0xFF4ADE80)),
         ],
@@ -1090,8 +1090,9 @@ Future<void> downloadAudio(BuildContext context, dynamic item) async {
   );
 
   try {
+    // 1. OBTENEMOS LOS DATOS ORIGINALES (Los que el usuario vio en pantalla)
     final isMediaItem = item is MediaItem;
-    final String videoId = isMediaItem ? item.id : item.id.value;
+    final String originalVideoId = isMediaItem ? item.id : item.id.value;
     final String videoTitle = item.title;
   
     String artist = 'Desconocido';
@@ -1108,46 +1109,59 @@ Future<void> downloadAudio(BuildContext context, dynamic item) async {
       try { duration = item.duration.inMilliseconds; } catch (_) {}
     }
 
-    final safeFileId = videoId.replaceAll(RegExp(r'[^a-zA-Z0-9_\-]'), '');
+    // === 2. LA BÚSQUEDA FANTASMA ===
+    final ytClient = YoutubeExplode(); 
+    
+    // Creamos la búsqueda para evadir a Vevo (buscamos el título + artista + "audio")
+    final searchQuery = '$videoTitle $artist audio';
+    final searchResults = await ytClient.search.search(searchQuery);
+    
+    if (searchResults.isEmpty) {
+      throw Exception('No se encontró una versión alternativa de esta pista.');
+    }
+    
+    // Tomamos el primer video de la búsqueda fantasma (Libre de DRM)
+    final ghostVideo = searchResults.first;
+    final ghostVideoId = ghostVideo.id.value;
+
+    // === 3. DESCARGA DEL ARCHIVO FANTASMA ===
+    // Usamos el ID original para nombrar el archivo localmente y no perder la referencia
+    final safeFileId = originalVideoId.replaceAll(RegExp(r'[^a-zA-Z0-9_\-]'), ''); 
     final dir = await getApplicationDocumentsDirectory();
     
-    // === 1. CONEXIÓN YOUTUBE EXPLODE ===
-    final ytClient = YoutubeExplode(); 
-    final manifest = await ytClient.videos.streamsClient.getManifest(videoId);
+    final manifest = await ytClient.videos.streamsClient.getManifest(ghostVideoId);
     
-    // TRUCO ANTI-ESTRANGULAMIENTO: Forzar M4A (MP4) para evadir los servidores WebM más vigilados
     final streamMp4 = manifest.audioOnly.where((s) => s.container.name == 'mp4');
     final streamInfo = streamMp4.isNotEmpty ? streamMp4.withHighestBitrate() : manifest.audioOnly.withHighestBitrate();
     
     final ext = streamInfo.container.name; 
     final savePath = '${dir.path}/$safeFileId.$ext';
 
-    // === 2. LECTURA MANUAL CON VÁLVULA DE SEGURIDAD ===
     final audioStream = ytClient.videos.streamsClient.get(streamInfo);
     final file = File(savePath);
     final fileStream = file.openWrite();
     
     try {
-      // Leemos los bytes. Si YouTube deja de enviar información por 10 segundos, aborta.
-      await for (final chunk in audioStream.timeout(const Duration(seconds: 10))) {
+      // Válvula de seguridad: 15 segundos máximo por pedazo para evitar congelamientos
+      await for (final chunk in audioStream.timeout(const Duration(seconds: 15))) {
         fileStream.add(chunk);
       }
       await fileStream.flush();
     } catch (e) {
-      throw Exception('YouTube estranguló la descarga (Tarpit). Intenta otra pista o cambia tu IP.');
+      throw Exception('La conexión se estranguló. Intenta de nuevo.');
     } finally {
       await fileStream.close();
       ytClient.close(); 
     }
 
-    // === 3. VALIDADOR ANTI-CORRUPCIÓN ===
     final size = await file.length();
     if (size == 0) {
-      throw Exception('YouTube bloqueó el archivo (0 bytes).');
+      throw Exception('El archivo se guardó vacío (0 bytes).');
     }
 
-    // === 4. GUARDADO EN HIVE ===
-    const boxName = 'downloads'; // ¡Recuerda cambiarlo si usas otro nombre en tu Bóveda!
+    // === 4. MAQUILLAJE Y GUARDADO EN HIVE ===
+    // 🚨 REVISA ESTA LÍNEA: Cambia 'downloads' por el nombre real de tu bóveda si usas otro (ej. 'offline_media')
+    const boxName = 'downloads'; 
     
     Box downloadsBox;
     if (Hive.isBoxOpen(boxName)) {
@@ -1156,8 +1170,9 @@ Future<void> downloadAudio(BuildContext context, dynamic item) async {
       downloadsBox = await Hive.openBox(boxName);
     }
     
-    await downloadsBox.put(videoId, {
-      'id': videoId,
+    // AQUÍ ESTÁ LA MAGIA: Guardamos usando los metadatos ORIGINALES (Vevo), no los del fantasma
+    await downloadsBox.put(originalVideoId, {
+      'id': originalVideoId,
       'title': videoTitle,
       'artist': artist,
       'artUri': artUri,
