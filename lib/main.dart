@@ -10,6 +10,7 @@ import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'dart:math' as math;
 import 'dart:async'; 
+import 'package:dio/dio.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:http/http.dart' as http;
 import 'dart:async';
@@ -1070,10 +1071,12 @@ class _CerrojoScreenState extends State<CerrojoScreen> {
 Future<void> downloadAudio(BuildContext context, dynamic item) async {
   final scaffoldMessenger = ScaffoldMessenger.of(context);
   
-  // ¡Ahora sí se puede cerrar tocando afuera!
+  // Guardamos el contexto del Navigator para cerrarlo de forma segura
+  final navigator = Navigator.of(context, rootNavigator: true);
+
   showDialog(
     context: context,
-    barrierDismissible: true, 
+    barrierDismissible: true, // Te permite cerrarlo tocando fuera por si acaso
     builder: (context) => const AlertDialog(
       backgroundColor: Color(0xFF1A1A1A),
       title: Text('Descargando pista', style: TextStyle(color: Colors.white)),
@@ -1107,39 +1110,41 @@ Future<void> downloadAudio(BuildContext context, dynamic item) async {
       try { duration = item.duration.inMilliseconds; } catch (_) {}
     }
 
-    // Limpiamos el ID por si trae caracteres inválidos que causen crash al crear el archivo
     final safeFileId = videoId.replaceAll(RegExp(r'[^a-zA-Z0-9_\-]'), '');
     final dir = await getApplicationDocumentsDirectory();
     final savePath = '${dir.path}/$safeFileId.m4a';
 
-    scaffoldMessenger.showSnackBar(const SnackBar(content: Text('Paso 1: Obteniendo enlace...'), duration: Duration(seconds: 1)));
-
- scaffoldMessenger.showSnackBar(const SnackBar(content: Text('Paso 1: Obteniendo enlace seguro...'), duration: Duration(seconds: 1)));
-
-    // === PASO A: DESCARGA NATIVA COMPLETA CON YOUTUBE_EXPLODE (Cero Dio) ===
+    // === PASO 1: OBTENER URL SEGURA (YoutubeExplode) ===
     final ytClient = YoutubeExplode(); 
     final manifest = await ytClient.videos.streamsClient.getManifest(videoId);
     final streamMp4 = manifest.audioOnly.where((s) => s.container.name == 'mp4');
     final streamInfo = streamMp4.isNotEmpty ? streamMp4.withHighestBitrate() : manifest.audioOnly.withHighestBitrate();
-    
-    scaffoldMessenger.showSnackBar(const SnackBar(content: Text('Paso 2: Descargando audio nativo...'), duration: Duration(seconds: 1)));
-
-    // Extraemos el flujo directamente desde YouTube
-    final audioStream = ytClient.videos.streamsClient.get(streamInfo);
-    
-    // Lo conectamos (pipe) directo al archivo. Pipe gestiona la memoria y cierra el archivo solo.
-    final file = File(savePath);
-    final fileStream = file.openWrite();
-    
-    await audioStream.pipe(fileStream);
-    
-    // Cerramos el cliente de YouTube
+    final downloadUrl = streamInfo.url.toString();
     ytClient.close(); 
 
-    scaffoldMessenger.showSnackBar(const SnackBar(content: Text('Paso 3: Guardando en bóveda...'), duration: Duration(seconds: 1)));
+    // === PASO 2: DESCARGA BLINDADA CON DIO Y CABECERA 'RANGE' ===
+    final dio = Dio();
+    
+    // Si el servidor se queda en silencio por 30 segundos, Dio aborta y arroja error visible.
+    dio.options.connectTimeout = const Duration(seconds: 15);
+    dio.options.receiveTimeout = const Duration(seconds: 30);
+    
+    await dio.download(
+      downloadUrl,
+      savePath,
+      options: Options(
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'Accept': '/',
+          'Range': 'bytes=0-', // <-- LA LLAVE MAESTRA CONTRA EL ERROR 403 Y LOS CONGELAMIENTOS
+        },
+        // Permitimos códigos de éxito estándar
+        validateStatus: (status) => status != null && status < 400,
+      ),
+    );
 
-    // === PASO B: GUARDADO SEGURO EN HIVE ===
-    const boxName = 'offline_media'; // <-- REVISA QUE ESTE SEA EL NOMBRE DE TU BÓVEDA
+    // === PASO 3: GUARDADO EN BÓVEDA LOCAL (HIVE) ===
+    const boxName = 'offline_media'; // Asegúrate de que coincida con tu pantalla de bóveda
     final downloadsBox = Hive.isBoxOpen(boxName) ? Hive.box(boxName) : await Hive.openBox(boxName);
     
     await downloadsBox.put(videoId, {
@@ -1151,8 +1156,8 @@ Future<void> downloadAudio(BuildContext context, dynamic item) async {
       'localPath': savePath,
     });
   
-    // === PASO C: CERRAR Y ÉXITO ===
-    try { Navigator.of(context, rootNavigator: true).pop(); } catch (_) {}
+    // === PASO 4: CERRAR CAJA Y NOTIFICAR ÉXITO ===
+    try { navigator.pop(); } catch (_) {}
     
     scaffoldMessenger.showSnackBar(
       const SnackBar(
@@ -1163,9 +1168,8 @@ Future<void> downloadAudio(BuildContext context, dynamic item) async {
     );
 
   } catch (e) {
-    // === PASO D: MANEJO DE ERRORES BLINDADO ===
-    // Envolvemos el cierre en un try-catch para que si falla, el código NO se detenga y pinte el error rojo
-    try { Navigator.of(context, rootNavigator: true).pop(); } catch (_) {}
+    // === MANEJO DE ERRORES: GARANTIZA CIERRE Y NOTIFICACIÓN VISIBLE ===
+    try { navigator.pop(); } catch (_) {}
     
     scaffoldMessenger.showSnackBar(
       SnackBar(
