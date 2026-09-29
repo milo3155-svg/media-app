@@ -1070,31 +1070,29 @@ class _CerrojoScreenState extends State<CerrojoScreen> {
 
 Future<void> downloadAudio(BuildContext context, dynamic item) async {
   final messenger = ScaffoldMessenger.of(context);
-  YoutubeExplode? yt;
-  
   bool isDialogShowing = false;
+
   void closeDialog() {
-    try {
     if (isDialogShowing) {
-      Navigator.of(context, rootNavigator:true).pop();
+      try { Navigator.of(context, rootNavigator: true).pop(); } catch (_) {}
       isDialogShowing = false;
     }
-  } catch (ignore) {} //si falla al cerrar, ignoramos el choque para no trabar la app
-}
+  }
 
-  // Muestra tu diálogo de carga en la UI
+  // 1. Mostrar diálogo inamovible (barrierDismissible = false)
   isDialogShowing = true;
   showDialog(
     context: context,
-    barrierDismissible: true,
-    builder: (context) => AlertDialog(
-      title: const Text('Descargando pista'),
+    barrierDismissible: false,
+    builder: (context) => const AlertDialog(
+      backgroundColor: Color(0xFF1A1A1A),
+      title: Text('Descargando pista', style: TextStyle(color: Colors.white)),
       content: Column(
         mainAxisSize: MainAxisSize.min,
-        children: const [
-          Text('Descarga Blindada 3.0...\nOptimizando stream oficial.'),
+        children: [
+          Text('Descarga Blindada 3.0...\nObteniendo audio original.', style: TextStyle(color: Colors.grey, fontSize: 14)),
           SizedBox(height: 20),
-          LinearProgressIndicator(),
+          LinearProgressIndicator(color: Color(0xFF4ADE80)),
         ],
       ),
     ),
@@ -1104,11 +1102,11 @@ Future<void> downloadAudio(BuildContext context, dynamic item) async {
     final isMediaItem = item is MediaItem;
     final String videoId = isMediaItem ? item.id : item.id.value;
     final String videoTitle = item.title;
-
+  
     String artist = 'Desconocido';
     String artUri = '';
     int duration = 0;
-
+  
     if (isMediaItem) {
       artist = item.artist ?? 'Desconocido';
       artUri = item.artUri?.toString() ?? '';
@@ -1118,71 +1116,59 @@ Future<void> downloadAudio(BuildContext context, dynamic item) async {
       try { artUri = item.thumbnails.highestResUrl; } catch (_) {}
       try { duration = item.duration.inMilliseconds; } catch (_) {}
     }
-
+  
     final dir = await getApplicationDocumentsDirectory();
     final savePath = '${dir.path}/$videoId.m4a';
-    final file = File(savePath);
 
-// === 1. DESCARGA LIMPIA (YOUTUBE EXPLODE) ===
-      // Instanciamos el cliente aquí mismo para que nunca sea null
+    messenger.showSnackBar(const SnackBar(content: Text('Extrayendo enlace de alta calidad... ⏳'), backgroundColor: Colors.blue));
 
-      messenger.showSnackBar(const SnackBar(content: Text('Iniciando descarga limpia... ⏳'), backgroundColor: Colors.blue));
-      final ytClient = YoutubeExplode(); 
-      
-      final manifest = await ytClient.videos.streamsClient.getManifest(videoId);
-      
-      // Filtramos para asegurar mp4 y mejor calidad de audio
-      final streamMp4 = manifest.audioOnly.where((s) => s.container.name == 'mp4');
-      final streamInfo = streamMp4.isNotEmpty ? streamMp4.withHighestBitrate() : manifest.audioOnly.withHighestBitrate();
-      
-      final stream = ytClient.videos.streamsClient.get(streamInfo);
-      final outputStream = file.openWrite();
-      
-      await stream.pipe(outputStream);
-      await outputStream.flush();
-      await outputStream.close();
-      ytClient.close(); // Cerramos el cliente para no dejar procesos colgados
+    // === PASO A: OBTENER URL PURA (YoutubeExplode) ===
+    final ytClient = YoutubeExplode(); 
+    final manifest = await ytClient.videos.streamsClient.getManifest(videoId);
+    
+    final streamMp4 = manifest.audioOnly.where((s) => s.container.name == 'mp4');
+    final streamInfo = streamMp4.isNotEmpty ? streamMp4.withHighestBitrate() : manifest.audioOnly.withHighestBitrate();
+    final downloadUrl = streamInfo.url.toString();
+    
+    ytClient.close(); // Cerramos el cliente rápido para liberar memoria
 
-      // === 2. GUARDADO EN HIVE ===
-      final downloadsBox = Hive.box('downloads');
-      await downloadsBox.put(videoId, {
-        'id': videoId,
-        'title': videoTitle,
-        'artist': artist,
-        'artUri': artUri,
-        'duration': duration,
-        'localPath': savePath,
-      });
+    // === PASO B: DESCARGA ESTABLE CON DIO ===
+    // Esto resuelve de raíz el congelamiento de la aplicación
+    final dio = Dio();
+    await dio.download(downloadUrl, savePath);
 
-      // === 3. ÉXITO Y CERRAR MODAL ===
-      messenger.showSnackBar(
-        const SnackBar(
-          content: Text('Descarga completada y lista para reproducir 🎵'),
-          backgroundColor: Colors.green,
-          duration: Duration(seconds: 2),
-        ),
-      );
-      
-      // Cambia closeDialog() por tu función real si usas otra (ej. Navigator.pop(context);)
-      Navigator.of(context, rootNavigator: true).pop();
-
-} catch (e) {
-    // 1. Mostrar el mensaje rojo ANTES de tocar la ventana
+    // === PASO C: GUARDADO EN BÓVEDA LOCAL (HIVE) ===
+    final downloadsBox = Hive.box('downloads');
+    await downloadsBox.put(videoId, {
+      'id': videoId,
+      'title': videoTitle,
+      'artist': artist,
+      'artUri': artUri,
+      'duration': duration,
+      'localPath': savePath,
+    });
+  
+    // === PASO D: ÉXITO Y CERRAR ===
+    closeDialog();
     messenger.showSnackBar(
-      SnackBar(
-        content: Text('Error: $e'),
-        backgroundColor: Colors.red,
-        duration: const Duration(seconds: 10),
+      const SnackBar(
+        content: Text('¡Descarga completada! Lista en tu Bóveda 🎵'),
+        backgroundColor: Colors.green,
+        duration: Duration(seconds: 3),
       ),
     );
-    
-    // 2. Intentar destruirla después
-    closeDialog();
-  } finally {
-    yt?.close();
-  }
-  }
 
+  } catch (e) {
+    closeDialog();
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text('Error al descargar: $e'),
+        backgroundColor: Colors.red,
+        duration: const Duration(seconds: 5),
+      ),
+    );
+  }
+}
 
 class OfflineVaultScreen extends StatelessWidget {
   const OfflineVaultScreen({super.key});
