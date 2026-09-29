@@ -196,7 +196,7 @@ Future<void> downloadAudio(BuildContext context, dynamic item) async {
     final isMediaItem = item is MediaItem; final String videoId = isMediaItem ? item.id : item.id.value; final String videoTitle = item.title;
     String artist = 'Desconocido'; String artUri = ''; int duration = 0;
     if (isMediaItem) { artist = item.artist ?? 'Desconocido'; artUri = item.artUri?.toString() ?? ''; duration = item.duration?.inMilliseconds ?? 0; } 
-    else { try { artist = item.author; } catch () {} try { artUri = item.thumbnails.highestResUrl; } catch () {} try { duration = item.duration.inMilliseconds; } catch (_) {} }
+    else { try { artist = item.author; } catch (e) {} try { artUri = item.thumbnails.highestResUrl; } catch (e) {} try { duration = item.duration.inMilliseconds; } catch (_) {} }
     final dir = await getApplicationDocumentsDirectory(); final savePath = '${dir.path}/$videoId.m4a'; final file = File(savePath);
     messenger.showSnackBar(const SnackBar(content: Text('Iniciando descarga limpia... ⏳'), backgroundColor: Colors.blue));
     final ytClient = YoutubeExplode(); 
@@ -424,7 +424,7 @@ class _SearchScreenState extends State<SearchScreen> {
   }
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return Scaffold()
       appBar: AppBar(title: const Text('Buscador VIP', style: TextStyle(fontWeight: FontWeight.bold))),
       body: Column(
         children: [
