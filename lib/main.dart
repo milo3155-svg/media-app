@@ -428,7 +428,7 @@ class _SearchScreenState extends State<SearchScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Buscador VIP', style: TextStyle(fontWeight: FontWeight.bold)),
-  
+      ),
       body: Column(
 
         children: [
