@@ -1115,25 +1115,29 @@ Future<void> downloadAudio(BuildContext context, dynamic item) async {
 
     scaffoldMessenger.showSnackBar(const SnackBar(content: Text('Paso 1: Obteniendo enlace...'), duration: Duration(seconds: 1)));
 
-    // === PASO A: DESCARGA NATIVA ===
+   // === PASO A: OBTENER URL SEGURA (YoutubeExplode 3.1.0) ===
     final ytClient = YoutubeExplode(); 
     final manifest = await ytClient.videos.streamsClient.getManifest(videoId);
     final streamMp4 = manifest.audioOnly.where((s) => s.container.name == 'mp4');
     final streamInfo = streamMp4.isNotEmpty ? streamMp4.withHighestBitrate() : manifest.audioOnly.withHighestBitrate();
-    final audioStream = ytClient.videos.streamsClient.get(streamInfo);
     
-    scaffoldMessenger.showSnackBar(const SnackBar(content: Text('Paso 2: Descargando y escribiendo...'), duration: Duration(seconds: 1)));
-
-    final file = File(savePath);
-    final fileStream = file.openWrite();
-    await for (final data in audioStream) {
-      fileStream.add(data);
-    }
-    await fileStream.flush();
-    await fileStream.close();
+    // En lugar de leer los bytes a mano, sacamos la URL autorizada
+    final downloadUrl = streamInfo.url.toString();
     ytClient.close(); 
 
-    scaffoldMessenger.showSnackBar(const SnackBar(content: Text('Paso 3: Guardando en bóveda...'), duration: Duration(seconds: 1)));
+    scaffoldMessenger.showSnackBar(const SnackBar(content: Text('Paso 2: Descargando con Dio...'), duration: Duration(seconds: 1)));
+
+    // === PASO A.2: DESCARGA CON DIO (Sin colgados) ===
+    final dio = Dio();
+    await dio.download(
+      downloadUrl,
+      savePath,
+      options: Options(
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        },
+      ),
+    )
 
     // === PASO B: GUARDADO SEGURO EN HIVE ===
     const boxName = 'offline_media'; // <-- REVISA QUE ESTE SEA EL NOMBRE DE TU BÓVEDA
