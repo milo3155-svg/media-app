@@ -17,16 +17,19 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:flutter_downloader/flutter_downloader.dart';
 
+
 class VIPHttpOverrides extends HttpOverrides {
   @override HttpClient createHttpClient(SecurityContext? context) {
     return super.createHttpClient(context)..userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36';
   }
 }
 
+
 late MyAudioHandler audioHandler;
 final ValueNotifier<bool> isHDMode = ValueNotifier<bool>(true);
 final ValueNotifier<Color> appColor = ValueNotifier<Color>(Colors.cyanAccent); 
 final ValueNotifier<int> sleepTimerRemaining = ValueNotifier<int>(0); 
+
 
 Future<String?> obtenerAudioDirecto(String videoId) async {
   try {
@@ -48,12 +51,15 @@ Future<String?> obtenerAudioDirecto(String videoId) async {
 }
 
 
+
+
 String formatGlobalDuration(Duration? d) {
   if (d == null) return "Live";
   final minutes = d.inMinutes.remainder(60).toString().padLeft(2, '0');
   final seconds = d.inSeconds.remainder(60).toString().padLeft(2, '0');
   return "${d.inHours > 0 ? '${d.inHours}:' : ''}$minutes:$seconds";
 }
+
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -83,10 +89,12 @@ Future<void> main() async {
   runApp(const MediaApp());
 }
 
+
 class ConspiracyLogo extends StatelessWidget {
   final double size; final Color color; const ConspiracyLogo({super.key, this.size = 150.0, required this.color});
   @override Widget build(BuildContext context) { return SizedBox(width: size, height: size, child: CustomPaint(painter: _OsirisEyePainter(color: color))); }
 }
+
 
 class _OsirisEyePainter extends CustomPainter {
   final Color color; _OsirisEyePainter({required this.color});
@@ -109,11 +117,13 @@ class _OsirisEyePainter extends CustomPainter {
   @override bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
 }
 
+
 class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
   final _player = AudioPlayer(); 
   late final YoutubeExplode _yt; 
   Timer? _countdownTimer; 
   bool _isTransitioning = false; 
+
 
   MyAudioHandler() {
     _yt = YoutubeExplode();
@@ -140,22 +150,26 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
     });
   }
 
+
   void _onTrackFinished() {
     if (_isTransitioning) return;
     _isTransitioning = true;
     _handleAutoPlayRadio();
   }
 
+
   Future<void> _handleAutoPlayRadio() async {
     final currentQueue = queue.value; 
     final currentItem = mediaItem.value; 
     if (currentItem == null) { _isTransitioning = false; return; }
+
 
     final currentIndex = currentQueue.indexWhere((item) => item.id == currentItem.id);
     if (currentIndex != -1 && currentIndex < currentQueue.length - 1) { 
       await skipToNextBase(); 
       _isTransitioning = false; return;
     }
+
 
     try {
       Video? nextVideo;
@@ -181,12 +195,14 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
         }
       } catch (_) {}
 
+
       if (nextVideo == null) {
         final query = "${currentItem.artist} mix";
         final searchResults = await _yt.search.search(query);
         final list = searchResults.where((v) => v.id.value != currentItem.id).toList();
         if (list.isNotEmpty) nextVideo = list.first;
       }
+
 
       if (nextVideo != null) {
         final newItem = MediaItem(id: nextVideo.id.value, title: nextVideo.title, artist: nextVideo.author, duration: nextVideo.duration, artUri: Uri.parse(nextVideo.thumbnails.highResUrl));
@@ -197,6 +213,7 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
     } catch (e) { } finally { _isTransitioning = false; }
   }
 
+
   void _saveResumePosition(String id, int milliseconds) { final historyBox = Hive.box('history'); if (historyBox.containsKey(id)) { final item = Map<String, dynamic>.from(historyBox.get(id)); item['savedPosition'] = milliseconds; historyBox.put(id, item); } }
   
   @override Future<void> customAction(String name, [Map<String, dynamic>? extras]) async { 
@@ -206,6 +223,7 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
       queue.add([]);
       return;
     }
+
 
     if (name == 'playLocal' && extras != null) {
           await _player.stop();
@@ -219,6 +237,7 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
           ));
           return;
         }
+
 
     if (name == 'setSleepTimer' && extras != null) { 
       int minutes = extras['minutes']; _countdownTimer?.cancel(); 
@@ -239,11 +258,14 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
     else { _onTrackFinished(); }
   }
 
+
   Future<void> skipToNextBase() async {
     final queueList = queue.value; final currentItem = mediaItem.value; final currentIndex = queueList.indexWhere((item) => item.id == currentItem?.id); if (currentIndex != -1 && currentIndex < queueList.length - 1) await playMediaItem(queueList[currentIndex + 1]);
   }
 
+
   @override Future<void> skipToPrevious() async { final queueList = queue.value; if (queueList.isEmpty) return; final currentItem = mediaItem.value; final currentIndex = queueList.indexWhere((item) => item.id == currentItem?.id); if (currentIndex > 0) await playMediaItem(queueList[currentIndex - 1]); }
+
 
   @override
   Future<void> playMediaItem(MediaItem item) async {
@@ -278,6 +300,7 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
         )
       );
 
+
       await _player.setAudioSource(cachingSource);
       
       if (savedPosition > 0) { await _player.seek(Duration(milliseconds: savedPosition)); } 
@@ -288,15 +311,18 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
   void shuffleQueue() { final currentQueue = queue.value.toList()..shuffle(); queue.add(currentQueue); }
 }
 
+
 Future<void> globalPlay(MediaItem item) async {
   await audioHandler.updateQueue([item]); 
   await audioHandler.playMediaItem(item);
 }
 
+
 Future<void> globalPlayQueue(List<MediaItem> items, int startIndex) async {
   await audioHandler.updateQueue(items);
   await audioHandler.playMediaItem(items[startIndex]);
 }
+
 
 void globalShowOptions(BuildContext context, Video video, Color color) {
   showModalBottomSheet(
@@ -352,6 +378,7 @@ void globalShowOptions(BuildContext context, Video video, Color color) {
   );
 }
 
+
 void _showPlaylistDialog(BuildContext context, Video video, Color color) {
   final box = Hive.box('playlists');
   final songData = {'id': video.id.value, 'title': video.title, 'artist': video.author, 'artUri': video.thumbnails.highResUrl, 'duration': video.duration?.inMilliseconds ?? 0};
@@ -367,6 +394,7 @@ void _showPlaylistDialog(BuildContext context, Video video, Color color) {
   );
 }
 
+
 void _showCreatePlaylistDialog(BuildContext context, Map songData, Color color) {
   final textController = TextEditingController();
   showDialog(context: context, builder: (context) => AlertDialog(backgroundColor: const Color(0xFF1A1A1A), title: const Text("Nueva Playlist", style: TextStyle(color: Colors.white)),
@@ -378,12 +406,14 @@ void _showCreatePlaylistDialog(BuildContext context, Map songData, Color color) 
   ));
 }
 
+
 class MediaApp extends StatelessWidget {
   const MediaApp({super.key});
   
   @override 
   Widget build(BuildContext context) {
     final bool accesoConcedido = Hive.box('cerrojo_box').get('acceso_concedido', defaultValue: false);
+
 
     return ValueListenableBuilder<Color>(
       valueListenable: appColor, 
@@ -413,6 +443,7 @@ class MediaApp extends StatelessWidget {
   }
 }
 
+
 class SuperAppSkeleton extends StatefulWidget { const SuperAppSkeleton({super.key}); @override State<SuperAppSkeleton> createState() => _SuperAppSkeletonState(); }
 class _SuperAppSkeletonState extends State<SuperAppSkeleton> {
   int _currentIndex = 0; final List<Widget> _screens = [const HomeScreen(), const SearchScreen(), const OfflineVaultScreen(), const VaultScreen(), const SportsScreen()];
@@ -438,6 +469,7 @@ class _SuperAppSkeletonState extends State<SuperAppSkeleton> {
   }
 }
 
+
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
   Widget _buildHorizontalList(List<Map> items) { return SizedBox(height: 180, child: ListView.builder(scrollDirection: Axis.horizontal, padding: const EdgeInsets.symmetric(horizontal: 16), itemCount: items.length, itemBuilder: (context, index) { final item = items[index]; return GestureDetector(onTap: () async { final mediaItem = MediaItem(id: item['id'], title: item['title'], artist: item['artist'], artUri: Uri.parse(item['artUri']), duration: Duration(milliseconds: item['duration'])); await globalPlay(mediaItem); }, child: Container(width: 120, margin: const EdgeInsets.only(right: 16), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [ClipRRect(borderRadius: BorderRadius.circular(12), child: Image.network(item['artUri'], width: 120, height: 120, fit: BoxFit.cover)), const SizedBox(height: 8), Text(item['title'], maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.white)), Text(item['artist'], maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.grey, fontSize: 11))]))); })); }
@@ -445,6 +477,7 @@ class HomeScreen extends StatelessWidget {
     return Scaffold(body: SafeArea(child: SingleChildScrollView(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Padding(padding: const EdgeInsets.all(16.0), child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [ValueListenableBuilder<Color>(valueListenable: appColor, builder: (context, color, _) => ConspiracyLogo(size: 60, color: color)), IconButton(icon: const Icon(Icons.settings, color: Colors.grey, size: 28), onPressed: () { showModalBottomSheet(context: context, backgroundColor: const Color(0xFF1A1A1A), builder: (context) => Padding(padding: const EdgeInsets.all(20), child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [const Text("Ajustes VIP", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white)), const SizedBox(height: 20), const Text("Color del Neón", style: TextStyle(color: Colors.grey)), const SizedBox(height: 10), Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [Colors.cyanAccent, Colors.purpleAccent, Colors.greenAccent, Colors.amberAccent, Colors.blueAccent, Colors.white].map((c) => GestureDetector(onTap: () { appColor.value = c; Navigator.pop(context); }, child: Container(width: 40, height: 40, decoration: BoxDecoration(color: c, shape: BoxShape.circle, boxShadow: [BoxShadow(color: c, blurRadius: 10)], border: Border.all(color: Colors.white24, width: 2))))).toList()), const SizedBox(height: 20), const Divider(color: Colors.white24), const SizedBox(height: 10), ListTile(leading: const Icon(Icons.delete_forever, color: Colors.redAccent), title: const Text("Botón Nuclear (Borrar Todo)", style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold)), subtitle: const Text("Resetea todo el algoritmo y bóveda", style: TextStyle(color: Colors.grey, fontSize: 12)), onTap: () { Hive.box('history').clear(); Hive.box('favorites').clear(); Hive.box('search_history').clear(); Hive.box('playlists').clear(); audioHandler.updateQueue([]); Navigator.pop(context); ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Memoria de la app borrada. Renacimiento VIP.'), backgroundColor: Colors.redAccent)); })]))); })])), ValueListenableBuilder(valueListenable: Hive.box('history').listenable(), builder: (context, Box box, _) { if (box.isEmpty) return const Padding(padding: EdgeInsets.all(20), child: Text("Comienza a escuchar música para activar el radar.", style: TextStyle(color: Colors.grey))); final allItems = box.values.toList().cast<Map>(); final recentItems = List<Map>.from(allItems)..sort((a, b) => (b['timestamp'] as int? ?? 0).compareTo(a['timestamp'] as int? ?? 0)); final topItems = List<Map>.from(allItems)..sort((a, b) => (b['playCount'] as int? ?? 0).compareTo(a['playCount'] as int? ?? 0)); return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [const Padding(padding: EdgeInsets.symmetric(horizontal: 16, vertical: 10), child: Text("Escuchado Recientemente", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white))), _buildHorizontalList(recentItems), const Padding(padding: EdgeInsets.symmetric(horizontal: 16, vertical: 10), child: Text("Tu Frecuencia Máxima (Top 25)", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white))), _buildHorizontalList(topItems.take(25).toList()), const SizedBox(height: 100)]); })]))));
   }
 }
+
 
 class SearchScreen extends StatefulWidget { const SearchScreen({super.key}); @override State<SearchScreen> createState() => _SearchScreenState(); }
 class _SearchScreenState extends State<SearchScreen> {
@@ -454,8 +487,10 @@ class _SearchScreenState extends State<SearchScreen> {
   
   final Map<String, String> _categories = { 'Tendencias': 'Tendencias música en español', 'Podcasts': 'Podcasts en español', 'Música': 'Música éxitos', 'Mixes': 'Mixes de música', 'Rock': 'Rock en español', 'Live': 'Música en vivo' };
 
+
   @override void initState() { super.initState(); yt = YoutubeExplode(); Permission.notification.request(); }
   @override void dispose() { _debounce?.cancel(); searchController.dispose(); super.dispose(); }
+
 
   void _saveSearchHistory(String query) { if (query.trim().isEmpty) return; final box = Hive.box('search_history'); List<String> searches = box.values.cast<String>().toList(); searches.remove(query); searches.insert(0, query); if (searches.length > 15) searches = searches.sublist(0, 15); box.clear(); box.addAll(searches); }
   void searchVideos(String query) async {
@@ -467,6 +502,7 @@ class _SearchScreenState extends State<SearchScreen> {
       isLoading = true;
       videos.clear();
     });
+
 
     try {
       final results = await yt.search.search(query);
@@ -488,6 +524,7 @@ class _SearchScreenState extends State<SearchScreen> {
       );
     }
   }
+
 
   Widget _buildSearchHistory() {
     return ListView(
@@ -534,7 +571,61 @@ class _SearchScreenState extends State<SearchScreen> {
       appBar: AppBar(title: const Text('Buscador VIP', style: TextStyle(fontWeight: FontWeight.bold))),
       body: Column(
         children: [
-          Padding(padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0), child: Row(children: [ Expanded(child: TextField(controller: searchController, decoration: InputDecoration(hintText: 'Buscar...', border: OutlineInputBorder(borderRadius: BorderRadius.circular(10))), onSubmitted: (val) { if (val.trim().isNotEmpty) { _saveSearchHistory(val); searchVideos(val); } })) ])),
+          // --- INICIO: Búsqueda Predictiva con Temporizador ---
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+            child: Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: searchController,
+                    decoration: InputDecoration(
+                      hintText: 'Buscar...',
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                      // Botón "X" para borrar rápido si hay texto
+                      suffixIcon: searchController.text.isNotEmpty 
+                          ? IconButton(
+                              icon: const Icon(Icons.clear, color: Colors.grey),
+                              onPressed: () {
+                                searchController.clear();
+                                setState(() {
+                                  videos.clear();
+                                });
+                              },
+                            )
+                          : null,
+                    ),
+                    onChanged: (query) {
+                      // 1. Cancelamos el temporizador si sigues escribiendo
+                      if (_debounce?.isActive ?? false) _debounce!.cancel();
+
+
+                      // 2. Iniciamos un nuevo temporizador de 500 ms
+                      _debounce = Timer(const Duration(milliseconds: 500), () {
+                        if (query.trim().isNotEmpty) {
+                          // 3. Ejecutamos la búsqueda automáticamente
+                          searchVideos(query.trim());
+                        } else {
+                           setState(() {
+                             videos.clear(); // Limpia los resultados si borras todo
+                           });
+                        }
+                      });
+                    },
+                    onSubmitted: (val) {
+                      // Por si presionas "Enter" en el teclado
+                      if (_debounce?.isActive ?? false) _debounce!.cancel();
+                      if (val.trim().isNotEmpty) {
+                        _saveSearchHistory(val);
+                        searchVideos(val);
+                      }
+                    },
+                  )
+                )
+              ]
+            )
+          ),
+          // --- FIN: Búsqueda Predictiva con Temporizador ---
           if (isLoading) const Expanded(child: Center(child: CircularProgressIndicator()))
           else if (searchSuggestions.isNotEmpty && videos.isEmpty) Expanded(child: ListView.builder(itemCount: searchSuggestions.length, itemBuilder: (context, index) => ListTile(title: Text(searchSuggestions[index]), onTap: () { searchController.text = searchSuggestions[index]; searchVideos(searchSuggestions[index]); })))
           else if (videos.isEmpty && searchController.text.isEmpty) Expanded(child: _buildSearchHistory())
@@ -659,10 +750,13 @@ class VaultScreen extends StatelessWidget {
   } 
 }
 
+
 class SportsScreen extends StatelessWidget { const SportsScreen({super.key}); @override Widget build(BuildContext context) => Scaffold(backgroundColor: const Color(0xFF0A1910), body: Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [Icon(Icons.sports_soccer, size: 80, color: Colors.greenAccent), const SizedBox(height: 20), const Text('Tablero VIP Deportivo', style: TextStyle(color: Colors.white, fontSize: 18))]))); }
+
 
 class MiniPlayer extends StatelessWidget {
   const MiniPlayer({super.key});
+
 
   @override
   Widget build(BuildContext context) {
@@ -746,8 +840,10 @@ class MiniPlayer extends StatelessWidget {
   }
 }
 
+
 class FullScreenPlayer extends StatelessWidget {
   const FullScreenPlayer({super.key});
+
 
   void _showSleepTimerDialog(BuildContext context) {
     showDialog(
@@ -779,11 +875,13 @@ class FullScreenPlayer extends StatelessWidget {
     );
   }
 
+
   String _formatDuration(Duration d) {
     final minutes = d.inMinutes.remainder(60).toString().padLeft(2, '0');
     final seconds = d.inSeconds.remainder(60).toString().padLeft(2, '0');
     return "${d.inHours > 0 ? '${d.inHours}:' : ''}$minutes:$seconds";
   }
+
 
   @override
   Widget build(BuildContext context) {
@@ -795,6 +893,7 @@ class FullScreenPlayer extends StatelessWidget {
           builder: (context, snapshot) {
             final mediaItem = snapshot.data;
             if (mediaItem == null) return const SizedBox.shrink();
+
 
             return Column(
               children: [
@@ -999,16 +1098,19 @@ class FullScreenPlayer extends StatelessWidget {
   }
 }
 
+
 class CerrojoScreen extends StatefulWidget {
   const CerrojoScreen({super.key});
   @override
   State<CerrojoScreen> createState() => _CerrojoScreenState();
 }
 
+
 class _CerrojoScreenState extends State<CerrojoScreen> {
   final TextEditingController _tokenController = TextEditingController();
   final _cerrojoBox = Hive.box('cerrojo_box');
   bool _error = false;
+
 
   void _validarToken() {
     final tokenIngresado = _tokenController.text.trim();
@@ -1023,6 +1125,7 @@ class _CerrojoScreenState extends State<CerrojoScreen> {
       setState(() { _error = true; });
     }
   }
+
 
   @override
   Widget build(BuildContext context) {
@@ -1068,9 +1171,11 @@ class _CerrojoScreenState extends State<CerrojoScreen> {
   }
 }
 
+
 Future<void> downloadAudio(BuildContext context, dynamic item) async {
   final scaffoldMessenger = ScaffoldMessenger.of(context);
   final navigator = Navigator.of(context, rootNavigator: true);
+
 
   showDialog(
     context: context,
@@ -1088,6 +1193,7 @@ Future<void> downloadAudio(BuildContext context, dynamic item) async {
       ),
     ),
   );
+
 
   try {
     // 1. OBTENEMOS LOS DATOS ORIGINALES (Los que el usuario vio en pantalla)
@@ -1109,6 +1215,7 @@ Future<void> downloadAudio(BuildContext context, dynamic item) async {
       try { duration = item.duration.inMilliseconds; } catch (_) {}
     }
 
+
     // === 2. LA BÚSQUEDA FANTASMA ===
     final ytClient = YoutubeExplode(); 
     
@@ -1124,6 +1231,7 @@ Future<void> downloadAudio(BuildContext context, dynamic item) async {
     final ghostVideo = searchResults.first;
     final ghostVideoId = ghostVideo.id.value;
 
+
     // === 3. DESCARGA DEL ARCHIVO FANTASMA ===
     // Usamos el ID original para nombrar el archivo localmente y no perder la referencia
     final safeFileId = originalVideoId.replaceAll(RegExp(r'[^a-zA-Z0-9_\-]'), ''); 
@@ -1136,6 +1244,7 @@ Future<void> downloadAudio(BuildContext context, dynamic item) async {
     
     final ext = streamInfo.container.name; 
     final savePath = '${dir.path}/$safeFileId.$ext';
+
 
     final audioStream = ytClient.videos.streamsClient.get(streamInfo);
     final file = File(savePath);
@@ -1154,10 +1263,12 @@ Future<void> downloadAudio(BuildContext context, dynamic item) async {
       ytClient.close(); 
     }
 
+
     final size = await file.length();
     if (size == 0) {
       throw Exception('El archivo se guardó vacío (0 bytes).');
     }
+
 
     // === 4. MAQUILLAJE Y GUARDADO EN HIVE ===
     // 🚨 REVISA ESTA LÍNEA: Cambia 'downloads' por el nombre real de tu bóveda si usas otro (ej. 'offline_media')
@@ -1190,6 +1301,7 @@ Future<void> downloadAudio(BuildContext context, dynamic item) async {
       ),
     );
 
+
   } catch (e) {
     try { navigator.pop(); } catch (_) {}
     scaffoldMessenger.showSnackBar(
@@ -1202,8 +1314,10 @@ Future<void> downloadAudio(BuildContext context, dynamic item) async {
   }
 }
 
+
 class OfflineVaultScreen extends StatelessWidget {
   const OfflineVaultScreen({super.key});
+
 
   @override
   Widget build(BuildContext context) {
@@ -1227,11 +1341,13 @@ class OfflineVaultScreen extends StatelessWidget {
             );
           }
 
+
           return ListView.builder(
             itemCount: box.length,
             itemBuilder: (context, index) {
               final key = box.keyAt(index);
               final item = box.get(key);
+
 
               return ListTile(
                 leading: ClipRRect(
@@ -1252,6 +1368,7 @@ class OfflineVaultScreen extends StatelessWidget {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('Bóveda: Reproduciendo ${item['title']}...'))
     );
+
 
     try {
     await audioHandler.customAction('playLocal', {
