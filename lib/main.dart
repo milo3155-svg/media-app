@@ -422,13 +422,13 @@ class _SearchScreenState extends State<SearchScreen> {
       ],
     );
   }
-  
+
 @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Buscador VIP', style: TextStyle(fontWeight: FontWeight.bold)),
-      ),
+  
       body: Column(
 
         children: [
