@@ -1135,7 +1135,16 @@ Future<void> downloadAudio(BuildContext context, dynamic item) async {
     // === PASO B: DESCARGA ESTABLE CON DIO ===
     // Esto resuelve de raíz el congelamiento de la aplicación
     final dio = Dio();
-    await dio.download(downloadUrl, savePath);
+    await dio.download(
+      downloadUrl, 
+      savePath,
+      options: Options(
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'Referer': 'https://www.youtube.com/',
+        },
+      ),
+    );
 
     // === PASO C: GUARDADO EN BÓVEDA LOCAL (HIVE) ===
     final downloadsBox = Hive.box('downloads');
