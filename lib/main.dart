@@ -1137,7 +1137,7 @@ Future<void> downloadAudio(BuildContext context, dynamic item) async {
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         },
       ),
-    )
+    );
 
     // === PASO B: GUARDADO SEGURO EN HIVE ===
     const boxName = 'offline_media'; // <-- REVISA QUE ESTE SEA EL NOMBRE DE TU BÓVEDA
