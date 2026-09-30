@@ -112,3 +112,19 @@ Siguiente paso: Reemplazar el bloque inestable de obtenerAudioDirecto por una im
 - *Persistencia Rápida:* Base de datos NoSQL integrada con Hive para el almacenamiento y lectura instantánea de metadatos (título, artista, portadas y rutas físicas).
 - *Reproducción en Segundo Plano:* Integración completa con el servicio de audio del sistema operativo, permitiendo la reproducción de archivos locales con controles activos desde la pantalla de bloqueo o notificaciones.
 - *Gestión de Memoria Segura:* Instanciación dinámica de clientes de red por cada descarga y cierres automáticos de streams (flush y close) para prevenir fugas de memoria (memory leaks)
+## 🔐 Sistema de Seguridad y Cerrojo (Receptor)
+
+Esta aplicación opera como un *Satélite* dentro del ecosistema Apex. El acceso y las funcionalidades premium están controladas estrictamente por tokens criptográficos offline generados por Apex Admin (Keymaster).
+
+### 1. El Cerrojo (CerrojoScreen)
+Actúa como la barrera principal al iniciar la aplicación. Intercepta el token validado y define la "personalidad" de la interfaz:
+* *Modo VIP / Plus (TKN-PLUS-...): Enciende la bandera is_plus_user = true. Desbloquea la pestaña de la **Bóveda Offline* en la barra de navegación y habilita los botones de descarga de audio.
+* *Modo Austero (TKN-...)*: Enciende la bandera is_plus_user = false. Oculta la Bóveda y bloquea las descargas, manteniendo únicamente las funciones básicas.
+
+### 2. Persistencia y Estado Local (Hive)
+Para mantener la independencia de la nube, la app recuerda su estado de acceso utilizando bases de datos locales Hive:
+* *Box cerrojo_box*: Almacena el estado de acceso_concedido, el token_activo actual, y el nivel de privilegios (is_plus_user). Sobrevive a los reinicios de la app.
+* *Box downloads*: Base de datos local que guarda los metadatos, carátulas y rutas locales de los archivos descargados.
+
+### 3. Motor de Descarga Oculta (Ghost Search)
+Cuando un usuario VIP presiona descargar, el sistema utiliza youtube_explode_dart para realizar una búsqueda silenciosa ("Ghost Search") de una fuente de audio segura. Extrae el flujo MP4 de mayor bitrate, lo guarda en el directorio de documentos de la aplicación y lo registra en la OfflineVaultScreen para reproducción 100% sin conexión.

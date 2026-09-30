@@ -17,6 +17,7 @@ import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:flutter_downloader/flutter_downloader.dart';
 import 'package:cached_network_image/cached_network_image.dart'; // MEJORA VIP: Caché de imágenes
+import 'dart:convert';
 
 
 class VIPHttpOverrides extends HttpOverrides {
@@ -407,7 +408,39 @@ class FullScreenPlayer extends StatelessWidget {
 class CerrojoScreen extends StatefulWidget { const CerrojoScreen({super.key}); @override State<CerrojoScreen> createState() => _CerrojoScreenState(); }
 class _CerrojoScreenState extends State<CerrojoScreen> {
   final TextEditingController _tokenController = TextEditingController(); final _cerrojoBox = Hive.box('cerrojo_box'); bool _error = false;
-  void _validarToken() { final tokenIngresado = _tokenController.text.trim(); if (tokenIngresado.startsWith('TKN')) { _cerrojoBox.put('acceso_concedido', true); _cerrojoBox.put('token_activo', tokenIngresado); Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => const SuperAppSkeleton())); } else { setState(() { _error = true; }); } }
+  void _validarToken() { 
+    final tokenIngresado = _tokenController.text.trim(); 
+    
+    // Verificamos si es una llave maestra de Apex
+    if (tokenIngresado.startsWith('APX-')) { 
+      try {
+        // 1. Quitamos el 'APX-' y desencriptamos
+        final base64String = tokenIngresado.substring(4);
+        final rawData = utf8.decode(base64Decode(base64String)); 
+        
+        // 2. Partimos los datos (ej: "6573|1|0|0|30")
+        final partes = rawData.split('|');
+
+        if (partes.length == 5) {
+          // El índice 2 es la Bóveda (0 = Apagada, 1 = Encendida)
+          final tieneBoveda = partes[2] == '1'; 
+
+          _cerrojoBox.put('acceso_concedido', true); 
+          _cerrojoBox.put('token_activo', tokenIngresado); 
+          _cerrojoBox.put('is_plus_user', tieneBoveda); 
+          
+          Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => const SuperAppSkeleton())); 
+        } else {
+          setState(() { _error = true; }); 
+        }
+      } catch (e) {
+        setState(() { _error = true; }); 
+      }
+    } 
+    else { 
+      setState(() { _error = true; }); 
+    } 
+  }
   @override Widget build(BuildContext context) { return Scaffold(backgroundColor: const Color(0xFF111111), body: Padding(padding: const EdgeInsets.all(32.0), child: Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.stretch, children: [ const Icon(Icons.lock_outline, size: 80, color: Color(0xFF4ADE80)), const SizedBox(height: 32), const Text('Acceso Restringido', textAlign: TextAlign.center, style: TextStyle(color: Colors.white, fontSize: 28, letterSpacing: 2.0)), const SizedBox(height: 16), const Text('Ingresa tu token de seguridad para continuar.', textAlign: TextAlign.center, style: TextStyle(color: Colors.grey, fontSize: 14)), const SizedBox(height: 48), TextField(controller: _tokenController, style: const TextStyle(color: Color(0xFF4ADE80), fontSize: 18, letterSpacing: 1.5), decoration: InputDecoration(hintText: 'Pega tu TKN aquí...', hintStyle: const TextStyle(color: Colors.white24), errorText: _error ? 'Token inválido o sin permisos' : null, enabledBorder: const UnderlineInputBorder(borderSide: BorderSide(color: Colors.grey)), focusedBorder: const UnderlineInputBorder(borderSide: BorderSide(color: Color(0xFF4ADE80))))), const SizedBox(height: 32), ElevatedButton(style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF4ADE80), padding: const EdgeInsets.symmetric(vertical: 16), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))), onPressed: _validarToken, child: const Text('VALIDAR ACCESO', style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 16))) ]))); }
 }
 
