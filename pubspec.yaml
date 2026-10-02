@@ -25,10 +25,10 @@ dependencies:
   
   # Para escanear rápidamente los archivos locales (.mp3, etc.) en el almacenamiento del Pixel:
   on_audio_query: ^2.9.0
-    
+
   # ... tus otros paquetes ...
   permission_handler: ^11.3.1
-  cupertino_icons: ^1.0.6
+ 
   # ESTA ES LA CLAVE: 'any' fuerza a descargar el último parche antibloqueo
   youtube_explode_dart: any
   just_audio: ^0.9.36
