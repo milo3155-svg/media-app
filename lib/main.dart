@@ -120,12 +120,18 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
       ));
     });
     _player.processingStateStream.listen((state) { if (state == ProcessingState.completed) { _onTrackFinished(); } });
-    _player.positionStream.listen((pos) {
-      final dur = _player.duration;
-      if (dur != null && dur.inSeconds > 10) {
-        if (dur.inMilliseconds - pos.inMilliseconds <= 800 && !_isTransitioning) { _onTrackFinished(); }
-      }
-    });
+// --- MEJORA: Búfer inteligente contra micro-silencios ---
+   _player.positionStream.listen((pos) {
+     final dur = _player.duration;
+     if (dur != null && !isFinished) {
+       // Reducimos a 400ms para no cortar el final, validando el búfer
+       final remaining = dur.inMilliseconds - pos.inMilliseconds;
+       if (remaining <= 400) {
+         isFinished = true;
+         _onTrackFinished();
+       }
+     }
+   });
   }
   void _onTrackFinished() { if (_isTransitioning) return; _isTransitioning = true; _handleAutoPlayRadio(); }
   Future<void> _handleAutoPlayRadio() async {
