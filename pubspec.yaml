@@ -21,7 +21,7 @@ dependencies:
   audio_service: ^0.18.13
   audio_session: ^0.1.18
   # Para extraer el flujo de audio directo y limpio, evitando la inyección de anuncios:
-  youtube_explode_dart: ^any
+  youtube_explode_dart: any
   
   # Para escanear rápidamente los archivos locales (.mp3, etc.) en el almacenamiento del Pixel:
   on_audio_query: ^2.9.0
@@ -30,7 +30,7 @@ dependencies:
   permission_handler: ^11.3.1
   flutter_downloader: ^1.11.6
   cached_network_image: ^3.4.1
-  
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
