@@ -35,13 +35,9 @@ tasks.register("clean", Delete) {
 delete rootProject.buildDir
 }
 subprojects {
-    afterEvaluate { project ->
-        if (project.hasProperty('android')) {
-            project.android {
-                if (namespace == null) {
-                    namespace project.group
-                }
-            }
-        }
-    }
+project.plugins.withId("com.android.library") {
+project.android {
+namespace = project.group
+}
+}
 }
