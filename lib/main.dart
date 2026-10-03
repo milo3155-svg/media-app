@@ -17,7 +17,8 @@ import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:flutter_downloader/flutter_downloader.dart';
 import 'package:cached_network_image/cached_network_image.dart'; // MEJORA VIP: Caché de imágenes
-import 'dart:convert';
+import 'package:hive/hive.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 
 
 class VIPHttpOverrides extends HttpOverrides {
