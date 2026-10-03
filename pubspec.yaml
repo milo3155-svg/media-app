@@ -10,32 +10,23 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  cupertino_icons: ^1.0.8  # (Este o uno similar ya debe venir por defecto)
-
-  # --- DEPENDENCIAS PRINCIPALES PARA LA APP DE MÚSICA ---
-  
-  # El motor principal de reproducción que nos ayudará a manejar el búfer y evitar silencios:
+  cupertino_icons: ^1.0.8
   just_audio: ^0.9.36
-  
-  # Fundamental para que la música no se corte al apagar la pantalla o minimizar la app:
   audio_service: ^0.18.13
   audio_session: ^0.1.18
-  # Para extraer el flujo de audio directo y limpio, evitando la inyección de anuncios:
   youtube_explode_dart: any
-  
-  # Para escanear rápidamente los archivos locales (.mp3, etc.) en el almacenamiento del Pixel:
   on_audio_query: ^2.9.0
-
-  # ... tus otros paquetes ...
   permission_handler: ^11.3.1
   flutter_downloader: ^1.11.6
   cached_network_image: ^3.4.1
+  hive: ^2.2.3
+  hive_flutter: ^1.1.0
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^3.0.0
   http: ^1.2.1
-  
+
 flutter:
   uses-material-design: true
