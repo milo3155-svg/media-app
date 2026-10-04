@@ -1,7 +1,6 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
-    <!-- Permisos para Internet, Descargas y Audio en Segundo Plano -->
     <uses-permission android:name="android.permission.INTERNET"/>
     <uses-permission android:name="android.permission.WAKE_LOCK"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
@@ -33,7 +32,6 @@
             </intent-filter>
         </activity>
 
-        <!-- Servicios obligatorios para que audio_service no crashee la app -->
         <service android:name="com.ryanheise.audioservice.AudioService"
             android:foregroundServiceType="mediaPlayback"
             android:exported="true"
@@ -46,22 +44,10 @@
         <receiver android:name="com.ryanheise.audioservice.MediaButtonReceiver"
             android:exported="true"
             tools:ignore="Instantiatable">
-            <intent-Tienes toda la razón. No te lo envié de inmediato porque normalmente pido ver el archivo primero para no borrar accidentalmente configuraciones únicas de tu proyecto, pero tratar de editar líneas sueltas en la pantalla de un celular es una pesadilla.
+            <intent-filter>
+                <action android:name="android.intent.action.MEDIA_BUTTON" />
+            </intent-filter>
+        </receiver>
 
-Para solucionarlo de un solo golpe, estructuré el archivo completo con todos los requerimientos nativos que exigen audio_service y flutter_downloader. 
-
-<Steps>
-  <Step subtitle="VS Code" title="Reemplazar todo el texto">
-    Selecciona las 60 líneas que tienes actualmente en tu archivo <code>AndroidManifest.xml</code>, bórralas por completo y pega exactamente el siguiente código:
-    
-```xml
-<manifest xmlns:android="[http://schemas.android.com/apk/res/android](http://schemas.android.com/apk/res/android)"
-    xmlns:tools="[http://schemas.android.com/tools](http://schemas.android.com/tools)">
-
-    <!-- 1. Permisos requeridos por tus plugins -->
-    <uses-permission android:name="android.permission.INTERNET"/>
-    <uses-permission android:name="android.permission.WAKE_LOCK"/>
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"/>
-    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>
-    <uses-permission android:name="android.permission
+    </application>
+</manifest>
