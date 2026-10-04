@@ -20,7 +20,8 @@ import 'package:cached_network_image/cached_network_image.dart'; // MEJORA VIP: 
 import 'dart:convert';
 
 
-class VIPHttpOverrides extends HttpOverrides {
+cla
+ss VIPHttpOverrides extends HttpOverrides {
   @override HttpClient createHttpClient(SecurityContext? context) {
     return super.createHttpClient(context)..userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36';
   }
