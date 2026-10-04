@@ -54,23 +54,50 @@ String formatGlobalDuration(Duration? d) {
 
 
 Future<void> main() async {
-  WidgetsFlutterBinding.ensureInitialized();
-  HttpOverrides.global = VIPHttpOverrides();
-  await Hive.initFlutter();
-  await Hive.openBox('cerrojo_box');
-  await Hive.openBox('favorites'); await Hive.openBox('history'); await Hive.openBox('search_history'); 
-  await Hive.openBox('playlists'); 
-  await Hive.openBox('downloads');
-  final session = await AudioSession.instance; await session.configure(const AudioSessionConfiguration.music());
-  await FlutterDownloader.initialize(debug: true, ignoreSsl: true);
-  
-  audioHandler = await AudioService.init(
-    builder: () => MyAudioHandler(), 
-    config: const AudioServiceConfig(androidNotificationChannelId: 'com.example.media_app.audio_master_v62', androidNotificationChannelName: 'Spotify Killer VIP', androidNotificationOngoing: false, androidShowNotificationBadge: true, androidStopForegroundOnPause: false, androidNotificationIcon: 'drawable/ic_notification')
-  );
-  runApp(const MediaApp());
-}
+  runZonedGuarded(() async {
+    WidgetsFlutterBinding.ensureInitialized();
+    
+    // Inicialización controlada de Hive
+    await Hive.initFlutter();
+    await Hive.openBox('cerrojo_box');
+    await Hive.openBox('favorites');
+    await Hive.openBox('history');
+    await Hive.openBox('search_history');
+    await Hive.openBox('downloads');
 
+    // Pantalla de prueba para confirmar si el arranque es exitoso
+    runApp(
+      const MaterialApp(
+        home: Scaffold(
+          body: Center(
+            child: Text(
+              '¡El main arrancó correctamente!',
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+            ),
+          ),
+        ),
+      ),
+    );
+  }, (error, stack) {
+    // Si algo falla, la app no se cerrará, te mostrará el error en pantalla roja
+    runApp(
+      MaterialApp(
+        home: Scaffold(
+          body: Center(
+            child: Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Text(
+                'Error capturado:\n$error',
+                style: const TextStyle(color: Colors.red, fontSize: 16),
+                textAlign: TextAlign.center,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  });
+}
 
 class ConspiracyLogo extends StatelessWidget {
   final double size; final Color color; const ConspiracyLogo({super.key, this.size = 150.0, required this.color});
