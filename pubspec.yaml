@@ -10,23 +10,28 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  cupertino_icons: ^1.0.8 
-  just_audio: ^0.9.36
-  audio_service: ^0.18.13
-  audio_session: ^0.1.18
-  youtube_explode_dart: any
-  permission_handler: ^11.3.1
-  flutter_downloader: ^1.11.6
-  cached_network_image: ^3.4.1
+  http: ^1.2.0
   hive: ^2.2.3
   hive_flutter: ^1.1.0
+  path_provider: ^2.1.2
+  dio: ^5.4.0
+  cached_network_image: ^3.3.1
+  
+  # ... tus otros paquetes ...
+  permission_handler: ^11.3.1
+  cupertino_icons: ^1.0.6
+  # ESTA ES LA CLAVE: 'any' fuerza a descargar el último parche antibloqueo
+  youtube_explode_dart: any
+  just_audio: ^0.9.36
+  audio_session: ^0.1.18
+  audio_service: ^0.18.13
+  flutter_downloader: ^1.11.6
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^3.0.0
   http: ^1.2.1
-
+  
 flutter:
   uses-material-design: true
-  
