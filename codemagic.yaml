@@ -14,6 +14,6 @@ workflows:
           flutter create . --platforms=android
       - name: Build APK
         script: |
-          flutter build apk --release --split-per-abi
+          flutter build apk --release --no-pub
     artifacts:
       - build/**/outputs/**/*.apk
