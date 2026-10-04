@@ -62,7 +62,7 @@ Future<void> main() async {
   await Hive.openBox('playlists'); 
   await Hive.openBox('downloads');
   final session = await AudioSession.instance; await session.configure(const AudioSessionConfiguration.music());
-  //await FlutterDownloader.initialize(debug: true, ignoreSsl: true);
+  await FlutterDownloader.initialize(debug: true, ignoreSsl: true);
   
   audioHandler = await AudioService.init(
     builder: () => MyAudioHandler(), 
