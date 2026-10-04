@@ -15,6 +15,7 @@ dependencies:
   audio_service: ^0.18.13
   audio_session: ^0.1.18
   youtube_explode_dart: any
+  on_audio_query: ^3.1.8
   permission_handler: ^11.3.1
   flutter_downloader: ^1.11.6
   cached_network_image: ^3.4.1
