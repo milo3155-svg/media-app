@@ -28,7 +28,7 @@ android {
         abortOnError=false
     }
     namespace "com.example.media_app"
-    compileSdk 34
+    compileSdk flutter.compileSdkVersion
     ndkVersion = "28.2.13676358"
 
     compileOptions {
