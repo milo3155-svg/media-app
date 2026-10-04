@@ -11,13 +11,13 @@ import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'dart:math' as math;
 import 'dart:async'; 
+import 'package:dio/dio.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:flutter_downloader/flutter_downloader.dart';
 import 'package:cached_network_image/cached_network_image.dart'; // MEJORA VIP: Caché de imágenes
-import 'package:hive/hive.dart';
-import 'package:cached_network_image/cached_network_image.dart';
+import 'dart:convert';
 
 
 class VIPHttpOverrides extends HttpOverrides {
@@ -104,7 +104,6 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
   final _player = AudioPlayer(); 
   late final YoutubeExplode _yt; 
   Timer? _countdownTimer; 
-  bool isFinished = false;
   bool _isTransitioning = false; 
   MyAudioHandler() {
     _yt = YoutubeExplode();
@@ -121,18 +120,12 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
       ));
     });
     _player.processingStateStream.listen((state) { if (state == ProcessingState.completed) { _onTrackFinished(); } });
-// --- MEJORA: Búfer inteligente contra micro-silencios ---
-   _player.positionStream.listen((pos) {
-     final dur = _player.duration;
-     if (dur != null && !isFinished) {
-       // Reducimos a 400ms para no cortar el final, validando el búfer
-       final remaining = dur.inMilliseconds - pos.inMilliseconds;
-       if (remaining <= 400) {
-         isFinished = true;
-         _onTrackFinished();
-       }
-     }
-   });
+    _player.positionStream.listen((pos) {
+      final dur = _player.duration;
+      if (dur != null && dur.inSeconds > 10) {
+        if (dur.inMilliseconds - pos.inMilliseconds <= 800 && !_isTransitioning) { _onTrackFinished(); }
+      }
+    });
   }
   void _onTrackFinished() { if (_isTransitioning) return; _isTransitioning = true; _handleAutoPlayRadio(); }
   Future<void> _handleAutoPlayRadio() async {
