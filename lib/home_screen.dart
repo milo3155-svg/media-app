@@ -72,11 +72,13 @@ Padding(
               borderRadius: BorderRadius.circular(10),
             ),
           ),
-        ),
-      ),
-    ],
-  ),
+ onSubmitted: (val) {
+    if (val.trim().isNotEmpty) {
+      searchVideos(val.trim()); // <-- Esto es lo que ejecuta la búsqueda al dar enter o la palomita
+    }
+  },
 ),
+ 
         if (isLoading) const Expanded(child: Center(child: CircularProgressIndicator()))
         else if (videos.isEmpty && searchController.text.isEmpty) Expanded(child: _buildSearchHistory())
         else Expanded(child: StreamBuilder<MediaItem?>(stream: audioHandler.mediaItem, builder: (context, snapshot) { final currentId = snapshot.data?.id; return ListView.builder(padding: const EdgeInsets.only(bottom: 100), itemCount: videos.length, itemBuilder: (context, index) { final video = videos[index]; final isPlaying = currentId == video.id.value; return ListTile(contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4), leading: Stack(children: [ Hero(tag: video.id.value, child: ClipRRect(borderRadius: BorderRadius.circular(8), child: CachedNetworkImage(imageUrl: video.thumbnails.mediumResUrl, width: 80, height: 50, fit: BoxFit.cover))), Positioned(bottom: 2, right: 2, child: Container(padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2), decoration: BoxDecoration(color: Colors.black87, borderRadius: BorderRadius.circular(4)), child: Text(formatGlobalDuration(video.duration), style: const TextStyle(color: Colors.white, fontSize: 10)))) ]), title: Text(video.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white)), subtitle: Text(video.author, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.grey)), trailing: Row(mainAxisSize: MainAxisSize.min, children: [ if (isPlaying) ValueListenableBuilder<Color>(valueListenable: appColor, builder: (context, color, _) => Icon(Icons.equalizer, color: color, size: 24)), ValueListenableBuilder<Color>(valueListenable: appColor, builder: (context, color, _) => IconButton(icon: const Icon(Icons.more_vert, color: Colors.grey), onPressed: () => globalShowOptions(context, video, color))) ]), onTap: () async { final queueItems = videos.map((vid) => MediaItem(id: vid.id.value, title: vid.title, artist: vid.author, duration: vid.duration, artUri: Uri.parse(vid.thumbnails.highResUrl))).toList(); await globalPlayQueue(queueItems, index); }); }); }))
