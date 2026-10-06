@@ -72,11 +72,15 @@ Padding(
               borderRadius: BorderRadius.circular(10),
             ),
           ),
- onSubmitted: (val) {
-    if (val.trim().isNotEmpty) {
-      searchVideos(val.trim()); // <-- Esto es lo que ejecuta la búsqueda al dar enter o la palomita
-    }
-  },
+          onSubmitted: (val) {
+            if (val.trim().isNotEmpty) {
+              searchVideos(val.trim());
+            }
+          },
+        ),
+      ),
+    ],
+  ),
 ),
  
         if (isLoading) const Expanded(child: Center(child: CircularProgressIndicator()))
