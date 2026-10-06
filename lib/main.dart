@@ -1,4 +1,4 @@
-// ARCHIVO: main_v2_VIP.dart
+// ARCHIVO: main.dart
 import 'home_screen.dart';
 import 'dart:io';
 import 'dart:ui'; 
@@ -12,12 +12,9 @@ import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'dart:math' as math;
 import 'dart:async'; 
-import 'package:dio/dio.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:http/http.dart' as http;
-import 'dart:convert';
 import 'package:flutter_downloader/flutter_downloader.dart';
-import 'package:cached_network_image/cached_network_image.dart'; // MEJORA VIP: Caché de imágenes
+import 'package:cached_network_image/cached_network_image.dart';
 import 'dart:convert';
 
 
@@ -59,12 +56,15 @@ Future<void> main() async {
   HttpOverrides.global = VIPHttpOverrides();
   await Hive.initFlutter();
   await Hive.openBox('cerrojo_box');
-  await Hive.openBox('favorites'); await Hive.openBox('history'); await Hive.openBox('search_history'); 
+  await Hive.openBox('favorites'); 
+  await Hive.openBox('history'); 
+  await Hive.openBox('search_history'); 
   await Hive.openBox('playlists'); 
   await Hive.openBox('downloads');
   final session = await AudioSession.instance; await session.configure(const AudioSessionConfiguration.music());
   await FlutterDownloader.initialize(debug: true, ignoreSsl: true);
-  
+
+
   audioHandler = await AudioService.init(
     builder: () => MyAudioHandler(), 
     config: const AudioServiceConfig(androidNotificationChannelId: 'com.example.media_app.audio_master_v62', androidNotificationChannelName: 'Spotify Killer VIP', androidNotificationOngoing: false, androidShowNotificationBadge: true, androidStopForegroundOnPause: false, androidNotificationIcon: 'drawable/ic_notification')
@@ -106,6 +106,8 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
   late final YoutubeExplode _yt; 
   Timer? _countdownTimer; 
   bool _isTransitioning = false; 
+
+
   MyAudioHandler() {
     _yt = YoutubeExplode();
     _player.setSkipSilenceEnabled(true);
@@ -128,37 +130,53 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
       }
     });
   }
-  void _onTrackFinished() { if (_isTransitioning) return; _isTransitioning = true; _handleAutoPlayRadio(); }
+void _onTrackFinished() { if (_isTransitioning) return; _isTransitioning = true; _handleAutoPlayRadio(); }
+
+
   Future<void> _handleAutoPlayRadio() async {
     final currentQueue = queue.value; final currentItem = mediaItem.value; 
     if (currentItem == null) { _isTransitioning = false; return; }
     final currentIndex = currentQueue.indexWhere((item) => item.id == currentItem.id);
     if (currentIndex != -1 && currentIndex < currentQueue.length - 1) { await skipToNextBase(); _isTransitioning = false; return; }
+
+
     try {
       Video? nextVideo;
       try {
-        var currentVideo = await _yt.videos.get(currentItem.id);
-        var relatedVideos = await _yt.videos.getRelatedVideos(currentVideo);
-        if (relatedVideos != null && relatedVideos.isNotEmpty) {
-          String clean1 = currentItem.title.toLowerCase().replaceAll(RegExp(r'[^a-z0-9áéíóúñ\s]'), ''); 
-          Set<String> words1 = clean1.split(' ').where((w) => w.length > 2).toSet();
-          for (var v in relatedVideos) {
-            bool isClone = false; String clean2 = v.title.toLowerCase().replaceAll(RegExp(r'[^a-z0-9áéíóúñ\s]'), ''); 
-            Set<String> words2 = clean2.split(' ').where((w) => w.length > 2).toSet();
-            if (words1.isNotEmpty && words2.isNotEmpty) { 
-              int matches = words1.intersection(words2).length; double similarity = matches / math.min(words1.length, words2.length); 
-              if (similarity >= 0.5) isClone = true; 
-            }
-            if (isClone) continue; nextVideo = v; break; 
+        // MEJORA VIP: Búsqueda de éxitos reales del artista, evitando remixes de la misma canción.
+        String artistQuery = currentItem.artist ?? "";
+        if (artistQuery == "Desconocido" || artistQuery.trim().isEmpty) {
+          artistQuery = currentItem.title.split('-').first.trim();
+        }
+        
+        final searchResults = await _yt.search.search("$artistQuery mejores exitos");
+        
+        String currentTitleClean = currentItem.title.toLowerCase();
+        List<String> currentTitleWords = currentTitleClean.split(' ').where((w) => w.length > 3).toList();
+        
+        final list = searchResults.where((v) {
+          if (v.id.value == currentItem.id) return false;
+          String vTitle = v.title.toLowerCase();
+          // Filtra si la nueva canción tiene el mismo nombre que la actual
+          if (currentTitleWords.isNotEmpty && currentTitleWords.any((word) => vTitle.contains(word))) return false;
+          return true;
+        }).toList();
+
+
+        if (list.isNotEmpty) {
+          // Escoge una canción aleatoria entre los primeros 6 resultados para dar variedad
+          final randomLimit = math.min(6, list.length);
+          nextVideo = list[math.Random().nextInt(randomLimit)];
+        } else {
+          // Fallback a relacionados si la búsqueda falla
+          var relatedVideos = await _yt.videos.getRelatedVideos(await _yt.videos.get(currentItem.id));
+          if (relatedVideos != null && relatedVideos.isNotEmpty) {
+            nextVideo = relatedVideos.firstWhere((v) => v.id.value != currentItem.id, orElse: () => relatedVideos.first);
           }
-          nextVideo ??= relatedVideos.first;
         }
       } catch (_) {}
-      if (nextVideo == null) {
-        final searchResults = await _yt.search.search("${currentItem.artist} mix");
-        final list = searchResults.where((v) => v.id.value != currentItem.id).toList();
-        if (list.isNotEmpty) nextVideo = list.first;
-      }
+
+
       if (nextVideo != null) {
         final newItem = MediaItem(id: nextVideo.id.value, title: nextVideo.title, artist: nextVideo.author, duration: nextVideo.duration, artUri: Uri.parse(nextVideo.thumbnails.highResUrl));
         final newQueue = List<MediaItem>.from(currentQueue)..add(newItem); 
@@ -166,6 +184,8 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
       }
     } catch (e) { } finally { _isTransitioning = false; }
   }
+
+
   void _saveResumePosition(String id, int milliseconds) { final historyBox = Hive.box('history'); if (historyBox.containsKey(id)) { final item = Map<String, dynamic>.from(historyBox.get(id)); item['savedPosition'] = milliseconds; historyBox.put(id, item); } }
   
   @override Future<void> customAction(String name, [Map<String, dynamic>? extras]) async { 
@@ -187,6 +207,7 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
   }
   Future<void> skipToNextBase() async { final queueList = queue.value; final currentItem = mediaItem.value; final currentIndex = queueList.indexWhere((item) => item.id == currentItem?.id); if (currentIndex != -1 && currentIndex < queueList.length - 1) await playMediaItem(queueList[currentIndex + 1]); }
   @override Future<void> skipToPrevious() async { final queueList = queue.value; if (queueList.isEmpty) return; final currentItem = mediaItem.value; final currentIndex = queueList.indexWhere((item) => item.id == currentItem?.id); if (currentIndex > 0) await playMediaItem(queueList[currentIndex - 1]); }
+  
   @override
   Future<void> playMediaItem(MediaItem item) async {
     mediaItem.add(item); final historyBox = Hive.box('history'); 
@@ -232,7 +253,6 @@ void globalShowOptions(BuildContext context, Video video, Color color) {
             ListTile(leading: const Icon(Icons.radio, color: Colors.white), title: const Text('Ir a la radio de la canción', style: TextStyle(color: Colors.white))),
             ListTile(leading: const Icon(Icons.playlist_add, color: Colors.white), title: const Text('Agregar a una playlist', style: TextStyle(color: Colors.white)), onTap: () { Navigator.pop(context); _showPlaylistDialog(context, video, color); }),
             ListTile(leading: const Icon(Icons.queue_music, color: Colors.white), title: const Text('Agregar a la cola', style: TextStyle(color: Colors.white)), onTap: () async { Navigator.pop(context); final itemToQueue = MediaItem(id: video.id.value, title: video.title, artist: video.author, duration: video.duration, artUri: Uri.parse(video.thumbnails.highResUrl)); await audioHandler.addQueueItem(itemToQueue); ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Canción agregada a la cola'))); }),
-            // MEJORA VIP: Botón a la nevera
             Visibility(
               visible: false,
               child: ListTile(leading: const Icon(Icons.download, color: Colors.white), title: const Text('Descargar', style: TextStyle(color: Colors.white)), onTap: () { Navigator.pop(context); downloadAudio(context, video); }),
@@ -263,6 +283,8 @@ void _showCreatePlaylistDialog(BuildContext context, Map songData, Color color) 
   final textController = TextEditingController();
   showDialog(context: context, builder: (context) => AlertDialog(backgroundColor: const Color(0xFF1A1A1A), title: const Text("Nueva Playlist", style: TextStyle(color: Colors.white)), content: TextField(controller: textController, style: const TextStyle(color: Colors.white), decoration: const InputDecoration(hintText: "Nombre de la playlist", hintStyle: TextStyle(color: Colors.grey))), actions: [ TextButton(onPressed: () => Navigator.pop(context), child: const Text("Cancelar", style: TextStyle(color: Colors.grey))), TextButton(onPressed: () { if (textController.text.trim().isNotEmpty) { Hive.box('playlists').put(textController.text.trim(), [songData]); Navigator.pop(context); ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Playlist creada"), backgroundColor: color)); } }, child: const Text("Crear", style: TextStyle(color: Colors.white))) ]));
 }
+
+
 class MediaApp extends StatelessWidget {
   const MediaApp({super.key});
   @override Widget build(BuildContext context) {
@@ -280,7 +302,10 @@ class MediaApp extends StatelessWidget {
   }
 }
 
+
 class SuperAppSkeleton extends StatefulWidget { const SuperAppSkeleton({super.key}); @override State<SuperAppSkeleton> createState() => _SuperAppSkeletonState(); }
+
+
 class _SuperAppSkeletonState extends State<SuperAppSkeleton> {
   int _currentIndex = 0; final List<Widget> _screens = [const HomeScreen(), const SearchScreen(), const OfflineVaultScreen(), const VaultScreen(), const SportsScreen()];
   @override Widget build(BuildContext context) { 
