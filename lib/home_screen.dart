@@ -54,9 +54,23 @@ class _SearchScreenState extends State<SearchScreen> {
     ]);
   }
   @override Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Buscador VIP', style: TextStyle(fontWeight: FontWeight.bold))),
-      body: Column(children: [
+return Scaffold(
+      backgroundColor: Colors.black,
+      appBar: AppBar(
+        title: const Text('Buscador VIP', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.yellowAccent)),
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+      ),
+      body: Container(
+        decoration: BoxDecoration(
+          color: Colors.black,
+          image: DecorationImage(
+            image: const AssetImage('assets/ojo_pirata.png'), // <-- PON AQUÍ EL NOMBRE EXACTO DE TU IMAGEN
+            fit: BoxFit.cover,
+            colorFilter: ColorFilter.mode(Colors.black.withOpacity(0.85), BlendMode.darken),
+          ),
+        ),
+        child: Column(children: [
 Padding(
   padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
   child: Row(
