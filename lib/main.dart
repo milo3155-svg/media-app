@@ -106,9 +106,7 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
   late final YoutubeExplode _yt; 
   Timer? _countdownTimer; 
   bool _isTransitioning = false; 
-
-
-  MyAudioHandler() {
+MyAudioHandler() {
     _yt = YoutubeExplode();
     _player.setSkipSilenceEnabled(true);
     _player.playbackEventStream.listen((PlaybackEvent event) {
@@ -130,7 +128,9 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
       }
     });
   }
-void _onTrackFinished() { if (_isTransitioning) return; _isTransitioning = true; _handleAutoPlayRadio(); }
+
+
+  void _onTrackFinished() { if (_isTransitioning) return; _isTransitioning = true; _handleAutoPlayRadio(); }
 
 
   Future<void> _handleAutoPlayRadio() async {
@@ -143,13 +143,14 @@ void _onTrackFinished() { if (_isTransitioning) return; _isTransitioning = true;
     try {
       Video? nextVideo;
       try {
-        // MEJORA VIP: Búsqueda de éxitos reales del artista, evitando remixes de la misma canción.
         String artistQuery = currentItem.artist ?? "";
-        if (artistQuery == "Desconocido" || artistQuery.trim().isEmpty) {
+        artistQuery = artistQuery.replaceAll(RegExp(r'(?i)vevo|topic|official|music'), '').trim();
+        
+        if (artistQuery.isEmpty || artistQuery.length < 3) {
           artistQuery = currentItem.title.split('-').first.trim();
         }
         
-        final searchResults = await _yt.search.search("$artistQuery mejores exitos");
+        final searchResults = await _yt.search.search("$artistQuery audio");
         
         String currentTitleClean = currentItem.title.toLowerCase();
         List<String> currentTitleWords = currentTitleClean.split(' ').where((w) => w.length > 3).toList();
@@ -157,18 +158,15 @@ void _onTrackFinished() { if (_isTransitioning) return; _isTransitioning = true;
         final list = searchResults.where((v) {
           if (v.id.value == currentItem.id) return false;
           String vTitle = v.title.toLowerCase();
-          // Filtra si la nueva canción tiene el mismo nombre que la actual
           if (currentTitleWords.isNotEmpty && currentTitleWords.any((word) => vTitle.contains(word))) return false;
           return true;
         }).toList();
 
 
         if (list.isNotEmpty) {
-          // Escoge una canción aleatoria entre los primeros 6 resultados para dar variedad
-          final randomLimit = math.min(6, list.length);
+          final randomLimit = math.min(8, list.length);
           nextVideo = list[math.Random().nextInt(randomLimit)];
         } else {
-          // Fallback a relacionados si la búsqueda falla
           var relatedVideos = await _yt.videos.getRelatedVideos(await _yt.videos.get(currentItem.id));
           if (relatedVideos != null && relatedVideos.isNotEmpty) {
             nextVideo = relatedVideos.firstWhere((v) => v.id.value != currentItem.id, orElse: () => relatedVideos.first);
@@ -180,7 +178,8 @@ void _onTrackFinished() { if (_isTransitioning) return; _isTransitioning = true;
       if (nextVideo != null) {
         final newItem = MediaItem(id: nextVideo.id.value, title: nextVideo.title, artist: nextVideo.author, duration: nextVideo.duration, artUri: Uri.parse(nextVideo.thumbnails.highResUrl));
         final newQueue = List<MediaItem>.from(currentQueue)..add(newItem); 
-        await updateQueue(newQueue); await playMediaItem(newItem);
+        await updateQueue(newQueue); 
+        await playMediaItem(newItem);
       }
     } catch (e) { } finally { _isTransitioning = false; }
   }
@@ -205,7 +204,7 @@ void _onTrackFinished() { if (_isTransitioning) return; _isTransitioning = true;
     final currentIndex = queueList.indexWhere((item) => item.id == currentItem?.id); 
     if (currentIndex != -1 && currentIndex < queueList.length - 1) { await playMediaItem(queueList[currentIndex + 1]); } else { _onTrackFinished(); }
   }
-  Future<void> skipToNextBase() async { final queueList = queue.value; final currentItem = mediaItem.value; final currentIndex = queueList.indexWhere((item) => item.id == currentItem?.id); if (currentIndex != -1 && currentIndex < queueList.length - 1) await playMediaItem(queueList[currentIndex + 1]); }
+Future<void> skipToNextBase() async { final queueList = queue.value; final currentItem = mediaItem.value; final currentIndex = queueList.indexWhere((item) => item.id == currentItem?.id); if (currentIndex != -1 && currentIndex < queueList.length - 1) await playMediaItem(queueList[currentIndex + 1]); }
   @override Future<void> skipToPrevious() async { final queueList = queue.value; if (queueList.isEmpty) return; final currentItem = mediaItem.value; final currentIndex = queueList.indexWhere((item) => item.id == currentItem?.id); if (currentIndex > 0) await playMediaItem(queueList[currentIndex - 1]); }
   
   @override
@@ -228,7 +227,13 @@ void _onTrackFinished() { if (_isTransitioning) return; _isTransitioning = true;
       await _player.setAudioSource(cachingSource);
       if (savedPosition > 0) { await _player.seek(Duration(milliseconds: savedPosition)); } 
       await _player.play();
-    } catch (e) { playbackState.add(playbackState.value.copyWith(processingState: AudioProcessingState.error, playing: false)); }
+    } catch (e) { 
+      playbackState.add(playbackState.value.copyWith(processingState: AudioProcessingState.error, playing: false)); 
+      Timer(const Duration(seconds: 2), () {
+        _isTransitioning = false; 
+        _onTrackFinished(); 
+      });
+    }
   }
   @override Future<void> updateQueue(List<MediaItem> newQueue) async { queue.add(newQueue); }
 }
@@ -301,8 +306,6 @@ class MediaApp extends StatelessWidget {
     );
   }
 }
-
-
 class SuperAppSkeleton extends StatefulWidget { const SuperAppSkeleton({super.key}); @override State<SuperAppSkeleton> createState() => _SuperAppSkeletonState(); }
 
 
