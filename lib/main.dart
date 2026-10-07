@@ -401,3 +401,4 @@ class _SuperAppSkeletonState extends State<SuperAppSkeleton> {
       )
     ); 
   }
+}

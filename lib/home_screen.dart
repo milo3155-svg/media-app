@@ -121,12 +121,13 @@ class _SearchScreenState extends State<SearchScreen> {
     _saveSearchHistory(query);
     setState(() { isLoading = true; searchSuggestions.clear(); mixedResults.clear(); });
     try {
-      final results = await yt.search.getSearchContent(query);
+      // Usamos .search() para compatibilidad total con tu versión actual
+      final results = await yt.search.search(query);
       if (mounted) setState(() { mixedResults = results.toList(); isLoading = false; });
     } catch (e) {
       if (mounted) {
         setState(() => isLoading = false);
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error de intercepción: $e'), backgroundColor: Colors.red));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red));
       }
     }
   }
@@ -230,19 +231,17 @@ class _SearchScreenState extends State<SearchScreen> {
                       itemCount: mixedResults.length,
                       itemBuilder: (context, index) {
                         final item = mixedResults[index];
-                        if (item is SearchChannel) {
+                        
+                        // Adaptado para detectar el Canal sin requerir logoUrl
+                        if (item.runtimeType.toString() == 'SearchChannel') {
                            return ListTile(
                               contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                               leading: Container(
+                                padding: const EdgeInsets.all(8),
                                 decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: Colors.yellowAccent, width: 2)),
-                                child: ClipOval(
-                                  child: CachedNetworkImage(
-                                    imageUrl: "https:${item.logoUrl}", width: 60, height: 60, fit: BoxFit.cover,
-                                    errorWidget: (c, u, e) => const Icon(Icons.account_circle, color: Colors.grey, size: 60),
-                                  ),
-                                ),
+                                child: const Icon(Icons.account_circle, color: Colors.yellowAccent, size: 30),
                               ),
-                              title: Text(item.name, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
+                              title: Text(item.name ?? 'Canal', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
                               subtitle: const Text("🎙️ Creador / Estación", style: TextStyle(color: Colors.yellowAccent, fontSize: 12)),
                               trailing: const Icon(Icons.arrow_forward_ios, color: Colors.grey, size: 16),
                               onTap: () {
@@ -250,40 +249,53 @@ class _SearchScreenState extends State<SearchScreen> {
                               },
                            );
                         }
-                        if (item is SearchVideo) {
-                          final isPlaying = currentId == item.id.value;
-                          return ListTile(
-                            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                            leading: Stack(children: [
-                              ClipRRect(
+                        
+                        // Construcción original de tu Video intacta
+                        final video = item;
+                        final isPlaying = currentId == video.id.value;
+                        return ListTile(
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                          leading: Stack(children: [
+                            Hero(
+                              tag: video.id.value,
+                              child: ClipRRect(
                                 borderRadius: BorderRadius.circular(8),
-                                child: CachedNetworkImage(imageUrl: item.thumbnails.first.url.toString(), width: 80, height: 50, fit: BoxFit.cover),
-                              ),
-                              Positioned(
-                                bottom: 2, right: 2,
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-                                  decoration: BoxDecoration(color: Colors.black87, borderRadius: BorderRadius.circular(4)),
-                                  child: Text(item.duration, style: const TextStyle(color: Colors.white, fontSize: 10)),
-                                ),
+                                child: CachedNetworkImage(
+                                  imageUrl: video.thumbnails.mediumResUrl,
+                                  width: 80, height: 50, fit: BoxFit.cover
+                                )
                               )
-                            ]),
-                            title: Text(item.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white)),
-                            subtitle: Text(item.author, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.grey)),
-                            trailing: isPlaying 
-                               ? ValueListenableBuilder<Color>(valueListenable: appColor, builder: (context, color, _) => Icon(Icons.equalizer, color: color, size: 24))
-                               : IconButton(
-                                   icon: const Icon(Icons.more_vert, color: Colors.grey),
-                                   onPressed: () => globalShowOptions(context, {'id': item.id.value, 'title': item.title, 'artist': item.author, 'artUri': item.thumbnails.first.url.toString()}, appColor.value),
-                                 ),
-                            onTap: () async {
-                               final queueItems = mixedResults.whereType<SearchVideo>().map((vid) => MediaItem(id: vid.id.value, title: vid.title, artist: vid.author, artUri: Uri.parse(vid.thumbnails.first.url.toString()))).toList();
-                               int realIndex = queueItems.indexWhere((vid) => vid.id == item.id.value);
-                               await globalPlayQueue(queueItems, realIndex);
-                            },
-                          );
-                        }
-                        return const SizedBox.shrink();
+                            ),
+                            Positioned(
+                              bottom: 2, right: 2,
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                                decoration: BoxDecoration(color: Colors.black87, borderRadius: BorderRadius.circular(4)),
+                                child: Text(formatGlobalDuration(video.duration), style: const TextStyle(color: Colors.white, fontSize: 10))
+                              )
+                            )
+                          ]),
+                          title: Text(video.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white)),
+                          subtitle: Text(video.author, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.grey)),
+                          trailing: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              if (isPlaying)
+                                 ValueListenableBuilder<Color>(valueListenable: appColor, builder: (context, color, _) => Icon(Icons.equalizer, color: color, size: 24)),
+                              ValueListenableBuilder<Color>(valueListenable: appColor, builder: (context, color, _) => IconButton(icon: const Icon(Icons.more_vert, color: Colors.grey), onPressed: () => globalShowOptions(context, video, color))),
+                            ]
+                          ),
+                          onTap: () async {
+                            List<MediaItem> queueItems = [];
+                            for (var vid in mixedResults) {
+                               if (vid.runtimeType.toString() != 'SearchChannel') {
+                                  queueItems.add(MediaItem(id: vid.id.value, title: vid.title, artist: vid.author, duration: vid.duration, artUri: Uri.parse(vid.thumbnails.highResUrl)));
+                               }
+                            }
+                            int realIndex = queueItems.indexWhere((vid) => vid.id == video.id.value);
+                            await globalPlayQueue(queueItems, realIndex);
+                          }
+                        );
                       },
                     );
                   },
