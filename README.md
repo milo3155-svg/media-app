@@ -128,3 +128,36 @@ Para mantener la independencia de la nube, la app recuerda su estado de acceso u
 
 ### 3. Motor de Descarga Oculta (Ghost Search)
 Cuando un usuario VIP presiona descargar, el sistema utiliza youtube_explode_dart para realizar una búsqueda silenciosa ("Ghost Search") de una fuente de audio segura. Extrae el flujo MP4 de mayor bitrate, lo guarda en el directorio de documentos de la aplicación y lo registra en la OfflineVaultScreen para reproducción 100% sin conexión.
+# Spotify Killer VIP / Proyecto Clandestino 🎵⚡
+
+Aplicación multiplataforma de intercepción, streaming y almacenamiento de audio en alta fidelidad desarrollada en Flutter. Diseñada con un enfoque minimalista, estéticas de neón personalizables y un motor de radio inteligente en segundo plano.
+
+---
+
+## 🛠️ Bitácora de Desarrollo y Registro de Cambios (Changelog)
+
+### Versión 1.5.0 (Release Actual - Optimización de Rendimiento)
+* *Optimización de Peso:* Reducción drástica del tamaño del APK de 160 MB a ~12 MB mediante la compilación en modo Release y la división de arquitecturas con --split-per-abi.
+* *Teclado Predictivo en Vivo:* Integración de sugerencias de búsqueda dinámicas en tiempo real conectadas directamente al motor de intercepción.
+* *Cerebro de Radio Autónoma:* Implementación de un nuevo algoritmo de auto-reproducción que extrae éxitos reales del artista al finalizar una pista, evitando bucles de la misma canción.
+* *Mecanismo de Superincencia Anti-Bloqueo:* Sistema de tolerancia a fallos que detecta pistas restringidas o rotas en YouTube y salta automáticamente a la siguiente para mantener el flujo de audio.
+
+### Versión 1.2.0 (Fase de Estabilidad y Seguridad)
+* *Compatibilidad Android SDK:* Ajuste del minSdk a la versión 21 para soportar de forma nativa los paquetes modernos de descarga e intercepción de streams (flutter_downloader).
+* *Sistema de Acceso por Token (Cerrojo):* Implementación de validación de credenciales cifradas en Base64 para control de acceso a la Super App.
+* *Persistencia Local con Hive:* Almacenamiento ultrarrápido para historiales de búsqueda, pistas favoritas, listas de reproducción (Playlists) y caché de descargas offline.
+
+### Versión 1.0.0 (Incepción del Proyecto)
+* Estructura base de navegación flotante (SuperAppSkeleton) con efecto de cristal esmerilado (BackdropFilter).
+* Integración del reproductor en segundo plano mediante audio_service y just_audio.
+* Creación del logotipo vectorial minimalista (ConspiracyLogo) y diseño de interfaz oscura con acentos de neón personalizables.
+
+---
+
+## 🚀 Especificaciones Técnicas
+* *Framework:* Flutter (Dart)
+* *Arquitectura de Audio:* just_audio + audio_service
+* *Motor de Búsqueda:* youtube_explode_dart
+* *Base de Datos Local:* hive_flutter
+* *Dispositivo de Pruebas Principal:* Google Pixel 10 Pro
+*
