@@ -440,11 +440,16 @@ Widget _buildSuggestionsList() {
                         );
                       }
                       
-                      return const SizedBox.shrink(); // Ocultar si llega otra cosa extraña
-                    ],
+                     return const SizedBox.shrink(); // Ocultar si llega otra cosa extraña
+                    },
                   );
-                ),
-              );
+                },
+              ),
+            )
+          ],
+        ),
+      ),
+    );
   }
 }
 class VaultScreen extends StatelessWidget {          
