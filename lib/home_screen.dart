@@ -85,6 +85,22 @@ class _SearchScreenState extends State<SearchScreen> {
     Permission.notification.request();
   }
 
+class _SearchScreenState extends State<SearchScreen> {
+  final searchController = TextEditingController();
+  late final YoutubeExplode yt;
+  
+  // AHORA ESTA LISTA GUARDARÁ CUALQUIER TIPO DE CONTENIDO (Video, Canal, Playlist)
+  List<dynamic> mixedResults = []; 
+  List<String> searchSuggestions = [];
+  bool isLoading = false;
+  Timer? _debounce;
+
+  @override
+  void initState() {
+    super.initState();
+    yt = YoutubeExplode();
+    Permission.notification.request();
+  }
 
   @override
   void dispose() {
@@ -93,19 +109,16 @@ class _SearchScreenState extends State<SearchScreen> {
     super.dispose();
   }
 
-
   void _onQueryChanged(String query) {
     if (_debounce?.isActive ?? false) _debounce!.cancel();
-
 
     if (query.trim().isEmpty) {
       setState(() {
         searchSuggestions.clear();
-        videos.clear();
+        mixedResults.clear();
       });
       return;
     }
-
 
     _debounce = Timer(const Duration(milliseconds: 300), () async {
       try {
@@ -118,7 +131,8 @@ class _SearchScreenState extends State<SearchScreen> {
       } catch (_) {}
     });
   }
-void _saveSearchHistory(String query) {
+
+  void _saveSearchHistory(String query) {
     if (query.trim().isEmpty) return;
     final box = Hive.box('search_history');
     List<String> searches = box.values.cast<String>().toList();
@@ -129,37 +143,38 @@ void _saveSearchHistory(String query) {
     box.addAll(searches);
   }
 
-
+  // --- NUEVA BÚSQUEDA TODOTERRENO (INTERCEPTA CANALES Y VIDEOS) ---
   void searchVideos(String query) async {
     if (query.trim().isEmpty) return;
     FocusScope.of(context).unfocus();
     _saveSearchHistory(query);
+    
     setState(() {
       isLoading = true;
       searchSuggestions.clear();
-      videos.clear();
+      mixedResults.clear();
     });
+
     try {
-      final results = await yt.search.search(query);
+      // getSearchContent trae TODO: Videos, Canales, Playlists
+      final results = await yt.search.getSearchContent(query);
       if (mounted) {
         setState(() {
-          videos = results.toList();
+          mixedResults = results.toList();
           isLoading = false;
         });
       }
     } catch (e) {
       if (mounted) {
-        setState(() {
-          isLoading = false;
-        });
+        setState(() { isLoading = false; });
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('Error de conexión: $e'),
+          content: Text('Error de intercepción: $e'),
           backgroundColor: Colors.red,
         ));
       }
     }
   }
-
+ 
 
   Widget _buildSearchHistory() {
     return ListView(children: [
@@ -338,9 +353,9 @@ Widget _buildSuggestionsList() {
           ),
           if (isLoading)
             const Expanded(child: Center(child: CircularProgressIndicator()))
-          else if (searchSuggestions.isNotEmpty && videos.isEmpty)
+         else if (searchSuggestions.isNotEmpty && mixedResults.isEmpty)
             Expanded(child: _buildSuggestionsList())
-          else if (videos.isEmpty)
+          else if (mixedResults.isEmpty)
             Expanded(child: _buildSearchHistory())
           else
             Expanded(
@@ -348,94 +363,89 @@ Widget _buildSuggestionsList() {
                 stream: audioHandler.mediaItem,
                 builder: (context, snapshot) {
                   final currentId = snapshot.data?.id;
+                  
                   return ListView.builder(
                     padding: const EdgeInsets.only(bottom: 100),
-                    itemCount: videos.length,
+                    itemCount: mixedResults.length,
                     itemBuilder: (context, index) {
-                      final video = videos[index];
-                      final isPlaying = currentId == video.id.value;
-                      return ListTile(
-                        contentPadding:
-                            const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                        leading: Stack(children: [
-                          Hero(
-                            tag: video.id.value,
-                            child: ClipRRect(
-                              borderRadius: BorderRadius.circular(8),
-                              child: CachedNetworkImage(
-                                imageUrl: video.thumbnails.mediumResUrl,
-                                width: 80,
-                                height: 50,
-                                fit: BoxFit.cover,
-                              ),
-                            ),
-                          ),
-                          Positioned(
-                            bottom: 2,
-                            right: 2,
-                            child: Container(
-                              padding:
-                                  const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                      final item = mixedResults[index];
+                      
+                      // 1. DIBUJAR TARJETA DE CANAL
+                      if (item is SearchChannel) {
+                         return ListTile(
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                            leading: Container(
                               decoration: BoxDecoration(
-                                color: Colors.black87,
-                                borderRadius: BorderRadius.circular(4),
+                                shape: BoxShape.circle,
+                                border: Border.all(color: Colors.yellowAccent, width: 2),
                               ),
-                              child: Text(
-                                formatGlobalDuration(video.duration),
-                                style: const TextStyle(color: Colors.white, fontSize: 10),
+                              child: ClipOval(
+                                child: CachedNetworkImage(
+                                  imageUrl: "https:${item.logoUrl}",
+                                  width: 60, height: 60, fit: BoxFit.cover,
+                                  errorWidget: (c, u, e) => const Icon(Icons.account_circle, color: Colors.grey, size: 60),
+                                ),
                               ),
                             ),
-                          )
-                        ]),
-                        title: Text(video.title,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(color: Colors.white)),
-                        subtitle: Text(video.author,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(color: Colors.grey)),
-                        trailing: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            if (isPlaying)
-                              ValueListenableBuilder<Color>(
-                                valueListenable: appColor,
-                                builder: (context, color, _) =>
-                                    Icon(Icons.equalizer, color: color, size: 24),
-                              ),
-                            ValueListenableBuilder<Color>(
-                              valueListenable: appColor,
-                              builder: (context, color, _) => IconButton(
-                                icon: const Icon(Icons.more_vert, color: Colors.grey),
-                                onPressed: () =>
-                                    globalShowOptions(context, video, color),
+                            title: Text(item.name, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
+                            subtitle: const Text("🎙️ Creador / Estación", style: TextStyle(color: Colors.yellowAccent, fontSize: 12)),
+                            trailing: const Icon(Icons.arrow_forward_ios, color: Colors.grey, size: 16),
+                            onTap: () {
+                               // Aquí abriremos la lista del canal en el siguiente paso
+                               ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(content: Text('Accediendo al canal...'))
+                               );
+                            },
+                         );
+                      }
+                      
+                      // 2. DIBUJAR TARJETA DE VIDEO NORMAL
+                      if (item is SearchVideo) {
+                        final isPlaying = currentId == item.id.value;
+                        return ListTile(
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                          leading: Stack(children: [
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(8),
+                              child: CachedNetworkImage(imageUrl: item.thumbnails.first.url.toString(), width: 80, height: 50, fit: BoxFit.cover),
+                            ),
+                            Positioned(
+                              bottom: 2, right: 2,
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                                decoration: BoxDecoration(color: Colors.black87, borderRadius: BorderRadius.circular(4)),
+                                child: Text(item.duration, style: const TextStyle(color: Colors.white, fontSize: 10)),
                               ),
                             )
-                          ],
-                        ),
-                        onTap: () async {
-                          final queueItems = videos
-                              .map((vid) => MediaItem(
-                                    id: vid.id.value,
-                                    title: vid.title,
-                                    artist: vid.author,
-                                    duration: vid.duration,
-                                    artUri: Uri.parse(vid.thumbnails.highResUrl),
-                                  ))
-                              .toList();
-                          await globalPlayQueue(queueItems, index);
-                        },
-                      );
+                          ]),
+                          title: Text(item.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white)),
+                          subtitle: Text(item.author, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.grey)),
+                          trailing: isPlaying 
+                             ? ValueListenableBuilder<Color>(valueListenable: appColor, builder: (context, color, _) => Icon(Icons.equalizer, color: color, size: 24))
+                             : IconButton(
+                                 icon: const Icon(Icons.more_vert, color: Colors.grey),
+                                 onPressed: () => globalShowOptions(context, {
+                                    'id': item.id.value, 'title': item.title, 'artist': item.author, 'artUri': item.thumbnails.first.url.toString()
+                                 }, appColor.value),
+                               ),
+                          onTap: () async {
+                             // Filtra para armar la cola solo con los videos
+                             final queueItems = mixedResults.whereType<SearchVideo>().map((vid) => MediaItem(
+                                  id: vid.id.value, title: vid.title, artist: vid.author, artUri: Uri.parse(vid.thumbnails.first.url.toString())
+                             )).toList();
+                             
+                             int realIndex = queueItems.indexWhere((vid) => vid.id == item.id.value);
+                             await globalPlayQueue(queueItems, realIndex);
+                          },
+                        );
+                      }
+                      
+                      return const SizedBox.shrink(); // Ocultar si llega otra cosa extraña
                     },
                   );
                 },
               ),
             )
-        ]),
-      ),
-    );
-  }
 }
 class VaultScreen extends StatelessWidget {          
   const VaultScreen({super.key}); 
@@ -503,28 +513,64 @@ class CerrojoScreen extends StatefulWidget { const CerrojoScreen({super.key}); @
 
 class _CerrojoScreenState extends State<CerrojoScreen> {
   final TextEditingController _tokenController = TextEditingController(); final _cerrojoBox = Hive.box('cerrojo_box'); bool _error = false;
-  void _validarToken() { 
-    final tokenIngresado = _tokenController.text.trim(); 
-    if (tokenIngresado.startsWith('APX-')) { 
-      try {
-        final base64String = tokenIngresado.substring(4);
-        final rawData = utf8.decode(base64Decode(base64String)); 
-        final partes = rawData.split('|');
-        if (partes.length == 5) {
-          final tieneBoveda = partes[2] == '1'; 
-          _cerrojoBox.put('acceso_concedido', true); 
-          _cerrojoBox.put('token_activo', tokenIngresado); 
-          _cerrojoBox.put('is_plus_user', tieneBoveda); 
-          Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => const SuperAppSkeleton())); 
-        } else {
-          setState(() { _error = true; }); 
-        }
-      } catch (e) {
-        setState(() { _error = true; }); 
-      }
-    } else { 
-      setState(() { _error = true; }); 
-    } 
+  void _validarToken() {
+    final token = _tokenController.text.trim(); // <-- Ajustado a tu variable original
+    final cerrojoBox = Hive.box('cerrojo_box');
+
+    if (token.isEmpty) return;
+
+    // --- 1. LLAVE MAESTRA DE DESARROLLADOR (BYPASS TOTAL) ---
+    if (token == 'APX-MASTER-VIP-2026') {
+      cerrojoBox.put('acceso_concedido', true);
+      cerrojoBox.put('is_plus_user', true); // Otorga acceso total a Bóveda Offline
+      
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('🔓 Protocolo Máster Aceptado. Bienvenido, Creador.'), 
+          backgroundColor: Colors.purpleAccent,
+          duration: Duration(seconds: 2),
+        ),
+      );
+      
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (context) => const SuperAppSkeleton()),
+      );
+      return;
+    }
+
+    // --- 2. VALIDACIÓN PARA USUARIOS NORMALES ---
+    try {
+      // Decodifica el Base64 que generes para otros usuarios
+      final decoded = utf8.decode(base64.decode(token));
+      final partes = decoded.split('|'); // Formato esperado: FECHA|ID|PLUS
+      
+      // Si el token tiene una tercera parte igual a '1', es usuario Plus
+      final tieneBoveda = partes.length > 2 && partes[2] == '1';
+      
+      cerrojoBox.put('acceso_concedido', true);
+      cerrojoBox.put('is_plus_user', tieneBoveda); 
+      
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(tieneBoveda ? 'Acceso Plus Concedido' : 'Acceso Estándar Concedido'), 
+          backgroundColor: Colors.green
+        ),
+      );
+
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (context) => const SuperAppSkeleton()),
+      );
+    } catch (e) {
+      // Si el código no es el Máster ni un Base64 válido, marca error
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('❌ Código Inválido o Caducado'), 
+          backgroundColor: Colors.red
+        ),
+      );
+    }
   }
 
 

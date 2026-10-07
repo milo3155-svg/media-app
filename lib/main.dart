@@ -32,15 +32,23 @@ final ValueNotifier<int> sleepTimerRemaining = ValueNotifier<int>(0);
 
 
 Future<String?> obtenerAudioDirecto(String videoId) async {
-  try {
-    final yt = YoutubeExplode();
-    final manifest = await yt.videos.streamsClient.getManifest(videoId);
-    final streamsMp4 = manifest.audioOnly.where((stream) => stream.container.name == 'mp4');
-    final streamInfo = streamsMp4.withHighestBitrate();
-    yt.close();
-    return streamInfo.url.toString();
-  } catch (e) { return null; }
-}
+    try {
+      final yt = YoutubeExplode();
+      
+      // TIMEOUT INTELIGENTE: Si Youtube tarda más de 10 segundos, corta y salta
+      final manifest = await yt.videos.streamsClient.getManifest(videoId).timeout(
+        const Duration(seconds: 10),
+        onTimeout: () => throw Exception('Timeout al cargar manifest'),
+      );
+      
+      final streamMp4 = manifest.audioOnly.where((stream) => stream.container.name == 'mp4');
+      final streamInfo = streamMp4.withHighestBitrate();
+      yt.close();
+      return streamInfo.url.toString();
+    } catch (e) { 
+      return null; 
+    }
+  }
 
 
 String formatGlobalDuration(Duration? d) {
@@ -209,32 +217,79 @@ Future<void> skipToNextBase() async { final queueList = queue.value; final curre
   
   @override
   Future<void> playMediaItem(MediaItem item) async {
-    mediaItem.add(item); final historyBox = Hive.box('history'); 
-    int playCount = 1; int savedPosition = 0; 
-    if (historyBox.containsKey(item.id)) { final existingItem = historyBox.get(item.id); playCount = (existingItem['playCount'] ?? 0) + 1; savedPosition = existingItem['savedPosition'] ?? 0; }
-    historyBox.put(item.id, {'id': item.id, 'title': item.title, 'artist': item.artist, 'artUri': item.artUri.toString(), 'duration': item.duration?.inMilliseconds ?? 0, 'timestamp': DateTime.now().millisecondsSinceEpoch, 'playCount': playCount, 'savedPosition': 0});
+    mediaItem.add(item); 
+    final historyBox = Hive.box('history');
+    int playCount = 1; 
+    int savedPosition = 0;
+    
+    if (historyBox.containsKey(item.id)) {
+      final existingItem = historyBox.get(item.id);
+      playCount = (existingItem['playCount'] ?? 0) + 1;
+      savedPosition = existingItem['position'] ?? 0;
+    }
+    
+    historyBox.put(item.id, {
+      'id': item.id, 'title': item.title, 'artist': item.artist, 
+      'artUri': item.artUri.toString(), 'duration': item.duration?.inMilliseconds, 
+      'playCount': playCount, 'position': 0, 'timestamp': DateTime.now().millisecondsSinceEpoch
+    });
+
     try {
       playbackState.add(playbackState.value.copyWith(processingState: AudioProcessingState.loading, playing: true));
-      await _player.stop(); await _player.seek(Duration.zero); 
-      var manifest = await _yt.videos.streamsClient.getManifest(item.id); var video = await _yt.videos.get(item.id); 
-      StreamInfo streamInfo;
-      if (manifest.muxed.isNotEmpty) { streamInfo = isHDMode.value ? manifest.muxed.withHighestBitrate() : manifest.muxed.reduce((a, b) => a.bitrate.bitsPerSecond < b.bitrate.bitsPerSecond ? a : b); } 
-      else if (manifest.audioOnly.isNotEmpty) { streamInfo = isHDMode.value ? manifest.audioOnly.withHighestBitrate() : manifest.audioOnly.reduce((a, b) => a.bitrate.bitsPerSecond < b.bitrate.bitsPerSecond ? a : b); } 
-      else { throw Exception("No streams"); }
+      await _player.stop(); 
+      await _player.seek(Duration.zero);
+
+      // --- FILTRO ANTI-MIX: OBTENEMOS METADATOS RÁPIDO ---
+      var video = await _yt.videos.get(item.id);
       
-      final cachingSource = LockCachingAudioSource(Uri.parse(streamInfo.url.toString()), tag: item.copyWith(duration: video.duration ?? Duration.zero, title: video.title));
+      // Si la duración es mayor a 12 minutos (720 segundos), abortamos y saltamos
+      if (video.duration != null && video.duration!.inSeconds > 720) {
+        print("❌ Mix masivo detectado (${video.duration!.inMinutes} mins). Saltando pista...");
+        await skipToNext(); // Forzamos salto automático
+        return; 
+      }
+
+      // --- TIMEOUT DE EMERGENCIA: SI YOUTUBE TARDA MÁS DE 10 SEGUNDOS, CORTAMOS ---
+      var manifest = await _yt.videos.streamsClient.getManifest(item.id).timeout(
+        const Duration(seconds: 10),
+        onTimeout: () => throw Exception("Timeout: YouTube no respondió a tiempo"),
+      );
+      
+      StreamInfo streamInfo;
+      if (manifest.muxed.isNotEmpty) {
+        streamInfo = isHDMode.value ? manifest.muxed.withHighestBitrate() : manifest.muxed.reduce((a, b) => a.size.totalBytes < b.size.totalBytes ? a : b);
+      } else if (manifest.audioOnly.isNotEmpty) {
+        streamInfo = isHDMode.value ? manifest.audioOnly.withHighestBitrate() : manifest.audioOnly.reduce((a, b) => a.size.totalBytes < b.size.totalBytes ? a : b);
+      } else {
+        throw Exception("No streams available");
+      }
+
+      final cachingSource = LockCachingAudioSource(
+        Uri.parse(streamInfo.url.toString()), 
+        tag: item.copyWith(duration: video.duration ?? Duration.zero, title: video.title)
+      );
+      
       mediaItem.add(item.copyWith(duration: video.duration ?? Duration.zero, title: video.title));
       await _player.setAudioSource(cachingSource);
-      if (savedPosition > 0) { await _player.seek(Duration(milliseconds: savedPosition)); } 
+      
+      if (savedPosition > 0) { 
+        await _player.seek(Duration(milliseconds: savedPosition)); 
+      }
+      
       await _player.play();
-    } catch (e) { 
-      playbackState.add(playbackState.value.copyWith(processingState: AudioProcessingState.error, playing: false)); 
+    } catch (e) {
+      // --- MANEJO DE ERROR: SI ALGO FALLA (COMO EL TIMEOUT), SALTAMOS A LA SIGUIENTE ---
+      print("❌ Error cargando pista: $e");
+      playbackState.add(playbackState.value.copyWith(processingState: AudioProcessingState.error, playing: false));
+      
+      // Esperamos 2 segundos para no saturar el sistema y mandamos siguiente pista
       Timer(const Duration(seconds: 2), () {
-        _isTransitioning = false; 
-        _onTrackFinished(); 
+        _isTransitioning = false;
+        skipToNext(); // Salto forzado si hubo error (como en la pantalla de bloqueo)
       });
     }
   }
+ 
   @override Future<void> updateQueue(List<MediaItem> newQueue) async { queue.add(newQueue); }
 }
 
@@ -310,12 +365,39 @@ class SuperAppSkeleton extends StatefulWidget { const SuperAppSkeleton({super.ke
 
 
 class _SuperAppSkeletonState extends State<SuperAppSkeleton> {
-  int _currentIndex = 0; final List<Widget> _screens = [const HomeScreen(), const SearchScreen(), const OfflineVaultScreen(), const VaultScreen(), const SportsScreen()];
-  @override Widget build(BuildContext context) { 
+  int _currentIndex = 0; final List<Widget> _screens = [
+    const HomeScreen(), 
+    const SearchScreen(), 
+    const VaultScreen(), 
+    const SportsScreen()
+  ];
+ @override Widget build(BuildContext context) { 
     return Scaffold(
       extendBody: true, 
-      body: Stack(children: [ IndexedStack(index: _currentIndex, children: _screens), const Positioned(left: 0, right: 0, bottom: 65, child: MiniPlayer()), ]), 
-      bottomNavigationBar: ClipRRect(child: BackdropFilter(filter: ImageFilter.blur(sigmaX: 15.0, sigmaY: 15.0), child: Container(decoration: BoxDecoration(color: Colors.black.withOpacity(0.4), border: const Border(top: BorderSide(color: Colors.white10, width: 1))), child: BottomNavigationBar(currentIndex: _currentIndex, onTap: (index) => setState(() => _currentIndex = index), items: const [BottomNavigationBarItem(icon: Icon(Icons.radar), label: 'Inicio'), BottomNavigationBarItem(icon: Icon(Icons.search), label: 'Buscar'), BottomNavigationBarItem(icon: Icon(Icons.fingerprint), label: 'Bóveda'), BottomNavigationBarItem(icon: Icon(Icons.stadium), label: 'VIP')]))))
+      body: Stack(children: [ 
+        IndexedStack(index: _currentIndex, children: _screens), 
+        const Positioned(left: 0, right: 0, bottom: 65, child: MiniPlayer()), 
+      ]), 
+      bottomNavigationBar: ClipRRect(
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 15.0, sigmaY: 15.0), 
+          child: Container(
+            decoration: BoxDecoration(
+              color: Colors.black.withOpacity(0.4), 
+              border: const Border(top: BorderSide(color: Colors.white10, width: 1))
+            ), 
+            child: BottomNavigationBar(
+              currentIndex: _currentIndex, 
+              onTap: (index) => setState(() => _currentIndex = index), 
+              items: const [
+                BottomNavigationBarItem(icon: Icon(Icons.radar), label: 'Radar'), 
+                BottomNavigationBarItem(icon: Icon(Icons.search), label: 'Intercepción'), 
+                BottomNavigationBarItem(icon: Icon(Icons.fingerprint), label: 'Cripta'), 
+                BottomNavigationBarItem(icon: Icon(Icons.stadium), label: 'Mesa de Control')
+              ]
+            )
+          )
+        )
+      )
     ); 
   }
-}
