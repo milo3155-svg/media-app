@@ -68,28 +68,9 @@ class HomeScreen extends StatelessWidget {
 
 class SearchScreen extends StatefulWidget { const SearchScreen({super.key}); @override State<SearchScreen> createState() => _SearchScreenState(); }
 
-
 class _SearchScreenState extends State<SearchScreen> {
   final searchController = TextEditingController();
   late final YoutubeExplode yt;
-  List<Video> videos = [];
-  List<String> searchSuggestions = [];
-  bool isLoading = false;
-  Timer? _debounce;
-
-
-  @override
-  void initState() {
-    super.initState();
-    yt = YoutubeExplode();
-    Permission.notification.request();
-  }
-
-class _SearchScreenState extends State<SearchScreen> {
-  final searchController = TextEditingController();
-  late final YoutubeExplode yt;
-  
-  // AHORA ESTA LISTA GUARDARÁ CUALQUIER TIPO DE CONTENIDO (Video, Canal, Playlist)
   List<dynamic> mixedResults = []; 
   List<String> searchSuggestions = [];
   bool isLoading = false;
@@ -111,23 +92,14 @@ class _SearchScreenState extends State<SearchScreen> {
 
   void _onQueryChanged(String query) {
     if (_debounce?.isActive ?? false) _debounce!.cancel();
-
     if (query.trim().isEmpty) {
-      setState(() {
-        searchSuggestions.clear();
-        mixedResults.clear();
-      });
+      setState(() { searchSuggestions.clear(); mixedResults.clear(); });
       return;
     }
-
     _debounce = Timer(const Duration(milliseconds: 300), () async {
       try {
         final suggestions = await yt.search.getQuerySuggestions(query.trim());
-        if (mounted) {
-          setState(() {
-            searchSuggestions = suggestions.toList();
-          });
-        }
+        if (mounted) setState(() => searchSuggestions = suggestions.toList());
       } catch (_) {}
     });
   }
@@ -143,315 +115,187 @@ class _SearchScreenState extends State<SearchScreen> {
     box.addAll(searches);
   }
 
-  // --- NUEVA BÚSQUEDA TODOTERRENO (INTERCEPTA CANALES Y VIDEOS) ---
   void searchVideos(String query) async {
     if (query.trim().isEmpty) return;
     FocusScope.of(context).unfocus();
     _saveSearchHistory(query);
-    
-    setState(() {
-      isLoading = true;
-      searchSuggestions.clear();
-      mixedResults.clear();
-    });
-
+    setState(() { isLoading = true; searchSuggestions.clear(); mixedResults.clear(); });
     try {
-      // getSearchContent trae TODO: Videos, Canales, Playlists
       final results = await yt.search.getSearchContent(query);
-      if (mounted) {
-        setState(() {
-          mixedResults = results.toList();
-          isLoading = false;
-        });
-      }
+      if (mounted) setState(() { mixedResults = results.toList(); isLoading = false; });
     } catch (e) {
       if (mounted) {
-        setState(() { isLoading = false; });
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('Error de intercepción: $e'),
-          backgroundColor: Colors.red,
-        ));
+        setState(() => isLoading = false);
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error de intercepción: $e'), backgroundColor: Colors.red));
       }
     }
   }
- 
 
-  Widget _buildSearchHistory() {
-    return ListView(children: [
-      ValueListenableBuilder(
-        valueListenable: Hive.box('search_history').listenable(),
-        builder: (context, Box box, _) {
-          if (box.isEmpty) return const SizedBox.shrink();
-          final history = box.values.cast<String>().toList();
-          return Column(
-            children: history.map((query) {
-              int index = history.indexOf(query);
-              return ListTile(
-                leading: const Icon(Icons.history, color: Colors.grey),
-                title: Text(query, style: const TextStyle(color: Colors.white)),
-                onTap: () {
-                  searchController.text = query;
-                  searchVideos(query);
-                },
-                trailing: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    IconButton(
-                      icon: const Icon(Icons.north_west, color: Colors.grey, size: 20),
-                      onPressed: () {
-                        searchController.text = query;
-                        searchController.selection = TextSelection.fromPosition(
-                            TextPosition(offset: searchController.text.length));
-                        _onQueryChanged(query);
-                      },
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.close, color: Colors.grey, size: 20),
-                      onPressed: () {
-                        final newHistory = List<String>.from(history)..removeAt(index);
-                        box.clear();
-                        box.addAll(newHistory);
-                      },
-                    )
-                  ],
-                ),
-              );
-            }).toList(),
-          );
-        },
-      ),
-      const Padding(
-        padding: EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-        child: Text("Escuchado Recientemente",
-            style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 16)),
-      ),
-      ValueListenableBuilder(
-        valueListenable: Hive.box('history').listenable(),
-        builder: (context, Box box, _) {
-          if (box.isEmpty) {
-            return const Padding(
-              padding: EdgeInsets.all(16),
-              child: Text("Aún no hay canciones en tu registro.",
-                  style: TextStyle(color: Colors.grey)),
-            );
-          }
-          final items = box.values.toList().cast<Map>()
-            ..sort((a, b) => (b['timestamp'] as int? ?? 0).compareTo(a['timestamp'] as int? ?? 0));
-          return Column(
-            children: items.take(15).map((item) {
-              return ListTile(
-                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                leading: ClipRRect(
-                  borderRadius: BorderRadius.circular(8),
-                  child: CachedNetworkImage(
-                    imageUrl: item['artUri'],
-                    width: 50,
-                    height: 50,
-                    fit: BoxFit.cover,
-                  ),
-                ),
-                title: Text(item['title'], maxLines: 1, overflow: TextOverflow.ellipsis),
-                subtitle: Text(item['artist'],
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(color: Colors.grey, fontSize: 12)),
-                trailing: IconButton(
-                  icon: const Icon(Icons.close, color: Colors.grey, size: 20),
-                  onPressed: () => box.delete(item['id']),
-                ),
-                onTap: () async {
-                  final mediaItem = MediaItem(
-                    id: item['id'],
-                    title: item['title'],
-                    artist: item['artist'],
-                    artUri: Uri.parse(item['artUri']),
-                    duration: Duration(milliseconds: item['duration']),
-                  );
-                  await globalPlay(mediaItem);
-                },
-              );
-            }).toList(),
-          );
-        },
-      ),
-      const SizedBox(height: 100),
-    ]);
-  }
-Widget _buildSuggestionsList() {
+  Widget _buildSuggestionsList() {
     return ListView.builder(
       itemCount: searchSuggestions.length,
       itemBuilder: (context, index) {
         final suggestion = searchSuggestions[index];
         return ListTile(
-          leading: const Icon(Icons.search, color: Colors.yellowAccent),
+          leading: const Icon(Icons.search, color: Colors.grey),
           title: Text(suggestion, style: const TextStyle(color: Colors.white)),
-          trailing: const Icon(Icons.north_west, color: Colors.grey, size: 18),
-          onTap: () {
-            searchController.text = suggestion;
-            searchVideos(suggestion);
+          onTap: () { searchController.text = suggestion; searchVideos(suggestion); },
+        );
+      },
+    );
+  }
+
+  Widget _buildSearchHistory() {
+    return ValueListenableBuilder(
+      valueListenable: Hive.box('search_history').listenable(),
+      builder: (context, Box box, _) {
+        if (box.isEmpty) return const Center(child: Text("Radar inactivo.", style: TextStyle(color: Colors.grey, fontSize: 16)));
+        return ListView.builder(
+          itemCount: box.length,
+          itemBuilder: (context, index) {
+            final query = box.getAt(index) as String;
+            return ListTile(
+              leading: const Icon(Icons.history, color: Colors.grey),
+              title: Text(query, style: const TextStyle(color: Colors.white)),
+              trailing: IconButton(icon: const Icon(Icons.close, color: Colors.grey, size: 20), onPressed: () => box.deleteAt(index)),
+              onTap: () { searchController.text = query; searchVideos(query); },
+            );
           },
         );
       },
     );
   }
 
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.black,
-      appBar: AppBar(
-        title: const Text('Buscador VIP',
-            style: TextStyle(fontWeight: FontWeight.bold, color: Colors.yellowAccent)),
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-      ),
+      backgroundColor: Colors.transparent,
       body: Container(
-        decoration: BoxDecoration(
-          color: Colors.black,
-          image: DecorationImage(
-            image: const AssetImage('assets/ojo_pirata.png'),
-            fit: BoxFit.cover,
-            colorFilter: ColorFilter.mode(Colors.black.withOpacity(0.85), BlendMode.darken),
-          ),
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [Color(0xFF1A1A2E), Color(0xFF16213E), Color(0xFF0F3460)])
         ),
-        child: Column(children: [
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-            child: Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: searchController,
-                    style: GoogleFonts.specialElite(color: Colors.yellowAccent),
-                    decoration: InputDecoration(
-                      hintText: 'Ingresar frecuencia a interceptar...',
-                      hintStyle: GoogleFonts.specialElite(color: Colors.grey),
-                      suffixIcon: searchController.text.isNotEmpty
-                          ? IconButton(
-                              icon: const Icon(Icons.clear, color: Colors.grey),
-                              onPressed: () {
-                                searchController.clear();
-                                _onQueryChanged('');
-                              },
+        child: Column(
+          children: [
+            Container(
+              padding: EdgeInsets.only(top: MediaQuery.of(context).padding.top + 16, left: 16, right: 16, bottom: 16),
+              decoration: BoxDecoration(
+                color: Colors.black.withOpacity(0.3),
+                border: const Border(bottom: BorderSide(color: Colors.white10, width: 1))
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      decoration: BoxDecoration(color: Colors.white.withOpacity(0.05), borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.white10)),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.radar, color: Color(0xFF4ADE80), size: 20),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: TextField(
+                              controller: searchController,
+                              style: const TextStyle(color: Colors.white, fontSize: 16),
+                              decoration: const InputDecoration(hintText: 'Intercepción de señal...', hintStyle: TextStyle(color: Colors.grey), border: InputBorder.none),
+                              onChanged: _onQueryChanged,
+                              onSubmitted: searchVideos,
+                            ),
+                          ),
+                          if (searchController.text.isNotEmpty)
+                            IconButton(
+                              icon: const Icon(Icons.clear, color: Colors.grey, size: 20),
+                              onPressed: () { searchController.clear(); _onQueryChanged(''); }
                             )
-                          : null,
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(10),
+                        ],
                       ),
                     ),
-                    onChanged: _onQueryChanged,
-                    onSubmitted: (val) {
-                      if (val.trim().isNotEmpty) {
-                        searchVideos(val.trim());
-                      }
-                    },
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
-          if (isLoading)
-            const Expanded(child: Center(child: CircularProgressIndicator()))
-         else if (searchSuggestions.isNotEmpty && mixedResults.isEmpty)
-            Expanded(child: _buildSuggestionsList())
-          else if (mixedResults.isEmpty)
-            Expanded(child: _buildSearchHistory())
-          else
-            Expanded(
-              child: StreamBuilder<MediaItem?>(
-                stream: audioHandler.mediaItem,
-                builder: (context, snapshot) {
-                  final currentId = snapshot.data?.id;
-                  
-                  return ListView.builder(
-                    padding: const EdgeInsets.only(bottom: 100),
-                    itemCount: mixedResults.length,
-                    itemBuilder: (context, index) {
-                      final item = mixedResults[index];
-                      
-                      // 1. DIBUJAR TARJETA DE CANAL
-                      if (item is SearchChannel) {
-                         return ListTile(
-                            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                            leading: Container(
-                              decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                border: Border.all(color: Colors.yellowAccent, width: 2),
-                              ),
-                              child: ClipOval(
-                                child: CachedNetworkImage(
-                                  imageUrl: "https:${item.logoUrl}",
-                                  width: 60, height: 60, fit: BoxFit.cover,
-                                  errorWidget: (c, u, e) => const Icon(Icons.account_circle, color: Colors.grey, size: 60),
+            if (isLoading)
+              const Expanded(child: Center(child: CircularProgressIndicator()))
+            else if (searchSuggestions.isNotEmpty && mixedResults.isEmpty)
+              Expanded(child: _buildSuggestionsList())
+            else if (mixedResults.isEmpty)
+              Expanded(child: _buildSearchHistory())
+            else
+              Expanded(
+                child: StreamBuilder<MediaItem?>(
+                  stream: audioHandler.mediaItem,
+                  builder: (context, snapshot) {
+                    final currentId = snapshot.data?.id;
+                    return ListView.builder(
+                      padding: const EdgeInsets.only(bottom: 100),
+                      itemCount: mixedResults.length,
+                      itemBuilder: (context, index) {
+                        final item = mixedResults[index];
+                        if (item is SearchChannel) {
+                           return ListTile(
+                              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                              leading: Container(
+                                decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: Colors.yellowAccent, width: 2)),
+                                child: ClipOval(
+                                  child: CachedNetworkImage(
+                                    imageUrl: "https:${item.logoUrl}", width: 60, height: 60, fit: BoxFit.cover,
+                                    errorWidget: (c, u, e) => const Icon(Icons.account_circle, color: Colors.grey, size: 60),
+                                  ),
                                 ),
                               ),
-                            ),
-                            title: Text(item.name, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
-                            subtitle: const Text("🎙️ Creador / Estación", style: TextStyle(color: Colors.yellowAccent, fontSize: 12)),
-                            trailing: const Icon(Icons.arrow_forward_ios, color: Colors.grey, size: 16),
-                            onTap: () {
-                               // Aquí abriremos la lista del canal en el siguiente paso
-                               ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(content: Text('Accediendo al canal...'))
-                               );
-                            },
-                         );
-                      }
-                      
-                      // 2. DIBUJAR TARJETA DE VIDEO NORMAL
-                      if (item is SearchVideo) {
-                        final isPlaying = currentId == item.id.value;
-                        return ListTile(
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                          leading: Stack(children: [
-                            ClipRRect(
-                              borderRadius: BorderRadius.circular(8),
-                              child: CachedNetworkImage(imageUrl: item.thumbnails.first.url.toString(), width: 80, height: 50, fit: BoxFit.cover),
-                            ),
-                            Positioned(
-                              bottom: 2, right: 2,
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-                                decoration: BoxDecoration(color: Colors.black87, borderRadius: BorderRadius.circular(4)),
-                                child: Text(item.duration, style: const TextStyle(color: Colors.white, fontSize: 10)),
+                              title: Text(item.name, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
+                              subtitle: const Text("🎙️ Creador / Estación", style: TextStyle(color: Colors.yellowAccent, fontSize: 12)),
+                              trailing: const Icon(Icons.arrow_forward_ios, color: Colors.grey, size: 16),
+                              onTap: () {
+                                 ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Accediendo al canal...')));
+                              },
+                           );
+                        }
+                        if (item is SearchVideo) {
+                          final isPlaying = currentId == item.id.value;
+                          return ListTile(
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                            leading: Stack(children: [
+                              ClipRRect(
+                                borderRadius: BorderRadius.circular(8),
+                                child: CachedNetworkImage(imageUrl: item.thumbnails.first.url.toString(), width: 80, height: 50, fit: BoxFit.cover),
                               ),
-                            )
-                          ]),
-                          title: Text(item.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white)),
-                          subtitle: Text(item.author, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.grey)),
-                          trailing: isPlaying 
-                             ? ValueListenableBuilder<Color>(valueListenable: appColor, builder: (context, color, _) => Icon(Icons.equalizer, color: color, size: 24))
-                             : IconButton(
-                                 icon: const Icon(Icons.more_vert, color: Colors.grey),
-                                 onPressed: () => globalShowOptions(context, {
-                                    'id': item.id.value, 'title': item.title, 'artist': item.author, 'artUri': item.thumbnails.first.url.toString()
-                                 }, appColor.value),
-                               ),
-                          onTap: () async {
-                             // Filtra para armar la cola solo con los videos
-                             final queueItems = mixedResults.whereType<SearchVideo>().map((vid) => MediaItem(
-                                  id: vid.id.value, title: vid.title, artist: vid.author, artUri: Uri.parse(vid.thumbnails.first.url.toString())
-                             )).toList();
-                             
-                             int realIndex = queueItems.indexWhere((vid) => vid.id == item.id.value);
-                             await globalPlayQueue(queueItems, realIndex);
-                          },
-                        );
-                      }
-                      
-                     return const SizedBox.shrink(); // Ocultar si llega otra cosa extraña
-                    },
-                  );
-                },
-              ),
-            )
+                              Positioned(
+                                bottom: 2, right: 2,
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                                  decoration: BoxDecoration(color: Colors.black87, borderRadius: BorderRadius.circular(4)),
+                                  child: Text(item.duration, style: const TextStyle(color: Colors.white, fontSize: 10)),
+                                ),
+                              )
+                            ]),
+                            title: Text(item.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white)),
+                            subtitle: Text(item.author, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.grey)),
+                            trailing: isPlaying 
+                               ? ValueListenableBuilder<Color>(valueListenable: appColor, builder: (context, color, _) => Icon(Icons.equalizer, color: color, size: 24))
+                               : IconButton(
+                                   icon: const Icon(Icons.more_vert, color: Colors.grey),
+                                   onPressed: () => globalShowOptions(context, {'id': item.id.value, 'title': item.title, 'artist': item.author, 'artUri': item.thumbnails.first.url.toString()}, appColor.value),
+                                 ),
+                            onTap: () async {
+                               final queueItems = mixedResults.whereType<SearchVideo>().map((vid) => MediaItem(id: vid.id.value, title: vid.title, artist: vid.author, artUri: Uri.parse(vid.thumbnails.first.url.toString()))).toList();
+                               int realIndex = queueItems.indexWhere((vid) => vid.id == item.id.value);
+                               await globalPlayQueue(queueItems, realIndex);
+                            },
+                          );
+                        }
+                        return const SizedBox.shrink();
+                      },
+                    );
+                  },
+                ),
+              )
           ],
         ),
       ),
     );
   }
 }
+
 class VaultScreen extends StatelessWidget {          
   const VaultScreen({super.key}); 
   @override Widget build(BuildContext context) { 
