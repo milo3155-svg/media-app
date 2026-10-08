@@ -24,7 +24,7 @@ import 'download_service.dart';
 // === BLOQUE 1: PANTALLA PRINCIPAL (HOME) ===
 // ============================================================================
 class HomeScreen extends StatelessWidget {
-  const HomeScreen({super.key}): super(key:key);
+  const HomeScreen({super.key});
   
   @override 
   Widget build(BuildContext context) {
