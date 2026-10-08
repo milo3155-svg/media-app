@@ -118,7 +118,7 @@ class HomeScreen extends StatelessWidget {
   void _showQRDialog(BuildContext context) {
     showDialog(
       context: context,
-      backgroundColor: Colors.transparent,
+      barrierColor: Colors.transparent,
       builder: (context) => BackdropFilter(
         filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
         child: Dialog(
