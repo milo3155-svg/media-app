@@ -14,9 +14,11 @@ import 'dart:async';
 import 'package:path_provider/path_provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 
+
 // Importa las variables globales y funciones desde main.dart
 import 'main.dart';
 import 'download_service.dart';
+
 
 // ============================================================================
 // === BLOQUE 1: PANTALLA PRINCIPAL (HOME) ===
@@ -24,9 +26,9 @@ import 'download_service.dart';
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
 
+
   @override
   Widget build(BuildContext context) {
-    // Fondo transparente para que deje ver el Ojo Pirata de main.dart
     return Scaffold(
       backgroundColor: Colors.transparent, 
       body: SafeArea(
@@ -49,6 +51,16 @@ class HomeScreen extends StatelessWidget {
       ),
     );
   }
+
+
+  Widget _buildSectionTitle(String title) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 10),
+      child: Text(title, style: const TextStyle(color: Colors.white70, fontSize: 18, fontWeight: FontWeight.bold)),
+    );
+  }
+
+
   Widget _buildHorizontalList(String boxName) {
     return SizedBox(
       height: 180,
@@ -101,6 +113,7 @@ class HomeScreen extends StatelessWidget {
   }
 }
 
+
 // ============================================================================
 // === BLOQUE 2: MOTOR DE BÚSQUEDA Y REPRODUCCIÓN (LISTA PURA) ===
 // ============================================================================
@@ -110,13 +123,15 @@ class SearchScreen extends StatefulWidget {
   State<SearchScreen> createState() => _SearchScreenState();
 }
 
+
 class _SearchScreenState extends State<SearchScreen> {
   final searchController = TextEditingController();
   late final YoutubeExplode yt;
-  List<Video> videos = []; // <-- LISTA BLINDADA (El audio funcionará al 100%)
+  List<Video> videos = [];
   List<String> searchSuggestions = [];
   bool isLoading = false;
   Timer? _debounce;
+
 
   @override
   void initState() {
@@ -124,12 +139,15 @@ class _SearchScreenState extends State<SearchScreen> {
     yt = YoutubeExplode();
     Permission.notification.request();
   }
+
+
   @override
   void dispose() {
     _debounce?.cancel();
     searchController.dispose();
     super.dispose();
   }
+
 
   void _onQueryChanged(String query) {
     if (_debounce?.isActive ?? false) _debounce!.cancel();
@@ -145,6 +163,7 @@ class _SearchScreenState extends State<SearchScreen> {
     });
   }
 
+
   void _saveSearchHistory(String query) {
     if (query.trim().isEmpty) return;
     final box = Hive.box('search_history');
@@ -155,6 +174,7 @@ class _SearchScreenState extends State<SearchScreen> {
     box.clear();
     box.addAll(searches);
   }
+
 
   void searchVideos(String query) async {
     if (query.trim().isEmpty) return;
@@ -172,6 +192,7 @@ class _SearchScreenState extends State<SearchScreen> {
     }
   }
 
+
   Widget _buildSuggestionsList() {
     return ListView.builder(
       itemCount: searchSuggestions.length,
@@ -185,6 +206,7 @@ class _SearchScreenState extends State<SearchScreen> {
       },
     );
   }
+
 
   Widget _buildSearchHistory() {
     return ValueListenableBuilder(
@@ -207,19 +229,17 @@ class _SearchScreenState extends State<SearchScreen> {
     );
   }
 
+
   @override
   Widget build(BuildContext context) {
-    return SafeArea( // <-- ESTO BAJA LA PANTALLA
+    return SafeArea(
       child: Scaffold(
-        backgroundColor: Colors.transparent, // Fondo transparente para el Ojo Pirata
+        backgroundColor: Colors.transparent, 
         body: Column(
           children: [
             Container(
               padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.black.withOpacity(0.5),
-                border: const Border(bottom: BorderSide(color: Colors.white10, width: 1))
-              ),
+              decoration: BoxDecoration(color: Colors.black.withOpacity(0.5), border: const Border(bottom: BorderSide(color: Colors.white10, width: 1))),
               child: Row(
                 children: [
                   Expanded(
@@ -240,10 +260,7 @@ class _SearchScreenState extends State<SearchScreen> {
                             ),
                           ),
                           if (searchController.text.isNotEmpty)
-                            IconButton(
-                              icon: const Icon(Icons.clear, color: Colors.grey, size: 20),
-                              onPressed: () { searchController.clear(); _onQueryChanged(''); }
-                            )
+                            IconButton(icon: const Icon(Icons.clear, color: Colors.grey, size: 20), onPressed: () { searchController.clear(); _onQueryChanged(''); })
                         ],
                       ),
                     ),
@@ -267,7 +284,7 @@ class _SearchScreenState extends State<SearchScreen> {
                       padding: const EdgeInsets.only(bottom: 100),
                       itemCount: videos.length,
                       itemBuilder: (context, index) {
-                        final video = videos[index]; // LISTA PURA
+                        final video = videos[index]; 
                         final isPlaying = currentId == video.id.value;
                         return ListTile(
                           contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
@@ -276,10 +293,7 @@ class _SearchScreenState extends State<SearchScreen> {
                               tag: video.id.value,
                               child: ClipRRect(
                                 borderRadius: BorderRadius.circular(8),
-                                child: CachedNetworkImage(
-                                  imageUrl: video.thumbnails.mediumResUrl,
-                                  width: 80, height: 50, fit: BoxFit.cover,
-                                )
+                                child: CachedNetworkImage(imageUrl: video.thumbnails.mediumResUrl, width: 80, height: 50, fit: BoxFit.cover)
                               )
                             ),
                             Positioned(
@@ -296,19 +310,12 @@ class _SearchScreenState extends State<SearchScreen> {
                           trailing: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              if (isPlaying)
-                                 ValueListenableBuilder<Color>(valueListenable: appColor, builder: (context, color, _) => Icon(Icons.equalizer, color: color, size: 24)),
+                              if (isPlaying) ValueListenableBuilder<Color>(valueListenable: appColor, builder: (context, color, _) => Icon(Icons.equalizer, color: color, size: 24)),
                               ValueListenableBuilder<Color>(valueListenable: appColor, builder: (context, color, _) => IconButton(icon: const Icon(Icons.more_vert, color: Colors.grey), onPressed: () => globalShowOptions(context, video, color))),
                             ]
                           ),
                           onTap: () async {
-                            final queueItems = videos.map((vid) => MediaItem(
-                              id: vid.id.value,
-                              title: vid.title,
-                              artist: vid.author,
-                              duration: vid.duration,
-                              artUri: Uri.parse(vid.thumbnails.highResUrl),
-                            )).toList();
+                            final queueItems = videos.map((vid) => MediaItem(id: vid.id.value, title: vid.title, artist: vid.author, duration: vid.duration, artUri: Uri.parse(vid.thumbnails.highResUrl))).toList();
                             await globalPlayQueue(queueItems, index);
                           },
                         );
@@ -324,17 +331,18 @@ class _SearchScreenState extends State<SearchScreen> {
   }
 }
 // ============================================================================
-// === BLOQUE 3: LA BÓVEDA (LISTAS GUARDADAS) ===
+// === BLOQUE 3: LA BÓVEDA ===
 // ============================================================================
 class VaultScreen extends StatelessWidget {
   const VaultScreen({super.key});
+
 
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
       length: 3,
       child: Scaffold(
-        backgroundColor: Colors.transparent, // Fondo transparente
+        backgroundColor: Colors.transparent,
         appBar: AppBar(
           backgroundColor: Colors.transparent,
           title: const Text('La Bóveda', style: TextStyle(fontWeight: FontWeight.bold)),
@@ -380,6 +388,7 @@ class VaultScreen extends StatelessWidget {
     );
   }
 
+
   Widget _buildList(List items, String boxName) {
     if (items.isEmpty) return const Center(child: Text("Vacío", style: TextStyle(color: Colors.grey)));
     return ListView.builder(
@@ -388,15 +397,12 @@ class VaultScreen extends StatelessWidget {
     );
   }
 
+
   Widget _buildListItem(dynamic item, Box box, String? playlistKey) {
     return ListTile(
       leading: ClipRRect(
         borderRadius: BorderRadius.circular(4),
-        child: CachedNetworkImage(
-          imageUrl: item['artUri'],
-          width: 50, height: 50, fit: BoxFit.cover,
-          errorWidget: (context, url, error) => const Icon(Icons.error),
-        ),
+        child: CachedNetworkImage(imageUrl: item['artUri'], width: 50, height: 50, fit: BoxFit.cover, errorWidget: (context, url, error) => const Icon(Icons.error)),
       ),
       title: Text(item['title'], maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white)),
       subtitle: Text(item['artist'] ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.grey)),
@@ -413,20 +419,16 @@ class VaultScreen extends StatelessWidget {
         },
       ),
       onTap: () async {
-        final mediaItem = MediaItem(
-          id: item['id'],
-          title: item['title'],
-          artist: item['artist'],
-          artUri: Uri.parse(item['artUri']),
-        );
+        final mediaItem = MediaItem(id: item['id'], title: item['title'], artist: item['artist'], artUri: Uri.parse(item['artUri']));
         await globalPlay(mediaItem);
       },
     );
   }
 }
 
+
 // ============================================================================
-// === BLOQUE 4: PANTALLA DE ACCESO RESTRINGIDO (CERROJO VIP) ===
+// === BLOQUE 4: CERROJO VIP ===
 // ============================================================================
 class CerrojoScreen extends StatefulWidget { 
   const CerrojoScreen({super.key}); 
@@ -434,29 +436,82 @@ class CerrojoScreen extends StatefulWidget {
   State<CerrojoScreen> createState() => _CerrojoScreenState(); 
 }
 
+
 class _CerrojoScreenState extends State<CerrojoScreen> {
   final TextEditingController _tokenController = TextEditingController();
   bool _error = false;
+
 
   void _validarToken() {
     final token = _tokenController.text.trim();
     final cerrojoBox = Hive.box('cerrojo_box');
 
+
     if (token.isEmpty) return;
+
 
     if (token == 'APX-MASTER-VIP-2026') {
       cerrojoBox.put('acceso_concedido', true);
       cerrojoBox.put('is_plus_user', true);
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('🔓 Protocolo Máster Aceptado.'), backgroundColor: Colors.purpleAccent));
+      Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => const SuperAppSkeleton()));
+      return;
+    }
+
+
+    try {
+      final decoded = utf8.decode(base64.decode(token));
+      final partes = decoded.split('|');
+      final tieneBoveda = partes.length > 2 && partes[2] == '1';
       
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('🔓 Protocolo Máster Aceptado. Bienvenido, Creador.'), 
-          backgroundColor: Colors.purpleAccent,
-          duration: Duration(seconds: 2),
-        ),
-      );
-      // ============================================================================
-// === BLOQUE 5: BÓVEDA OFFLINE (DESCARGAS LOCALES) ===
+      cerrojoBox.put('acceso_concedido', true);
+      cerrojoBox.put('is_plus_user', tieneBoveda); 
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(tieneBoveda ? 'Acceso Plus Concedido' : 'Acceso Estándar Concedido'), backgroundColor: Colors.green));
+      Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => const SuperAppSkeleton()));
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('❌ Código Inválido o Caducado'), backgroundColor: Colors.red));
+      setState(() { _error = true; });
+    }
+  }
+
+
+  @override 
+  Widget build(BuildContext context) { 
+    return Scaffold(
+      backgroundColor: const Color(0xFF111111), 
+      body: Padding(
+        padding: const EdgeInsets.all(32.0), 
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center, 
+          crossAxisAlignment: CrossAxisAlignment.stretch, 
+          children: [ 
+            const Icon(Icons.lock_outline, size: 80, color: Color(0xFF4ADE80)), 
+            const SizedBox(height: 32), 
+            const Text('Acceso Restringido', textAlign: TextAlign.center, style: TextStyle(color: Colors.white, fontSize: 28, letterSpacing: 2.0)), 
+            const SizedBox(height: 16), 
+            const Text('Ingresa tu token de seguridad para continuar.', textAlign: TextAlign.center, style: TextStyle(color: Colors.grey, fontSize: 14)), 
+            const SizedBox(height: 48), 
+            TextField(
+              controller: _tokenController, 
+              style: const TextStyle(color: Color(0xFF4ADE80), fontSize: 18, letterSpacing: 1.5), 
+              decoration: InputDecoration(hintText: 'Pega tu TKN aquí...', hintStyle: const TextStyle(color: Colors.white24), errorText: _error ? 'Token inválido o sin permisos' : null, enabledBorder: const UnderlineInputBorder(borderSide: BorderSide(color: Colors.grey)), focusedBorder: const UnderlineInputBorder(borderSide: BorderSide(color: Color(0xFF4ADE80))))
+            ), 
+            const SizedBox(height: 32), 
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF4ADE80), padding: const EdgeInsets.symmetric(vertical: 16), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))), 
+              onPressed: _validarToken, 
+              child: const Text('VALIDAR ACCESO', style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 16))
+            ) 
+          ]
+        )
+      )
+    ); 
+  }
+} // <- AQUÍ ESTÁ LA LLAVE QUE NOS FALTÓ, ¡MAGIA!
+
+
+// ============================================================================
+// === BLOQUE 5: BÓVEDA OFFLINE ===
 // ============================================================================
 class OfflineVaultScreen extends StatelessWidget {
   const OfflineVaultScreen({super.key});
@@ -483,20 +538,14 @@ class OfflineVaultScreen extends StatelessWidget {
                   icon: const Icon(Icons.delete, color: Colors.grey),
                   onPressed: () async {
                     if (item['path'] != null) {
-                      try {
-                        final file = File(item['path']);
-                        if (await file.exists()) await file.delete();
-                      } catch (e) { print("Error borrando archivo local: $e"); }
+                      try { final file = File(item['path']); if (await file.exists()) await file.delete(); } catch (e) { print("Error: $e"); }
                     }
                     box.delete(key);
                   }
                 ),
                 onTap: () {
-                  if (item['path'] != null) {
-                    audioHandler.customAction('playLocal', {'localPath': item['path'], 'id': key, 'title': item['title']});
-                  } else {
-                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Ruta local no encontrada")));
-                  }
+                  if (item['path'] != null) { audioHandler.customAction('playLocal', {'localPath': item['path'], 'id': key, 'title': item['title']}); } 
+                  else { ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Ruta local no encontrada"))); }
                 }
               );
             }
@@ -506,13 +555,11 @@ class OfflineVaultScreen extends StatelessWidget {
     );
   }
 }
-
 // ============================================================================
-// === BLOQUE 6: PANTALLA DE DEPORTES (ESTRUCTURA BÁSICA) ===
+// === BLOQUE 6: ZONA DEPORTES ===
 // ============================================================================
 class SportsScreen extends StatelessWidget {
   const SportsScreen({super.key});
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -523,26 +570,23 @@ class SportsScreen extends StatelessWidget {
           children: [
             Icon(Icons.sports_soccer, size: 80, color: Colors.white.withOpacity(0.5)),
             const SizedBox(height: 16),
-            const Text(
-              "Zona VIP",
-              style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold),
-            ),
+            const Text("Zona VIP", style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold)),
             const SizedBox(height: 8),
-            const Text(
-              "Próximamente disponible...",
-              style: TextStyle(color: Colors.grey, fontSize: 16),
-            ),
+            const Text("Próximamente disponible...", style: TextStyle(color: Colors.grey, fontSize: 16)),
           ],
         ),
       ),
     );
   }
 }
+
+
 // ============================================================================
-// === BLOQUE 7: MINI REPRODUCTOR FLOTANTE ===
+// === BLOQUE 7: MINI REPRODUCTOR ===
 // ============================================================================
 class MiniPlayer extends StatelessWidget {
   const MiniPlayer({super.key});
+
 
   @override 
   Widget build(BuildContext context) {
@@ -553,30 +597,19 @@ class MiniPlayer extends StatelessWidget {
         if (item == null) return const SizedBox.shrink();
         
         return GestureDetector(
-          onTap: () {
-            showModalBottomSheet(
-              context: context, 
-              isScrollControlled: true, 
-              backgroundColor: Colors.transparent,
-              builder: (context) => const FullScreenPlayer()
-            );
-          },
+          onTap: () { showModalBottomSheet(context: context, isScrollControlled: true, backgroundColor: Colors.transparent, builder: (context) => const FullScreenPlayer()); },
           child: Container(
             height: 65, 
             margin: const EdgeInsets.symmetric(horizontal: 8),
             decoration: BoxDecoration(color: const Color(0xFF1E1E1E), borderRadius: BorderRadius.circular(12), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.5), blurRadius: 10, offset: const Offset(0, 4))]),
             child: Row(
               children: [
-                ClipRRect(
-                  borderRadius: const BorderRadius.only(topLeft: Radius.circular(12), bottomLeft: Radius.circular(12)),
-                  child: CachedNetworkImage(imageUrl: item.artUri.toString(), width: 65, height: 65, fit: BoxFit.cover, errorWidget: (c, u, e) => Container(width: 65, height: 65, color: Colors.grey)),
-                ),
+                ClipRRect(borderRadius: const BorderRadius.only(topLeft: Radius.circular(12), bottomLeft: Radius.circular(12)), child: CachedNetworkImage(imageUrl: item.artUri.toString(), width: 65, height: 65, fit: BoxFit.cover, errorWidget: (c, u, e) => Container(width: 65, height: 65, color: Colors.grey))),
                 Expanded(
                   child: Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 12),
                     child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start, 
-                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.start, mainAxisAlignment: MainAxisAlignment.center,
                       children: [
                         Text(item.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14)),
                         Text(item.artist ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.grey, fontSize: 12)),
@@ -614,8 +647,9 @@ class MiniPlayer extends StatelessWidget {
   }
 }
 
+
 // ============================================================================
-// === BLOQUE 8: REPRODUCTOR PANTALLA COMPLETA ===
+// === BLOQUE 8: REPRODUCTOR FULL ===
 // ============================================================================
 class FullScreenPlayer extends StatelessWidget {
   const FullScreenPlayer({super.key});
@@ -626,6 +660,7 @@ class FullScreenPlayer extends StatelessWidget {
     final seconds = d.inSeconds.remainder(60).toString().padLeft(2, '0');
     return "${d.inHours > 0 ? '${d.inHours}:' : ''}$minutes:$seconds";
   }
+
 
   @override 
   Widget build(BuildContext context) {
@@ -660,10 +695,7 @@ class FullScreenPlayer extends StatelessWidget {
                           tag: item.id,
                           child: ClipRRect(
                             borderRadius: BorderRadius.circular(20),
-                            child: AspectRatio(
-                              aspectRatio: 1,
-                              child: CachedNetworkImage(imageUrl: item.artUri.toString(), fit: BoxFit.cover, errorWidget: (c, u, e) => Container(color: Colors.grey)),
-                            ),
+                            child: AspectRatio(aspectRatio: 1, child: CachedNetworkImage(imageUrl: item.artUri.toString(), fit: BoxFit.cover, errorWidget: (c, u, e) => Container(color: Colors.grey))),
                           ),
                         ),
                       ),
@@ -773,3 +805,4 @@ class FullScreenPlayer extends StatelessWidget {
       ),
     );
   }
+}
