@@ -1,8 +1,8 @@
 // ============================================================================
 // ARCHIVO: home_screen.dart
 // ============================================================================
-import 'dart:convert';
 import 'dart:io';
+import 'dart:convert';
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:just_audio/just_audio.dart';
@@ -14,21 +14,21 @@ import 'dart:async';
 import 'package:path_provider/path_provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 
-
 // Importa las variables globales y funciones desde main.dart
 import 'main.dart';
 import 'download_service.dart';
-
 
 // ============================================================================
 // === BLOQUE 1: PANTALLA PRINCIPAL (HOME) ===
 // ============================================================================
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
-  
-  @override 
+
+  @override
   Widget build(BuildContext context) {
+    // Fondo transparente para que deje ver el Ojo Pirata de main.dart
     return Scaffold(
+      backgroundColor: Colors.transparent, 
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(16),
@@ -49,20 +49,169 @@ class HomeScreen extends StatelessWidget {
       ),
     );
   }
+  Widget _buildHorizontalList(String boxName) {
+    return SizedBox(
+      height: 180,
+      child: ValueListenableBuilder(
+        valueListenable: Hive.box(boxName).listenable(),
+        builder: (context, Box box, _) {
+          if (box.isEmpty) return const Center(child: Text("Sección vacía", style: TextStyle(color: Colors.grey)));
+          final items = box.values.toList().reversed.take(10).toList();
+          return ListView.builder(
+            scrollDirection: Axis.horizontal,
+            itemCount: items.length,
+            itemBuilder: (context, index) {
+              final item = items[index];
+              return GestureDetector(
+                onTap: () async {
+                  final mediaItem = MediaItem(
+                    id: item['id'],
+                    title: item['title'],
+                    artist: item['artist'],
+                    artUri: Uri.parse(item['artUri']),
+                  );
+                  await globalPlay(mediaItem);
+                },
+                child: Container(
+                  width: 120,
+                  margin: const EdgeInsets.only(right: 12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(8),
+                        child: CachedNetworkImage(
+                          imageUrl: item['artUri'],
+                          width: 120, height: 120, fit: BoxFit.cover,
+                          errorWidget: (context, url, error) => const Icon(Icons.error),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(item['title'], maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontSize: 14)),
+                      Text(item['artist'] ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.grey, fontSize: 12)),
+                    ],
+                  ),
+                ),
+              );
+            },
+          );
+        },
+      ),
+    );
+  }
+}
 
+// ============================================================================
+// === BLOQUE 2: MOTOR DE BÚSQUEDA Y REPRODUCCIÓN (LISTA PURA) ===
+// ============================================================================
+class SearchScreen extends StatefulWidget {
+  const SearchScreen({super.key});
+  @override
+  State<SearchScreen> createState() => _SearchScreenState();
+}
 
-  Widget _buildSectionTitle(String title) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 10),
-      child: Text(title, style: const TextStyle(color: Colors.white70, fontSize: 18, fontWeight: FontWeight.bold)),
+class _SearchScreenState extends State<SearchScreen> {
+  final searchController = TextEditingController();
+  late final YoutubeExplode yt;
+  List<Video> videos = []; // <-- LISTA BLINDADA (El audio funcionará al 100%)
+  List<String> searchSuggestions = [];
+  bool isLoading = false;
+  Timer? _debounce;
+
+  @override
+  void initState() {
+    super.initState();
+    yt = YoutubeExplode();
+    Permission.notification.request();
+  }
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    searchController.dispose();
+    super.dispose();
+  }
+
+  void _onQueryChanged(String query) {
+    if (_debounce?.isActive ?? false) _debounce!.cancel();
+    if (query.trim().isEmpty) {
+      setState(() { searchSuggestions.clear(); videos.clear(); });
+      return;
+    }
+    _debounce = Timer(const Duration(milliseconds: 300), () async {
+      try {
+        final suggestions = await yt.search.getQuerySuggestions(query.trim());
+        if (mounted) setState(() => searchSuggestions = suggestions.toList());
+      } catch (_) {}
+    });
+  }
+
+  void _saveSearchHistory(String query) {
+    if (query.trim().isEmpty) return;
+    final box = Hive.box('search_history');
+    List<String> searches = box.values.cast<String>().toList();
+    searches.remove(query);
+    searches.insert(0, query);
+    if (searches.length > 15) searches = searches.sublist(0, 15);
+    box.clear();
+    box.addAll(searches);
+  }
+
+  void searchVideos(String query) async {
+    if (query.trim().isEmpty) return;
+    FocusScope.of(context).unfocus();
+    _saveSearchHistory(query);
+    setState(() { isLoading = true; searchSuggestions.clear(); videos.clear(); });
+    try {
+      final results = await yt.search.search(query);
+      if (mounted) setState(() { videos = results.toList(); isLoading = false; });
+    } catch (e) {
+      if (mounted) {
+        setState(() => isLoading = false);
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red));
+      }
+    }
+  }
+
+  Widget _buildSuggestionsList() {
+    return ListView.builder(
+      itemCount: searchSuggestions.length,
+      itemBuilder: (context, index) {
+        final suggestion = searchSuggestions[index];
+        return ListTile(
+          leading: const Icon(Icons.search, color: Colors.grey),
+          title: Text(suggestion, style: const TextStyle(color: Colors.white)),
+          onTap: () { searchController.text = suggestion; searchVideos(suggestion); },
+        );
+      },
     );
   }
 
-@override
+  Widget _buildSearchHistory() {
+    return ValueListenableBuilder(
+      valueListenable: Hive.box('search_history').listenable(),
+      builder: (context, Box box, _) {
+        if (box.isEmpty) return const Center(child: Text("Radar inactivo.", style: TextStyle(color: Colors.grey, fontSize: 16)));
+        return ListView.builder(
+          itemCount: box.length,
+          itemBuilder: (context, index) {
+            final query = box.getAt(index) as String;
+            return ListTile(
+              leading: const Icon(Icons.history, color: Colors.grey),
+              title: Text(query, style: const TextStyle(color: Colors.white)),
+              trailing: IconButton(icon: const Icon(Icons.close, color: Colors.grey, size: 20), onPressed: () => box.deleteAt(index)),
+              onTap: () { searchController.text = query; searchVideos(query); },
+            );
+          },
+        );
+      },
+    );
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return SafeArea( // <-- Esto baja la pantalla a su lugar correcto
+    return SafeArea( // <-- ESTO BAJA LA PANTALLA
       child: Scaffold(
-        backgroundColor: const Color(0xFF111111), // Tu negro blindado original
+        backgroundColor: Colors.transparent, // Fondo transparente para el Ojo Pirata
         body: Column(
           children: [
             Container(
@@ -118,7 +267,7 @@ class HomeScreen extends StatelessWidget {
                       padding: const EdgeInsets.only(bottom: 100),
                       itemCount: videos.length,
                       itemBuilder: (context, index) {
-                        final video = videos[index]; // <-- Lista pura, el audio ya no saltará
+                        final video = videos[index]; // LISTA PURA
                         final isPlaying = currentId == video.id.value;
                         return ListTile(
                           contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
@@ -173,20 +322,21 @@ class HomeScreen extends StatelessWidget {
       ),
     );
   }
-  
+}
 // ============================================================================
 // === BLOQUE 3: LA BÓVEDA (LISTAS GUARDADAS) ===
 // ============================================================================
 class VaultScreen extends StatelessWidget {
   const VaultScreen({super.key});
 
-
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
       length: 3,
       child: Scaffold(
+        backgroundColor: Colors.transparent, // Fondo transparente
         appBar: AppBar(
+          backgroundColor: Colors.transparent,
           title: const Text('La Bóveda', style: TextStyle(fontWeight: FontWeight.bold)),
           bottom: const TabBar(
             indicatorColor: Color(0xFF4ADE80),
@@ -210,7 +360,7 @@ class VaultScreen extends StatelessWidget {
             ValueListenableBuilder(
               valueListenable: Hive.box('playlists').listenable(),
               builder: (context, Box box, _) {
-                if (box.isEmpty) return const Center(child: Text("Sin playlists."));
+                if (box.isEmpty) return const Center(child: Text("Sin playlists.", style: TextStyle(color: Colors.white)));
                 return ListView(
                   children: box.keys.map((key) {
                     final playlist = box.get(key) as List;
@@ -230,7 +380,6 @@ class VaultScreen extends StatelessWidget {
     );
   }
 
-
   Widget _buildList(List items, String boxName) {
     if (items.isEmpty) return const Center(child: Text("Vacío", style: TextStyle(color: Colors.grey)));
     return ListView.builder(
@@ -238,7 +387,6 @@ class VaultScreen extends StatelessWidget {
       itemBuilder: (context, index) => _buildListItem(items[index], Hive.box(boxName), null),
     );
   }
-
 
   Widget _buildListItem(dynamic item, Box box, String? playlistKey) {
     return ListTile(
@@ -277,7 +425,6 @@ class VaultScreen extends StatelessWidget {
   }
 }
 
-
 // ============================================================================
 // === BLOQUE 4: PANTALLA DE ACCESO RESTRINGIDO (CERROJO VIP) ===
 // ============================================================================
@@ -287,19 +434,15 @@ class CerrojoScreen extends StatefulWidget {
   State<CerrojoScreen> createState() => _CerrojoScreenState(); 
 }
 
-
 class _CerrojoScreenState extends State<CerrojoScreen> {
   final TextEditingController _tokenController = TextEditingController();
   bool _error = false;
-
 
   void _validarToken() {
     final token = _tokenController.text.trim();
     final cerrojoBox = Hive.box('cerrojo_box');
 
-
     if (token.isEmpty) return;
-
 
     if (token == 'APX-MASTER-VIP-2026') {
       cerrojoBox.put('acceso_concedido', true);
@@ -312,89 +455,7 @@ class _CerrojoScreenState extends State<CerrojoScreen> {
           duration: Duration(seconds: 2),
         ),
       );
-      
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (context) => const SuperAppSkeleton()),
-      );
-      return;
-    }
-
-
-    try {
-      final decoded = utf8.decode(base64.decode(token));
-      final partes = decoded.split('|');
-      final tieneBoveda = partes.length > 2 && partes[2] == '1';
-      
-      cerrojoBox.put('acceso_concedido', true);
-      cerrojoBox.put('is_plus_user', tieneBoveda); 
-      
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(tieneBoveda ? 'Acceso Plus Concedido' : 'Acceso Estándar Concedido'), 
-          backgroundColor: Colors.green
-        ),
-      );
-
-
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (context) => const SuperAppSkeleton()),
-      );
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('❌ Código Inválido o Caducado'), 
-          backgroundColor: Colors.red
-        ),
-      );
-      setState(() { _error = true; });
-    }
-  }
-
-
-  @override 
-  Widget build(BuildContext context) { 
-    return Scaffold(
-      backgroundColor: const Color(0xFF111111), 
-      body: Padding(
-        padding: const EdgeInsets.all(32.0), 
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center, 
-          crossAxisAlignment: CrossAxisAlignment.stretch, 
-          children: [ 
-            const Icon(Icons.lock_outline, size: 80, color: Color(0xFF4ADE80)), 
-            const SizedBox(height: 32), 
-            const Text('Acceso Restringido', textAlign: TextAlign.center, style: TextStyle(color: Colors.white, fontSize: 28, letterSpacing: 2.0)), 
-            const SizedBox(height: 16), 
-            const Text('Ingresa tu token de seguridad para continuar.', textAlign: TextAlign.center, style: TextStyle(color: Colors.grey, fontSize: 14)), 
-            const SizedBox(height: 48), 
-            TextField(
-              controller: _tokenController, 
-              style: const TextStyle(color: Color(0xFF4ADE80), fontSize: 18, letterSpacing: 1.5), 
-              decoration: InputDecoration(
-                hintText: 'Pega tu TKN aquí...', 
-                hintStyle: const TextStyle(color: Colors.white24), 
-                errorText: _error ? 'Token inválido o sin permisos' : null, 
-                enabledBorder: const UnderlineInputBorder(borderSide: BorderSide(color: Colors.grey)), 
-                focusedBorder: const UnderlineInputBorder(borderSide: BorderSide(color: Color(0xFF4ADE80)))
-              )
-            ), 
-            const SizedBox(height: 32), 
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF4ADE80), padding: const EdgeInsets.symmetric(vertical: 16), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))), 
-              onPressed: _validarToken, 
-              child: const Text('VALIDAR ACCESO', style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 16))
-            ) 
-          ]
-        )
-      )
-    ); 
-  }
-}
-
-
-// ============================================================================
+      // ============================================================================
 // === BLOQUE 5: BÓVEDA OFFLINE (DESCARGAS LOCALES) ===
 // ============================================================================
 class OfflineVaultScreen extends StatelessWidget {
@@ -403,8 +464,8 @@ class OfflineVaultScreen extends StatelessWidget {
   @override 
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.black, 
-      appBar: AppBar(title: const Text('Bóveda Offline', style: TextStyle(color: Colors.white)), backgroundColor: Colors.black, centerTitle: true),
+      backgroundColor: Colors.transparent, 
+      appBar: AppBar(title: const Text('Bóveda Offline', style: TextStyle(color: Colors.white)), backgroundColor: Colors.transparent, centerTitle: true),
       body: ValueListenableBuilder(
         valueListenable: Hive.box('downloads').listenable(),
         builder: (context, Box box, _) {
@@ -446,13 +507,11 @@ class OfflineVaultScreen extends StatelessWidget {
   }
 }
 
-
 // ============================================================================
 // === BLOQUE 6: PANTALLA DE DEPORTES (ESTRUCTURA BÁSICA) ===
 // ============================================================================
 class SportsScreen extends StatelessWidget {
   const SportsScreen({super.key});
-
 
   @override
   Widget build(BuildContext context) {
@@ -479,14 +538,11 @@ class SportsScreen extends StatelessWidget {
     );
   }
 }
-
-
 // ============================================================================
 // === BLOQUE 7: MINI REPRODUCTOR FLOTANTE ===
 // ============================================================================
 class MiniPlayer extends StatelessWidget {
   const MiniPlayer({super.key});
-
 
   @override 
   Widget build(BuildContext context) {
@@ -558,7 +614,6 @@ class MiniPlayer extends StatelessWidget {
   }
 }
 
-
 // ============================================================================
 // === BLOQUE 8: REPRODUCTOR PANTALLA COMPLETA ===
 // ============================================================================
@@ -571,7 +626,6 @@ class FullScreenPlayer extends StatelessWidget {
     final seconds = d.inSeconds.remainder(60).toString().padLeft(2, '0');
     return "${d.inHours > 0 ? '${d.inHours}:' : ''}$minutes:$seconds";
   }
-
 
   @override 
   Widget build(BuildContext context) {
@@ -719,4 +773,3 @@ class FullScreenPlayer extends StatelessWidget {
       ),
     );
   }
-}
