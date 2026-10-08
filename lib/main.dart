@@ -218,76 +218,67 @@ Future<void> skipToNextBase() async { final queueList = queue.value; final curre
   
   @override
   Future<void> playMediaItem(MediaItem item) async {
-    mediaItem.add(item); 
+    mediaItem.add(item);
     final historyBox = Hive.box('history');
-    int playCount = 1; 
-    int savedPosition = 0;
+    int playCount = 1; int savedPosition = 0;
     
-    if (historyBox.containsKey(item.id)) {
-      final existingItem = historyBox.get(item.id);
-      playCount = (existingItem['playCount'] ?? 0) + 1;
-      savedPosition = existingItem['position'] ?? 0;
+    if (historyBox.containsKey(item.id)) { 
+      final existingItem = historyBox.get(item.id); 
+      playCount = (existingItem['playCount'] ?? 0) + 1; 
+      savedPosition = existingItem['savedPosition'] ?? 0; 
     }
     
     historyBox.put(item.id, {
       'id': item.id, 'title': item.title, 'artist': item.artist, 
-      'artUri': item.artUri.toString(), 'duration': item.duration?.inMilliseconds, 
-      'playCount': playCount, 'position': 0, 'timestamp': DateTime.now().millisecondsSinceEpoch
+      'artUri': item.artUri.toString(), 'duration': item.duration?.inMilliseconds ?? 0, 
+      'timestamp': DateTime.now().millisecondsSinceEpoch, 'playCount': playCount, 'savedPosition': 0
     });
 
     try {
       playbackState.add(playbackState.value.copyWith(processingState: AudioProcessingState.loading, playing: true));
-      await _player.stop(); 
+      await _player.stop();
       await _player.seek(Duration.zero);
-
-      // --- FILTRO ANTI-MIX: OBTENEMOS METADATOS RÁPIDO ---
+      
+      var manifest = await _yt.videos.streamsClient.getManifest(item.id);
       var video = await _yt.videos.get(item.id);
-      
-      // Si la duración es mayor a 12 minutos (720 segundos), abortamos y saltamos
-      if (video.duration != null && video.duration!.inSeconds > 720) {
-        print("❌ Mix masivo detectado (${video.duration!.inMinutes} mins). Saltando pista...");
-        await skipToNext(); // Forzamos salto automático
-        return; 
-      }
-
-      // --- TIMEOUT DE EMERGENCIA: SI YOUTUBE TARDA MÁS DE 10 SEGUNDOS, CORTAMOS ---
-      var manifest = await _yt.videos.streamsClient.getManifest(item.id).timeout(
-        const Duration(seconds: 10),
-        onTimeout: () => throw Exception("Timeout: YouTube no respondió a tiempo"),
-      );
-      
       StreamInfo streamInfo;
-      if (manifest.muxed.isNotEmpty) {
-        streamInfo = isHDMode.value ? manifest.muxed.withHighestBitrate() : manifest.muxed.reduce((a, b) => a.size.totalBytes < b.size.totalBytes ? a : b);
+      
+      // EL FIX MAESTRO: Obligamos a YoutubeExplode a darnos SOLO AUDIO (mp4 o m4a).
+      // Si usamos Muxed (Video+Audio), just_audio se atraganta y salta la pista.
+      final audioStreams = manifest.audioOnly.where((s) => s.container.name == 'mp4' || s.container.name == 'm4a');
+      
+      if (audioStreams.isNotEmpty) {
+        streamInfo = audioStreams.withHighestBitrate();
       } else if (manifest.audioOnly.isNotEmpty) {
-        streamInfo = isHDMode.value ? manifest.audioOnly.withHighestBitrate() : manifest.audioOnly.reduce((a, b) => a.size.totalBytes < b.size.totalBytes ? a : b);
+        streamInfo = manifest.audioOnly.withHighestBitrate();
       } else {
-        throw Exception("No streams available");
+        streamInfo = manifest.muxed.withHighestBitrate(); 
       }
 
-      final cachingSource = LockCachingAudioSource(
-        Uri.parse(streamInfo.url.toString()), 
-        tag: item.copyWith(duration: video.duration ?? Duration.zero, title: video.title)
+      // Quitamos LockCachingAudioSource. YouTube bloquea los cachés locales agresivos.
+      // AudioSource.uri fluye directo desde el servidor sin trabas.
+      final audioSource = AudioSource.uri(
+        Uri.parse(streamInfo.url.toString()),
+        tag: item.copyWith(
+          duration: video.duration ?? Duration.zero,
+          title: video.title,
+        ),
       );
       
-      mediaItem.add(item.copyWith(duration: video.duration ?? Duration.zero, title: video.title));
-      await _player.setAudioSource(cachingSource);
+      mediaItem.add(
+        item.copyWith(
+          duration: video.duration ?? Duration.zero,
+          title: video.title,
+        )
+      );
       
-      if (savedPosition > 0) { 
-        await _player.seek(Duration(milliseconds: savedPosition)); 
-      }
-      
+      await _player.setAudioSource(audioSource);
+      if (savedPosition > 0) { await _player.seek(Duration(milliseconds: savedPosition)); }
       await _player.play();
-    } catch (e) {
-      // --- MANEJO DE ERROR: SI ALGO FALLA (COMO EL TIMEOUT), SALTAMOS A LA SIGUIENTE ---
-      print("❌ Error cargando pista: $e");
-      playbackState.add(playbackState.value.copyWith(processingState: AudioProcessingState.error, playing: false));
       
-      // Esperamos 2 segundos para no saturar el sistema y mandamos siguiente pista
-      Timer(const Duration(seconds: 2), () {
-        _isTransitioning = false;
-        skipToNext(); // Salto forzado si hubo error (como en la pantalla de bloqueo)
-      });
+    } catch (e) { 
+      print("Error blindado en audio: $e");
+      playbackState.add(playbackState.value.copyWith(processingState: AudioProcessingState.error, playing: false)); 
     }
   }
  
