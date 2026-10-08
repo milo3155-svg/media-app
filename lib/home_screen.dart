@@ -127,11 +127,10 @@ class SearchScreen extends StatefulWidget {
 class _SearchScreenState extends State<SearchScreen> {
   final searchController = TextEditingController();
   late final YoutubeExplode yt;
-  List<dynamic> mixedResults = []; 
+  List<Video> videos = []; // <-- Lista tipada original y estable
   List<String> searchSuggestions = [];
   bool isLoading = false;
   Timer? _debounce;
-
 
   @override
   void initState() {
@@ -140,7 +139,6 @@ class _SearchScreenState extends State<SearchScreen> {
     Permission.notification.request();
   }
 
-
   @override
   void dispose() {
     _debounce?.cancel();
@@ -148,11 +146,10 @@ class _SearchScreenState extends State<SearchScreen> {
     super.dispose();
   }
 
-
   void _onQueryChanged(String query) {
     if (_debounce?.isActive ?? false) _debounce!.cancel();
     if (query.trim().isEmpty) {
-      setState(() { searchSuggestions.clear(); mixedResults.clear(); });
+      setState(() { searchSuggestions.clear(); videos.clear(); });
       return;
     }
     _debounce = Timer(const Duration(milliseconds: 300), () async {
@@ -162,7 +159,6 @@ class _SearchScreenState extends State<SearchScreen> {
       } catch (_) {}
     });
   }
-
 
   void _saveSearchHistory(String query) {
     if (query.trim().isEmpty) return;
@@ -175,43 +171,14 @@ class _SearchScreenState extends State<SearchScreen> {
     box.addAll(searches);
   }
 
-
   void searchVideos(String query) async {
     if (query.trim().isEmpty) return;
     FocusScope.of(context).unfocus();
     _saveSearchHistory(query);
-    setState(() { isLoading = true; searchSuggestions.clear(); mixedResults.clear(); });
-    
+    setState(() { isLoading = true; searchSuggestions.clear(); videos.clear(); });
     try {
-      // 1. Buscamos primero si hay un canal exacto que coincida
-      SearchList? channelSearch;
-      try {
-        channelSearch = await yt.search.searchContent(query, filter: TypeFilters.channel);
-      } catch (e) {
-        print("Búsqueda de canal omitida o fallida: $e");
-      }
-
-
-      // 2. Buscamos los videos generales
-      final videoSearch = await yt.search.search(query);
-      
-      List<dynamic> combinedResults = [];
-      
-      // Si encontró un canal en la primera posición, lo agregamos arriba
-      if (channelSearch != null && channelSearch.isNotEmpty) {
-         combinedResults.add(channelSearch.first);
-      }
-      
-      // Agregamos todos los videos normales
-      combinedResults.addAll(videoSearch);
-
-
-      if (mounted) {
-        setState(() { 
-          mixedResults = combinedResults; 
-          isLoading = false; 
-        });
-      }
+      final results = await yt.search.search(query);
+      if (mounted) setState(() { videos = results.toList(); isLoading = false; });
     } catch (e) {
       if (mounted) {
         setState(() => isLoading = false);
@@ -219,7 +186,6 @@ class _SearchScreenState extends State<SearchScreen> {
       }
     }
   }
-
 
   Widget _buildSuggestionsList() {
     return ListView.builder(
@@ -234,7 +200,6 @@ class _SearchScreenState extends State<SearchScreen> {
       },
     );
   }
-
 
   Widget _buildSearchHistory() {
     return ValueListenableBuilder(
@@ -257,156 +222,121 @@ class _SearchScreenState extends State<SearchScreen> {
     );
   }
 
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.transparent,
-      body: Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [Color(0xFF1A1A2E), Color(0xFF16213E), Color(0xFF0F3460)])
-        ),
-        child: Column(
-          children: [
-            Container(
-              padding: EdgeInsets.only(top: MediaQuery.of(context).padding.top + 16, left: 16, right: 16, bottom: 16),
-              decoration: BoxDecoration(
-                color: Colors.black.withOpacity(0.3),
-                border: const Border(bottom: BorderSide(color: Colors.white10, width: 1))
-              ),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      decoration: BoxDecoration(color: Colors.white.withOpacity(0.05), borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.white10)),
-                      child: Row(
-                        children: [
-                          const Icon(Icons.radar, color: Color(0xFF4ADE80), size: 20),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: TextField(
-                              controller: searchController,
-                              style: const TextStyle(color: Colors.white, fontSize: 16),
-                              decoration: const InputDecoration(hintText: 'Intercepción de señal...', hintStyle: TextStyle(color: Colors.grey), border: InputBorder.none),
-                              onChanged: _onQueryChanged,
-                              onSubmitted: searchVideos,
-                            ),
+      backgroundColor: const Color(0xFF111111), // Fondo negro blindado original
+      body: Column(
+        children: [
+          Container(
+            padding: EdgeInsets.only(top: MediaQuery.of(context).padding.top + 16, left: 16, right: 16, bottom: 16),
+            decoration: BoxDecoration(
+              color: Colors.black.withOpacity(0.5),
+              border: const Border(bottom: BorderSide(color: Colors.white10, width: 1))
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    decoration: BoxDecoration(color: Colors.white.withOpacity(0.05), borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.white10)),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.radar, color: Color(0xFF4ADE80), size: 20),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: TextField(
+                            controller: searchController,
+                            style: const TextStyle(color: Colors.white, fontSize: 16),
+                            decoration: const InputDecoration(hintText: 'Intercepción de señal...', hintStyle: TextStyle(color: Colors.grey), border: InputBorder.none),
+                            onChanged: _onQueryChanged,
+                            onSubmitted: searchVideos,
                           ),
-                          if (searchController.text.isNotEmpty)
-                            IconButton(
-                              icon: const Icon(Icons.clear, color: Colors.grey, size: 20),
-                              onPressed: () { searchController.clear(); _onQueryChanged(''); }
-                            )
-                        ],
-                      ),
+                        ),
+                        if (searchController.text.isNotEmpty)
+                          IconButton(
+                            icon: const Icon(Icons.clear, color: Colors.grey, size: 20),
+                            onPressed: () { searchController.clear(); _onQueryChanged(''); }
+                          )
+                      ],
                     ),
                   ),
-                ],
-              ),
-            ),
-            if (isLoading)
-              const Expanded(child: Center(child: CircularProgressIndicator()))
-            else if (searchSuggestions.isNotEmpty && mixedResults.isEmpty)
-              Expanded(child: _buildSuggestionsList())
-            else if (mixedResults.isEmpty)
-              Expanded(child: _buildSearchHistory())
-            else
-              Expanded(
-                child: StreamBuilder<MediaItem?>(
-                  stream: audioHandler.mediaItem,
-                  builder: (context, snapshot) {
-                    final currentId = snapshot.data?.id;
-                    return ListView.builder(
-                      padding: const EdgeInsets.only(bottom: 100),
-                      itemCount: mixedResults.length,
-                      itemBuilder: (context, index) {
-                        final item = mixedResults[index];
-                        
-                        // Si el item es un CANAL
-                        if (item.runtimeType.toString() == 'SearchChannel') {
-                           return ListTile(
-                              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                              leading: Container(
-                                padding: const EdgeInsets.all(8),
-                                decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: Colors.yellowAccent, width: 2)),
-                                child: const Icon(Icons.account_circle, color: Colors.yellowAccent, size: 30),
-                              ),
-                              title: Text(item.name ?? 'Canal', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
-                              subtitle: const Text("🎙️ Creador / Estación", style: TextStyle(color: Colors.yellowAccent, fontSize: 12)),
-                              trailing: const Icon(Icons.arrow_forward_ios, color: Colors.grey, size: 16),
-                              onTap: () {
-                                 ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Accediendo al canal...')));
-                              },
-                           );
-                        }
-                        
-                        // Si el item es un VIDEO NORMAL
-                        try {
-                          final video = item;
-                          final isPlaying = currentId == video.id.value;
-                          return ListTile(
-                            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                            leading: Stack(children: [
-                              Hero(
-                                tag: video.id.value,
-                                child: ClipRRect(
-                                  borderRadius: BorderRadius.circular(8),
-                                  child: CachedNetworkImage(
-                                    imageUrl: video.thumbnails.mediumResUrl,
-                                    width: 80, height: 50, fit: BoxFit.cover,
-                                    errorWidget: (context, url, error) => Container(width: 80, height: 50, color: Colors.grey[800], child: const Icon(Icons.error, color: Colors.white)),
-                                  )
-                                )
-                              ),
-                              Positioned(
-                                bottom: 2, right: 2,
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-                                  decoration: BoxDecoration(color: Colors.black87, borderRadius: BorderRadius.circular(4)),
-                                  child: Text(formatGlobalDuration(video.duration), style: const TextStyle(color: Colors.white, fontSize: 10))
-                                )
-                              )
-                            ]),
-                            title: Text(video.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white)),
-                            subtitle: Text(video.author, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.grey)),
-                            trailing: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                if (isPlaying)
-                                   ValueListenableBuilder<Color>(valueListenable: appColor, builder: (context, color, _) => Icon(Icons.equalizer, color: color, size: 24)),
-                                ValueListenableBuilder<Color>(valueListenable: appColor, builder: (context, color, _) => IconButton(icon: const Icon(Icons.more_vert, color: Colors.grey), onPressed: () => globalShowOptions(context, video, color))),
-                              ]
-                            ),
-                            onTap: () async {
-                              List<MediaItem> queueItems = [];
-                              for (var vid in mixedResults) {
-                                 if (vid.runtimeType.toString() != 'SearchChannel') {
-                                    queueItems.add(MediaItem(id: vid.id.value, title: vid.title, artist: vid.author, duration: vid.duration, artUri: Uri.parse(vid.thumbnails.highResUrl)));
-                                 }
-                              }
-                              int realIndex = queueItems.indexWhere((vid) => vid.id == video.id.value);
-                              if (realIndex != -1) {
-                                await globalPlayQueue(queueItems, realIndex);
-                              }
-                            }
-                          );
-                        } catch (e) {
-                          // Parche de seguridad: si un item viene corrupto o es un en vivo raro, lo ignoramos para que no rompa la pantalla
-                          return const SizedBox.shrink();
-                        }
-                      },
-                    );
-                  },
                 ),
-              )
-          ],
-        ),
+              ],
+            ),
+          ),
+          if (isLoading)
+            const Expanded(child: Center(child: CircularProgressIndicator()))
+          else if (searchSuggestions.isNotEmpty && videos.isEmpty)
+            Expanded(child: _buildSuggestionsList())
+          else if (videos.isEmpty)
+            Expanded(child: _buildSearchHistory())
+          else
+            Expanded(
+              child: StreamBuilder<MediaItem?>(
+                stream: audioHandler.mediaItem,
+                builder: (context, snapshot) {
+                  final currentId = snapshot.data?.id;
+                  return ListView.builder(
+                    padding: const EdgeInsets.only(bottom: 100),
+                    itemCount: videos.length,
+                    itemBuilder: (context, index) {
+                      final video = videos[index];
+                      final isPlaying = currentId == video.id.value;
+                      return ListTile(
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                        leading: Stack(children: [
+                          Hero(
+                            tag: video.id.value,
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(8),
+                              child: CachedNetworkImage(
+                                imageUrl: video.thumbnails.mediumResUrl,
+                                width: 80, height: 50, fit: BoxFit.cover,
+                                errorWidget: (context, url, error) => Container(width: 80, height: 50, color: Colors.grey[800], child: const Icon(Icons.error, color: Colors.white)),
+                              )
+                            )
+                          ),
+                          Positioned(
+                            bottom: 2, right: 2,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                              decoration: BoxDecoration(color: Colors.black87, borderRadius: BorderRadius.circular(4)),
+                              child: Text(formatGlobalDuration(video.duration), style: const TextStyle(color: Colors.white, fontSize: 10))
+                            )
+                          )
+                        ]),
+                        title: Text(video.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white)),
+                        subtitle: Text(video.author, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.grey)),
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            if (isPlaying)
+                               ValueListenableBuilder<Color>(valueListenable: appColor, builder: (context, color, _) => Icon(Icons.equalizer, color: color, size: 24)),
+                            ValueListenableBuilder<Color>(valueListenable: appColor, builder: (context, color, _) => IconButton(icon: const Icon(Icons.more_vert, color: Colors.grey), onPressed: () => globalShowOptions(context, video, color))),
+                          ]
+                        ),
+                        onTap: () async {
+                          final queueItems = videos.map((vid) => MediaItem(
+                            id: vid.id.value,
+                            title: vid.title,
+                            artist: vid.author,
+                            duration: vid.duration,
+                            artUri: Uri.parse(vid.thumbnails.highResUrl),
+                          )).toList();
+                          await globalPlayQueue(queueItems, index);
+                        },
+                      );
+                    },
+                  );
+                },
+              ),
+            )
+        ],
       ),
     );
   }
-}
-
+} // <-- Llave que cierra _SearchScreenState perfectamente
 
 // ============================================================================
 // === BLOQUE 3: LA BÓVEDA (LISTAS GUARDADAS) ===
