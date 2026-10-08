@@ -1,808 +1,389 @@
-// ============================================================================
-// ARCHIVO: home_screen.dart
-// ============================================================================
-import 'dart:io';
-import 'dart:convert';
 import 'dart:ui';
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:just_audio/just_audio.dart';
-import 'package:audio_service/audio_service.dart';
-import 'package:permission_handler/permission_handler.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
-import 'package:hive_flutter/hive_flutter.dart';
-import 'dart:async';
-import 'package:path_provider/path_provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:hive_flutter/hive_flutter.dart';
+import 'package:audio_service/audio_service.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:qr_flutter/qr_flutter.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 
-// Importa las variables globales y funciones desde main.dart
-import 'main.dart';
-import 'download_service.dart';
+import 'main.dart'; // Para acceso a globals (audioHandler, appColor)
 
 
 // ============================================================================
-// === BLOQUE 1: PANTALLA PRINCIPAL (HOME) ===
+// === SUPER APP SKELETON: CONTENEDOR CON BARRA DE NAVEGACIÓN Y MINIPLAYER ===
 // ============================================================================
-class HomeScreen extends StatelessWidget {
-  const HomeScreen({super.key});
+class SuperAppSkeleton extends StatefulWidget {
+  const SuperAppSkeleton({super.key});
+  @override State<SuperAppSkeleton> createState() => _SuperAppSkeletonState();
+}
 
 
-  @override
-  Widget build(BuildContext context) {
+class _SuperAppSkeletonState extends State<SuperAppSkeleton> {
+  int _currentIndex = 0;
+  final List<Widget> _screens = [const HomeScreen(), const SearchScreen(), const VaultScreen()];
+
+
+  @override Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.transparent, 
-      body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const SizedBox(height: 20),
-              const Text("Radar Global", style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold)),
-              const SizedBox(height: 20),
-              _buildSectionTitle('Tendencias'),
-              _buildHorizontalList('history'),
-              const SizedBox(height: 20),
-              _buildSectionTitle('Escuchados Recientemente'),
-              _buildHorizontalList('history'),
-            ],
-          ),
-        ),
+      body: Stack(
+        children: [
+          _screens[_currentIndex],
+          Positioned(bottom: 0, left: 0, right: 0, child: _buildMiniPlayer()),
+        ]
       ),
-    );
-  }
-
-
-  Widget _buildSectionTitle(String title) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 10),
-      child: Text(title, style: const TextStyle(color: Colors.white70, fontSize: 18, fontWeight: FontWeight.bold)),
-    );
-  }
-
-
-  Widget _buildHorizontalList(String boxName) {
-    return SizedBox(
-      height: 180,
-      child: ValueListenableBuilder(
-        valueListenable: Hive.box(boxName).listenable(),
-        builder: (context, Box box, _) {
-          if (box.isEmpty) return const Center(child: Text("Sección vacía", style: TextStyle(color: Colors.grey)));
-          final items = box.values.toList().reversed.take(10).toList();
-          return ListView.builder(
-            scrollDirection: Axis.horizontal,
-            itemCount: items.length,
-            itemBuilder: (context, index) {
-              final item = items[index];
-              return GestureDetector(
-                onTap: () async {
-                  final mediaItem = MediaItem(
-                    id: item['id'],
-                    title: item['title'],
-                    artist: item['artist'],
-                    artUri: Uri.parse(item['artUri']),
-                  );
-                  await globalPlay(mediaItem);
-                },
-                child: Container(
-                  width: 120,
-                  margin: const EdgeInsets.only(right: 12),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(8),
-                        child: CachedNetworkImage(
-                          imageUrl: item['artUri'],
-                          width: 120, height: 120, fit: BoxFit.cover,
-                          errorWidget: (context, url, error) => const Icon(Icons.error),
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(item['title'], maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontSize: 14)),
-                      Text(item['artist'] ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.grey, fontSize: 12)),
-                    ],
-                  ),
-                ),
-              );
-            },
-          );
-        },
-      ),
-    );
-  }
-}
-
-
-// ============================================================================
-// === BLOQUE 2: MOTOR DE BÚSQUEDA Y REPRODUCCIÓN (LISTA PURA) ===
-// ============================================================================
-class SearchScreen extends StatefulWidget {
-  const SearchScreen({super.key});
-  @override
-  State<SearchScreen> createState() => _SearchScreenState();
-}
-
-
-class _SearchScreenState extends State<SearchScreen> {
-  final searchController = TextEditingController();
-  late final YoutubeExplode yt;
-  List<Video> videos = [];
-  List<String> searchSuggestions = [];
-  bool isLoading = false;
-  Timer? _debounce;
-
-
-  @override
-  void initState() {
-    super.initState();
-    yt = YoutubeExplode();
-    Permission.notification.request();
-  }
-
-
-  @override
-  void dispose() {
-    _debounce?.cancel();
-    searchController.dispose();
-    super.dispose();
-  }
-
-
-  void _onQueryChanged(String query) {
-    if (_debounce?.isActive ?? false) _debounce!.cancel();
-    if (query.trim().isEmpty) {
-      setState(() { searchSuggestions.clear(); videos.clear(); });
-      return;
-    }
-    _debounce = Timer(const Duration(milliseconds: 300), () async {
-      try {
-        final suggestions = await yt.search.getQuerySuggestions(query.trim());
-        if (mounted) setState(() => searchSuggestions = suggestions.toList());
-      } catch (_) {}
-    });
-  }
-
-
-  void _saveSearchHistory(String query) {
-    if (query.trim().isEmpty) return;
-    final box = Hive.box('search_history');
-    List<String> searches = box.values.cast<String>().toList();
-    searches.remove(query);
-    searches.insert(0, query);
-    if (searches.length > 15) searches = searches.sublist(0, 15);
-    box.clear();
-    box.addAll(searches);
-  }
-
-
-  void searchVideos(String query) async {
-    if (query.trim().isEmpty) return;
-    FocusScope.of(context).unfocus();
-    _saveSearchHistory(query);
-    setState(() { isLoading = true; searchSuggestions.clear(); videos.clear(); });
-    try {
-      final results = await yt.search.search(query);
-      if (mounted) setState(() { videos = results.toList(); isLoading = false; });
-    } catch (e) {
-      if (mounted) {
-        setState(() => isLoading = false);
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red));
-      }
-    }
-  }
-
-
-  Widget _buildSuggestionsList() {
-    return ListView.builder(
-      itemCount: searchSuggestions.length,
-      itemBuilder: (context, index) {
-        final suggestion = searchSuggestions[index];
-        return ListTile(
-          leading: const Icon(Icons.search, color: Colors.grey),
-          title: Text(suggestion, style: const TextStyle(color: Colors.white)),
-          onTap: () { searchController.text = suggestion; searchVideos(suggestion); },
-        );
-      },
-    );
-  }
-
-
-  Widget _buildSearchHistory() {
-    return ValueListenableBuilder(
-      valueListenable: Hive.box('search_history').listenable(),
-      builder: (context, Box box, _) {
-        if (box.isEmpty) return const Center(child: Text("Radar inactivo.", style: TextStyle(color: Colors.grey, fontSize: 16)));
-        return ListView.builder(
-          itemCount: box.length,
-          itemBuilder: (context, index) {
-            final query = box.getAt(index) as String;
-            return ListTile(
-              leading: const Icon(Icons.history, color: Colors.grey),
-              title: Text(query, style: const TextStyle(color: Colors.white)),
-              trailing: IconButton(icon: const Icon(Icons.close, color: Colors.grey, size: 20), onPressed: () => box.deleteAt(index)),
-              onTap: () { searchController.text = query; searchVideos(query); },
-            );
-          },
-        );
-      },
-    );
-  }
-
-
-  @override
-  Widget build(BuildContext context) {
-    return SafeArea(
-      child: Scaffold(
-        backgroundColor: Colors.transparent, 
-        body: Column(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(color: Colors.black.withOpacity(0.5), border: const Border(bottom: BorderSide(color: Colors.white10, width: 1))),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      decoration: BoxDecoration(color: Colors.white.withOpacity(0.05), borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.white10)),
-                      child: Row(
-                        children: [
-                          const Icon(Icons.radar, color: Color(0xFF4ADE80), size: 20),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: TextField(
-                              controller: searchController,
-                              style: const TextStyle(color: Colors.white, fontSize: 16),
-                              decoration: const InputDecoration(hintText: 'Intercepción de señal...', hintStyle: TextStyle(color: Colors.grey), border: InputBorder.none),
-                              onChanged: _onQueryChanged,
-                              onSubmitted: searchVideos,
-                            ),
-                          ),
-                          if (searchController.text.isNotEmpty)
-                            IconButton(icon: const Icon(Icons.clear, color: Colors.grey, size: 20), onPressed: () { searchController.clear(); _onQueryChanged(''); })
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            if (isLoading)
-              const Expanded(child: Center(child: CircularProgressIndicator()))
-            else if (searchSuggestions.isNotEmpty && videos.isEmpty)
-              Expanded(child: _buildSuggestionsList())
-            else if (videos.isEmpty)
-              Expanded(child: _buildSearchHistory())
-            else
-              Expanded(
-                child: StreamBuilder<MediaItem?>(
-                  stream: audioHandler.mediaItem,
-                  builder: (context, snapshot) {
-                    final currentId = snapshot.data?.id;
-                    return ListView.builder(
-                      padding: const EdgeInsets.only(bottom: 100),
-                      itemCount: videos.length,
-                      itemBuilder: (context, index) {
-                        final video = videos[index]; 
-                        final isPlaying = currentId == video.id.value;
-                        return ListTile(
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                          leading: Stack(children: [
-                            Hero(
-                              tag: video.id.value,
-                              child: ClipRRect(
-                                borderRadius: BorderRadius.circular(8),
-                                child: CachedNetworkImage(imageUrl: video.thumbnails.mediumResUrl, width: 80, height: 50, fit: BoxFit.cover)
-                              )
-                            ),
-                            Positioned(
-                              bottom: 2, right: 2,
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-                                decoration: BoxDecoration(color: Colors.black87, borderRadius: BorderRadius.circular(4)),
-                                child: Text(formatGlobalDuration(video.duration), style: const TextStyle(color: Colors.white, fontSize: 10))
-                              )
-                            )
-                          ]),
-                          title: Text(video.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white)),
-                          subtitle: Text(video.author, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.grey)),
-                          trailing: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              if (isPlaying) ValueListenableBuilder<Color>(valueListenable: appColor, builder: (context, color, _) => Icon(Icons.equalizer, color: color, size: 24)),
-                              ValueListenableBuilder<Color>(valueListenable: appColor, builder: (context, color, _) => IconButton(icon: const Icon(Icons.more_vert, color: Colors.grey), onPressed: () => globalShowOptions(context, video, color))),
-                            ]
-                          ),
-                          onTap: () async {
-                            final queueItems = videos.map((vid) => MediaItem(id: vid.id.value, title: vid.title, artist: vid.author, duration: vid.duration, artUri: Uri.parse(vid.thumbnails.highResUrl))).toList();
-                            await globalPlayQueue(queueItems, index);
-                          },
-                        );
-                      },
-                    );
-                  },
-                ),
-              )
-          ],
-        ),
-      ),
-    );
-  }
-}
-// ============================================================================
-// === BLOQUE 3: LA BÓVEDA ===
-// ============================================================================
-class VaultScreen extends StatelessWidget {
-  const VaultScreen({super.key});
-
-
-  @override
-  Widget build(BuildContext context) {
-    return DefaultTabController(
-      length: 3,
-      child: Scaffold(
-        backgroundColor: Colors.transparent,
-        appBar: AppBar(
-          backgroundColor: Colors.transparent,
-          title: const Text('La Bóveda', style: TextStyle(fontWeight: FontWeight.bold)),
-          bottom: const TabBar(
-            indicatorColor: Color(0xFF4ADE80),
-            tabs: [
-              Tab(icon: Icon(Icons.history), text: "Historial"),
-              Tab(icon: Icon(Icons.favorite), text: "Favoritos"),
-              Tab(icon: Icon(Icons.queue_music), text: "Playlists"),
-            ],
-          ),
-        ),
-        body: TabBarView(
-          children: [
-            ValueListenableBuilder(
-              valueListenable: Hive.box('history').listenable(),
-              builder: (context, Box box, _) => _buildList(box.values.toList().reversed.toList(), 'history'),
-            ),
-            ValueListenableBuilder(
-              valueListenable: Hive.box('favorites').listenable(),
-              builder: (context, Box box, _) => _buildList(box.values.toList().reversed.toList(), 'favorites'),
-            ),
-            ValueListenableBuilder(
-              valueListenable: Hive.box('playlists').listenable(),
-              builder: (context, Box box, _) {
-                if (box.isEmpty) return const Center(child: Text("Sin playlists.", style: TextStyle(color: Colors.white)));
-                return ListView(
-                  children: box.keys.map((key) {
-                    final playlist = box.get(key) as List;
-                    return ExpansionTile(
-                      leading: const Icon(Icons.playlist_play, color: Colors.white),
-                      title: Text(key.toString(), style: const TextStyle(color: Colors.white)),
-                      subtitle: Text('${playlist.length} pistas', style: const TextStyle(color: Colors.grey)),
-                      children: playlist.map((item) => _buildListItem(item, box, key.toString())).toList(),
-                    );
-                  }).toList(),
-                );
-              },
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-
-  Widget _buildList(List items, String boxName) {
-    if (items.isEmpty) return const Center(child: Text("Vacío", style: TextStyle(color: Colors.grey)));
-    return ListView.builder(
-      itemCount: items.length,
-      itemBuilder: (context, index) => _buildListItem(items[index], Hive.box(boxName), null),
-    );
-  }
-
-
-  Widget _buildListItem(dynamic item, Box box, String? playlistKey) {
-    return ListTile(
-      leading: ClipRRect(
-        borderRadius: BorderRadius.circular(4),
-        child: CachedNetworkImage(imageUrl: item['artUri'], width: 50, height: 50, fit: BoxFit.cover, errorWidget: (context, url, error) => const Icon(Icons.error)),
-      ),
-      title: Text(item['title'], maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white)),
-      subtitle: Text(item['artist'] ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.grey)),
-      trailing: IconButton(
-        icon: const Icon(Icons.close, color: Colors.grey),
-        onPressed: () {
-          if (playlistKey != null) {
-            final playlist = box.get(playlistKey) as List;
-            playlist.removeWhere((i) => i['id'] == item['id']);
-            if (playlist.isEmpty) box.delete(playlistKey); else box.put(playlistKey, playlist);
-          } else {
-            box.delete(item['id']);
-          }
-        },
-      ),
-      onTap: () async {
-        final mediaItem = MediaItem(id: item['id'], title: item['title'], artist: item['artist'], artUri: Uri.parse(item['artUri']));
-        await globalPlay(mediaItem);
-      },
-    );
-  }
-}
-
-
-// ============================================================================
-// === BLOQUE 4: CERROJO VIP ===
-// ============================================================================
-class CerrojoScreen extends StatefulWidget { 
-  const CerrojoScreen({super.key}); 
-  @override 
-  State<CerrojoScreen> createState() => _CerrojoScreenState(); 
-}
-
-
-class _CerrojoScreenState extends State<CerrojoScreen> {
-  final TextEditingController _tokenController = TextEditingController();
-  bool _error = false;
-
-
-  void _validarToken() {
-    final token = _tokenController.text.trim();
-    final cerrojoBox = Hive.box('cerrojo_box');
-
-
-    if (token.isEmpty) return;
-
-
-    if (token == 'APX-MASTER-VIP-2026') {
-      cerrojoBox.put('acceso_concedido', true);
-      cerrojoBox.put('is_plus_user', true);
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('🔓 Protocolo Máster Aceptado.'), backgroundColor: Colors.purpleAccent));
-      Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => const SuperAppSkeleton()));
-      return;
-    }
-
-
-    try {
-      final decoded = utf8.decode(base64.decode(token));
-      final partes = decoded.split('|');
-      final tieneBoveda = partes.length > 2 && partes[2] == '1';
-      
-      cerrojoBox.put('acceso_concedido', true);
-      cerrojoBox.put('is_plus_user', tieneBoveda); 
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(tieneBoveda ? 'Acceso Plus Concedido' : 'Acceso Estándar Concedido'), backgroundColor: Colors.green));
-      Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => const SuperAppSkeleton()));
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('❌ Código Inválido o Caducado'), backgroundColor: Colors.red));
-      setState(() { _error = true; });
-    }
-  }
-
-
-  @override 
-  Widget build(BuildContext context) { 
-    return Scaffold(
-      backgroundColor: const Color(0xFF111111), 
-      body: Padding(
-        padding: const EdgeInsets.all(32.0), 
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center, 
-          crossAxisAlignment: CrossAxisAlignment.stretch, 
-          children: [ 
-            const Icon(Icons.lock_outline, size: 80, color: Color(0xFF4ADE80)), 
-            const SizedBox(height: 32), 
-            const Text('Acceso Restringido', textAlign: TextAlign.center, style: TextStyle(color: Colors.white, fontSize: 28, letterSpacing: 2.0)), 
-            const SizedBox(height: 16), 
-            const Text('Ingresa tu token de seguridad para continuar.', textAlign: TextAlign.center, style: TextStyle(color: Colors.grey, fontSize: 14)), 
-            const SizedBox(height: 48), 
-            TextField(
-              controller: _tokenController, 
-              style: const TextStyle(color: Color(0xFF4ADE80), fontSize: 18, letterSpacing: 1.5), 
-              decoration: InputDecoration(hintText: 'Pega tu TKN aquí...', hintStyle: const TextStyle(color: Colors.white24), errorText: _error ? 'Token inválido o sin permisos' : null, enabledBorder: const UnderlineInputBorder(borderSide: BorderSide(color: Colors.grey)), focusedBorder: const UnderlineInputBorder(borderSide: BorderSide(color: Color(0xFF4ADE80))))
-            ), 
-            const SizedBox(height: 32), 
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF4ADE80), padding: const EdgeInsets.symmetric(vertical: 16), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))), 
-              onPressed: _validarToken, 
-              child: const Text('VALIDAR ACCESO', style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 16))
-            ) 
-          ]
-        )
-      )
-    ); 
-  }
-} // <- AQUÍ ESTÁ LA LLAVE QUE NOS FALTÓ, ¡MAGIA!
-
-
-// ============================================================================
-// === BLOQUE 5: BÓVEDA OFFLINE ===
-// ============================================================================
-class OfflineVaultScreen extends StatelessWidget {
-  const OfflineVaultScreen({super.key});
-  
-  @override 
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.transparent, 
-      appBar: AppBar(title: const Text('Bóveda Offline', style: TextStyle(color: Colors.white)), backgroundColor: Colors.transparent, centerTitle: true),
-      body: ValueListenableBuilder(
-        valueListenable: Hive.box('downloads').listenable(),
-        builder: (context, Box box, _) {
-          if (box.isEmpty) return const Center(child: Text("Bóveda vacía", style: TextStyle(color: Colors.grey)));
-          return ListView.builder(
-            itemCount: box.length,
-            itemBuilder: (context, index) {
-              final key = box.keyAt(index);
-              final item = box.get(key);
-              return ListTile(
-                leading: const Icon(Icons.offline_pin, color: Colors.greenAccent),
-                title: Text(item['title'] ?? 'Desconocido', maxLines: 1, style: const TextStyle(color: Colors.white)),
-                subtitle: Text(item['artist'] ?? '', maxLines: 1, style: const TextStyle(color: Colors.grey)),
-                trailing: IconButton(
-                  icon: const Icon(Icons.delete, color: Colors.grey),
-                  onPressed: () async {
-                    if (item['path'] != null) {
-                      try { final file = File(item['path']); if (await file.exists()) await file.delete(); } catch (e) { print("Error: $e"); }
-                    }
-                    box.delete(key);
-                  }
-                ),
-                onTap: () {
-                  if (item['path'] != null) { audioHandler.customAction('playLocal', {'localPath': item['path'], 'id': key, 'title': item['title']}); } 
-                  else { ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Ruta local no encontrada"))); }
-                }
-              );
-            }
+      bottomNavigationBar: ValueListenableBuilder<Color>(
+        valueListenable: appColor,
+        builder: (context, color, _) {
+          return BottomNavigationBar(
+            currentIndex: _currentIndex,
+            onTap: (index) => setState(() => _currentIndex = index),
+            selectedItemColor: color,
+            unselectedItemColor: Colors.grey,
+            backgroundColor: const Color(0xFF0A0A0A),
+            items: const [
+              BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Inicio'),
+              BottomNavigationBarItem(icon: Icon(Icons.radar), label: 'Radar'),
+              BottomNavigationBarItem(icon: Icon(Icons.security), label: 'Bóveda'),
+            ]
           );
         }
       )
     );
   }
-}
-// ============================================================================
-// === BLOQUE 6: ZONA DEPORTES ===
-// ============================================================================
-class SportsScreen extends StatelessWidget {
-  const SportsScreen({super.key});
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.transparent,
-      body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.sports_soccer, size: 80, color: Colors.white.withOpacity(0.5)),
-            const SizedBox(height: 16),
-            const Text("Zona VIP", style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 8),
-            const Text("Próximamente disponible...", style: TextStyle(color: Colors.grey, fontSize: 16)),
-          ],
-        ),
-      ),
+  Widget _buildMiniPlayer() {
+    return StreamBuilder<MediaItem?>(
+      stream: audioHandler.mediaItem,
+      builder: (context, snapshot) {
+        if (!snapshot.hasData) return const SizedBox.shrink();
+        final item = snapshot.data!;
+        return Container(
+          height: 65, color: const Color(0xFF151515),
+          child: Row(
+            children: [
+              CachedNetworkImage(imageUrl: item.artUri.toString(), width: 65, height: 65, fit: BoxFit.cover),
+              const SizedBox(width: 10),
+              Expanded(child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start, mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(item.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                  Text(item.artist ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.grey, fontSize: 12)),
+                ]
+              )),
+              StreamBuilder<PlaybackState>(
+                stream: audioHandler.playbackState,
+                builder: (context, stateSnapshot) {
+                  final playing = stateSnapshot.data?.playing ?? false;
+                  return ValueListenableBuilder<Color>(
+                    valueListenable: appColor,
+                    builder: (context, color, _) => IconButton(
+                      icon: Icon(playing ? Icons.pause : Icons.play_arrow, color: color, size: 32),
+                      onPressed: () => playing ? audioHandler.pause() : audioHandler.play(),
+                    )
+                  );
+                }
+              ),
+              ValueListenableBuilder<Color>(
+                valueListenable: appColor,
+                builder: (context, color, _) => IconButton(icon: Icon(Icons.skip_next, color: color, size: 32), onPressed: () => audioHandler.skipToNext())
+              ),
+              const SizedBox(width: 10),
+            ]
+          )
+        );
+      }
     );
   }
 }
 
 
 // ============================================================================
-// === BLOQUE 7: MINI REPRODUCTOR ===
+// === HOME SCREEN: PANTALLA PRINCIPAL (CON DRAWER VIP Y QR) ===
 // ============================================================================
-class MiniPlayer extends StatelessWidget {
-  const MiniPlayer({super.key});
+class HomeScreen extends StatelessWidget {
+  const HomeScreen({super.key});
 
 
-  @override 
-  Widget build(BuildContext context) {
-    return StreamBuilder<MediaItem?>(
-      stream: audioHandler.mediaItem,
-      builder: (context, snapshot) {
-        final item = snapshot.data;
-        if (item == null) return const SizedBox.shrink();
-        
-        return GestureDetector(
-          onTap: () { showModalBottomSheet(context: context, isScrollControlled: true, backgroundColor: Colors.transparent, builder: (context) => const FullScreenPlayer()); },
-          child: Container(
-            height: 65, 
-            margin: const EdgeInsets.symmetric(horizontal: 8),
-            decoration: BoxDecoration(color: const Color(0xFF1E1E1E), borderRadius: BorderRadius.circular(12), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.5), blurRadius: 10, offset: const Offset(0, 4))]),
-            child: Row(
+  Future<void> _launchURL(String url) async {
+    if (!await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication)) {
+      debugPrint('No se pudo abrir $url');
+    }
+  }
+
+
+  void _showQRDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (context) => BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+        child: Dialog(
+          backgroundColor: const Color(0xFF111111).withOpacity(0.9),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20), side: BorderSide(color: appColor.value, width: 1)),
+          child: Padding(
+            padding: const EdgeInsets.all(24.0),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
               children: [
-                ClipRRect(borderRadius: const BorderRadius.only(topLeft: Radius.circular(12), bottomLeft: Radius.circular(12)), child: CachedNetworkImage(imageUrl: item.artUri.toString(), width: 65, height: 65, fit: BoxFit.cover, errorWidget: (c, u, e) => Container(width: 65, height: 65, color: Colors.grey))),
-                Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 12),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start, mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Text(item.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14)),
-                        Text(item.artist ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.grey, fontSize: 12)),
-                      ],
-                    ),
+                const Text("COMPARTIR ACCESO", style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold, letterSpacing: 2)),
+                const SizedBox(height: 8),
+                const Text("Escanea para instalar la app VIP", style: TextStyle(color: Colors.grey, fontSize: 12)),
+                const SizedBox(height: 24),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12)),
+                  child: QrImageView(
+                    data: "https://wa.me/5211234567890?text=Hola,%20quiero%20descargar%20la%20App%20VIP", // CAMBIA TU NUMERO
+                    version: QrVersions.auto,
+                    size: 200.0,
                   ),
                 ),
-                StreamBuilder<PlaybackState>(
-                  stream: audioHandler.playbackState,
-                  builder: (context, stateSnapshot) {
-                    final state = stateSnapshot.data;
-                    final playing = state?.playing ?? false;
-                    final isLoading = state?.processingState == AudioProcessingState.loading || state?.processingState == AudioProcessingState.buffering;
-                    return Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        ValueListenableBuilder<Color>(
-                          valueListenable: appColor,
-                          builder: (context, color, _) {
-                            if (isLoading) return Container(margin: const EdgeInsets.all(12), width: 24, height: 24, child: CircularProgressIndicator(color: color, strokeWidth: 2));
-                            return IconButton(icon: Icon(playing ? Icons.pause : Icons.play_arrow, color: color, size: 28), onPressed: () => playing ? audioHandler.pause() : audioHandler.play());
-                          }
-                        ),
-                        IconButton(icon: const Icon(Icons.skip_next, color: Colors.white, size: 28), onPressed: () => audioHandler.skipToNext()),
-                      ],
-                    );
-                  }
+                const SizedBox(height: 24),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(backgroundColor: appColor.value, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text("CERRAR", style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
                 )
               ],
             ),
           ),
-        );
-      },
+        ),
+      ),
+    );
+  }
+Drawer _buildVIPDrawer(BuildContext context) {
+    final box = Hive.box('cerrojo_box');
+    final activeToken = box.get('token_activo', defaultValue: 'Sin Sesión');
+    final alias = box.get('device_id', defaultValue: 'Usuario Registrado');
+
+
+    return Drawer(
+      backgroundColor: const Color(0xFF0A0A0A),
+      child: Column(
+        children: [
+          DrawerHeader(
+            decoration: BoxDecoration(border: Border(bottom: BorderSide(color: appColor.value, width: 1)), color: const Color(0xFF111111)),
+            child: Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.account_circle, color: appColor.value, size: 60),
+                  const SizedBox(height: 10),
+                  Text(alias, style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold, letterSpacing: 1)),
+                  Text(activeToken, style: TextStyle(color: Colors.white.withOpacity(0.5), fontSize: 10)),
+                ],
+              ),
+            ),
+          ),
+          ListTile(
+            leading: Icon(Icons.qr_code_scanner, color: appColor.value),
+            title: const Text('Compartir App', style: TextStyle(color: Colors.white)),
+            subtitle: const Text('Código de invitación', style: TextStyle(color: Colors.grey, fontSize: 12)),
+            onTap: () { Navigator.pop(context); _showQRDialog(context); },
+          ),
+          ListTile(
+            leading: const Icon(Icons.apps, color: Colors.white),
+            title: const Text('Ecosistema', style: TextStyle(color: Colors.white)),
+            subtitle: const Text('Descargar TV y Bóveda', style: TextStyle(color: Colors.grey, fontSize: 12)),
+            onTap: () { Navigator.pop(context); _launchURL('https://linktr.ee/tu_ecosistema_aqui'); },
+          ),
+          ListTile(
+            leading: const Icon(Icons.support_agent, color: Colors.white),
+            title: const Text('Soporte VIP', style: TextStyle(color: Colors.white)),
+            onTap: () { Navigator.pop(context); _launchURL('https://wa.me/5211234567890?text=Hola,%20necesito%20ayuda'); },
+          ),
+          const Spacer(),
+          Padding(padding: const EdgeInsets.all(16.0), child: Text('Apex Client v1.0', style: TextStyle(color: Colors.white.withOpacity(0.2), fontSize: 10)))
+        ],
+      ),
+    );
+  }
+
+
+  Widget _buildHorizontalList(List<Map> items) { 
+    return SizedBox(height: 180, child: ListView.builder(scrollDirection: Axis.horizontal, padding: const EdgeInsets.symmetric(horizontal: 16), itemCount: items.length, itemBuilder: (context, index) { 
+      final item = items[index]; 
+      return GestureDetector(
+        onTap: () async { final mediaItem = MediaItem(id: item['id'], title: item['title'], artist: item['artist'], artUri: Uri.parse(item['artUri']), duration: Duration(milliseconds: item['duration'])); await globalPlay(mediaItem); }, 
+        child: Container(width: 120, margin: const EdgeInsets.only(right: 16), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Hero(tag: item['id'], child: ClipRRect(borderRadius: BorderRadius.circular(12), child: CachedNetworkImage(imageUrl: item['artUri'], width: 120, height: 120, fit: BoxFit.cover, placeholder: (c,u)=>Container(width:120,height:120,color:Colors.white10)))), 
+          const SizedBox(height: 8), Text(item['title'], maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.white)), Text(item['artist'], maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.grey, fontSize: 11))
+        ]))
+      ); 
+    })); 
+  }
+
+
+  @override Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.transparent,
+      drawer: _buildVIPDrawer(context),
+      appBar: AppBar(
+        backgroundColor: Colors.transparent, elevation: 0,
+        iconTheme: IconThemeData(color: appColor.value),
+        title: const Text("Inicio", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+      ),
+      body: SafeArea(
+        child: SingleChildScrollView(
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            ValueListenableBuilder(valueListenable: Hive.box('history').listenable(), builder: (context, Box box, _) { 
+              if (box.isEmpty) return const Padding(padding: EdgeInsets.all(20), child: Text("Comienza a escuchar música para activar el radar.", style: TextStyle(color: Colors.grey))); 
+              final allItems = box.values.toList().cast<Map>(); 
+              final recentItems = List<Map>.from(allItems)..sort((a, b) => (b['timestamp'] as int? ?? 0).compareTo(a['timestamp'] as int? ?? 0)); 
+              final topItems = List<Map>.from(allItems)..sort((a, b) => (b['playCount'] as int? ?? 0).compareTo(a['playCount'] as int? ?? 0)); 
+              return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                const Padding(padding: EdgeInsets.symmetric(horizontal: 16, vertical: 10), child: Text("Escuchado Recientemente", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white))), 
+                _buildHorizontalList(recentItems), 
+                const Padding(padding: EdgeInsets.symmetric(horizontal: 16, vertical: 10), child: Text("Frecuencia Máxima", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white))), 
+                _buildHorizontalList(topItems.take(25).toList()), 
+                const SizedBox(height: 100)
+              ]); 
+            })
+          ])
+        )
+      )
+    );
+  }
+}
+// ============================================================================
+// === SEARCH SCREEN: RADAR CON OJO PIRATA DE FONDO ===
+// ============================================================================
+class SearchScreen extends StatefulWidget { const SearchScreen({super.key}); @override State<SearchScreen> createState() => _SearchScreenState(); }
+class _SearchScreenState extends State<SearchScreen> {
+  final searchController = TextEditingController();
+  late final YoutubeExplode yt;
+  List<Video> videos = [];
+  bool isLoading = false;
+
+
+  @override void initState() { super.initState(); yt = YoutubeExplode(); }
+  @override void dispose() { searchController.dispose(); super.dispose(); }
+
+
+  void searchVideos(String query) async {
+    if (query.trim().isEmpty) return;
+    FocusScope.of(context).unfocus();
+    setState(() { isLoading = true; videos.clear(); });
+    try {
+      final results = await yt.search.search(query);
+      if (mounted) { setState(() { videos = results.toList(); isLoading = false; }); }
+    } catch (e) { if (mounted) { setState(() { isLoading = false; }); } }
+  }
+
+
+  @override Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      appBar: AppBar(title: ValueListenableBuilder<Color>(valueListenable: appColor, builder: (context, color, _) => Text('Radar', style: TextStyle(fontWeight: FontWeight.bold, color: color))), backgroundColor: Colors.transparent, elevation: 0),
+      body: Container(
+        decoration: BoxDecoration(
+          color: Colors.black,
+          image: DecorationImage(image: const AssetImage('assets/ojo_pirata.png'), fit: BoxFit.cover, colorFilter: ColorFilter.mode(Colors.black.withOpacity(0.85), BlendMode.darken)),
+        ),
+        child: Column(children: [
+          Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: TextField(
+              controller: searchController,
+              style: TextStyle(color: appColor.value), // Eliminamos GoogleFonts por seguridad local
+              decoration: InputDecoration(
+                hintText: 'Ingresar frecuencia a interceptar...', hintStyle: const TextStyle(color: Colors.grey),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                focusedBorder: OutlineInputBorder(borderSide: BorderSide(color: appColor.value), borderRadius: BorderRadius.circular(10)),
+                suffixIcon: IconButton(icon: const Icon(Icons.search, color: Colors.grey), onPressed: () => searchVideos(searchController.text))
+              ),
+              onSubmitted: (val) => searchVideos(val.trim()),
+            ),
+          ),
+          if (isLoading) const Expanded(child: Center(child: CircularProgressIndicator()))
+          else Expanded(
+            child: StreamBuilder<MediaItem?>(
+              stream: audioHandler.mediaItem,
+              builder: (context, snapshot) {
+                final currentId = snapshot.data?.id;
+                return ListView.builder(
+                  padding: const EdgeInsets.only(bottom: 100), itemCount: videos.length,
+                  itemBuilder: (context, index) {
+                    final video = videos[index]; final isPlaying = currentId == video.id.value;
+                    return ListTile(
+                      leading: ClipRRect(borderRadius: BorderRadius.circular(8), child: CachedNetworkImage(imageUrl: video.thumbnails.mediumResUrl, width: 80, height: 50, fit: BoxFit.cover)),
+                      title: Text(video.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white)),
+                      subtitle: Text(video.author, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.grey)),
+                      trailing: isPlaying ? Icon(Icons.equalizer, color: appColor.value) : const Icon(Icons.play_arrow, color: Colors.grey),
+                      onTap: () async {
+                        final queueItems = videos.map((vid) => MediaItem(id: vid.id.value, title: vid.title, artist: vid.author, duration: vid.duration, artUri: Uri.parse(vid.thumbnails.highResUrl))).toList();
+                        await globalPlayQueue(queueItems, index);
+                      },
+                    );
+                  },
+                );
+              },
+            )
+          )
+        ]),
+      ),
     );
   }
 }
 
 
 // ============================================================================
-// === BLOQUE 8: REPRODUCTOR FULL ===
+// === VAULT SCREEN: LA BÓVEDA LOCAL ===
 // ============================================================================
-class FullScreenPlayer extends StatelessWidget {
-  const FullScreenPlayer({super.key});
-  
-  String _formatDuration(Duration? d) {
-    if (d == null) return "00:00";
-    final minutes = d.inMinutes.remainder(60).toString().padLeft(2, '0');
-    final seconds = d.inSeconds.remainder(60).toString().padLeft(2, '0');
-    return "${d.inHours > 0 ? '${d.inHours}:' : ''}$minutes:$seconds";
+class VaultScreen extends StatelessWidget {          
+  const VaultScreen({super.key}); 
+  @override Widget build(BuildContext context) { 
+    return DefaultTabController(
+      length: 2, 
+      child: Scaffold(
+        backgroundColor: const Color(0xFF0A0A0A),
+        appBar: AppBar(
+          backgroundColor: Colors.transparent,
+          title: const Text('La Bóveda', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white)), 
+          bottom: TabBar(
+            indicatorColor: appColor.value, labelColor: appColor.value, unselectedLabelColor: Colors.grey,
+            tabs: const [Tab(icon: Icon(Icons.favorite), text: "Favoritos"), Tab(icon: Icon(Icons.history), text: "Registro")]
+          )
+        ), 
+        body: TabBarView(
+          children: [
+            _buildHiveList('favorites'),
+            _buildHiveList('history'),
+          ]
+        )
+      )
+    ); 
   }
 
 
-  @override 
-  Widget build(BuildContext context) {
-    return Container(
-      decoration: const BoxDecoration(color: Color(0xFF0A0A0A)),
-      child: SafeArea(
-        child: Column(
-          children: [
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  IconButton(icon: const Icon(Icons.keyboard_arrow_down, color: Colors.white, size: 32), onPressed: () => Navigator.pop(context)),
-                  const Text("Reproduciendo ahora", style: TextStyle(color: Colors.grey, fontSize: 14)),
-                  IconButton(icon: const Icon(Icons.more_vert, color: Colors.white), onPressed: () {}),
-                ],
-              ),
-            ),
-            Expanded(
-              child: StreamBuilder<MediaItem?>(
-                stream: audioHandler.mediaItem,
-                builder: (context, snapshot) {
-                  final item = snapshot.data;
-                  if (item == null) return const Center(child: CircularProgressIndicator());
-                  return Column(
-                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                    children: [
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 32),
-                        child: Hero(
-                          tag: item.id,
-                          child: ClipRRect(
-                            borderRadius: BorderRadius.circular(20),
-                            child: AspectRatio(aspectRatio: 1, child: CachedNetworkImage(imageUrl: item.artUri.toString(), fit: BoxFit.cover, errorWidget: (c, u, e) => Container(color: Colors.grey))),
-                          ),
-                        ),
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 32),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(item.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold)),
-                                  const SizedBox(height: 4),
-                                  Text(item.artist ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.grey, fontSize: 16)),
-                                ],
-                              ),
-                            ),
-                            ValueListenableBuilder(
-                              valueListenable: Hive.box('favorites').listenable(),
-                              builder: (context, Box box, _) {
-                                final isFav = box.containsKey(item.id);
-                                return IconButton(
-                                  icon: Icon(isFav ? Icons.favorite : Icons.favorite_border, color: isFav ? Colors.redAccent : Colors.white, size: 30),
-                                  onPressed: () {
-                                    if (isFav) box.delete(item.id);
-                                    else box.put(item.id, {'id': item.id, 'title': item.title, 'artist': item.artist, 'artUri': item.artUri.toString(), 'duration': item.duration?.inMilliseconds ?? 0});
-                                  }
-                                );
-                              }
-                            ),
-                          ],
-                        ),
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 32),
-                        child: StreamBuilder<PlaybackState>(
-                          stream: audioHandler.playbackState,
-                          builder: (context, stateSnapshot) {
-                            final state = stateSnapshot.data;
-                            final position = state?.updatePosition ?? Duration.zero;
-                            final duration = item.duration ?? Duration.zero;
-                            
-                            return Column(
-                              children: [
-                                ValueListenableBuilder<Color>(
-                                  valueListenable: appColor,
-                                  builder: (context, color, _) {
-                                    return SliderTheme(
-                                      data: SliderThemeData(trackHeight: 4, activeTrackColor: color, inactiveTrackColor: Colors.white24, thumbColor: color, thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6), overlayShape: const RoundSliderOverlayShape(overlayRadius: 14)),
-                                      child: Slider(
-                                        min: 0.0,
-                                        max: duration.inMilliseconds.toDouble() > 0 ? duration.inMilliseconds.toDouble() : 1.0,
-                                        value: (position.inMilliseconds.toDouble().clamp(0.0, duration.inMilliseconds.toDouble() > 0 ? duration.inMilliseconds.toDouble() : 1.0)),
-                                        onChanged: (val) => audioHandler.seek(Duration(milliseconds: val.round())),
-                                      ),
-                                    );
-                                  }
-                                ),
-                                Row(
-                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    Text(_formatDuration(position), style: const TextStyle(color: Colors.grey, fontSize: 12)),
-                                    Text(_formatDuration(duration), style: const TextStyle(color: Colors.grey, fontSize: 12)),
-                                  ],
-                                ),
-                              ],
-                            );
-                          }
-                        ),
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 24),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                          children: [
-                            IconButton(icon: const Icon(Icons.shuffle, color: Colors.grey), onPressed: () {}),
-                            IconButton(icon: const Icon(Icons.skip_previous, color: Colors.white, size: 40), onPressed: () => audioHandler.skipToPrevious()),
-                            StreamBuilder<PlaybackState>(
-                              stream: audioHandler.playbackState,
-                              builder: (context, stateSnapshot) {
-                                final playing = stateSnapshot.data?.playing ?? false;
-                                return ValueListenableBuilder<Color>(
-                                  valueListenable: appColor,
-                                  builder: (context, color, _) {
-                                    return Container(
-                                      decoration: BoxDecoration(shape: BoxShape.circle, color: color),
-                                      child: IconButton(icon: Icon(playing ? Icons.pause : Icons.play_arrow, color: Colors.black, size: 50), onPressed: () => playing ? audioHandler.pause() : audioHandler.play()),
-                                    );
-                                  }
-                                );
-                              }
-                            ),
-                            IconButton(icon: const Icon(Icons.skip_next, color: Colors.white, size: 40), onPressed: () => audioHandler.skipToNext()),
-                            IconButton(icon: const Icon(Icons.repeat, color: Colors.grey), onPressed: () {}),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 20),
-                    ],
-                  );
-                },
-              ),
-            ),
-          ],
-        ),
-      ),
+  Widget _buildHiveList(String boxName) {
+    return ValueListenableBuilder(
+      valueListenable: Hive.box(boxName).listenable(),
+      builder: (context, Box box, _) {
+        if (box.isEmpty) return const Center(child: Text("Bóveda limpia.", style: TextStyle(color: Colors.grey)));
+        final items = box.values.toList().reversed.toList();
+        return ListView.builder(
+          padding: const EdgeInsets.only(bottom: 100),
+          itemCount: items.length,
+          itemBuilder: (context, index) {
+            final item = items[index];
+            return ListTile(
+              leading: ClipRRect(borderRadius: BorderRadius.circular(8), child: CachedNetworkImage(imageUrl: item['artUri'], width: 50, height: 50, fit: BoxFit.cover)),
+              title: Text(item['title'], maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white)),
+              subtitle: Text(item['artist'], maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.grey)),
+              trailing: IconButton(icon: const Icon(Icons.close, color: Colors.grey, size: 20), onPressed: () => box.delete(item['id'])),
+              onTap: () async {
+                final mediaItem = MediaItem(id: item['id'], title: item['title'], artist: item['artist'], artUri: Uri.parse(item['artUri']), duration: Duration(milliseconds: item['duration'] ?? 0));
+                await globalPlay(mediaItem);
+              },
+            );
+          },
+        );
+      },
     );
   }
 }
