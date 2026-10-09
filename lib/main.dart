@@ -1949,7 +1949,7 @@ class FullScreenPlayer extends StatelessWidget {
 
 
   }
-
+}
 class YTStreamSource extends StreamAudioSource {
   final String url;
   final int totalBytes;
