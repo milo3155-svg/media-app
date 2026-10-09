@@ -934,19 +934,19 @@ streamInfo = isHDMode.value ? manifest.muxed.withHighestBitrate() : manifest.mux
 throw Exception("No streams");
 }
 
-    await _player.setAudioSource(YTStreamSource(
+  await _player.setAudioSource(YTStreamSource(
   streamInfo.url.toString(),
   streamInfo.size.totalBytes,
   streamInfo.container.name == 'mp4',
   tag: item
 ));
-    }
+}
 
   @override Future<void> updateQueue(List<MediaItem> newQueue) async { queue.add(newQueue); }
 
 
   void shuffleQueue() { final currentQueue = queue.value.toList()..shuffle(); queue.add(currentQueue); }
-
+}
 
 
 Future<void> globalPlay(MediaItem item) async { await audioHandler.updateQueue([item]); await audioHandler.playMediaItem(item); }
