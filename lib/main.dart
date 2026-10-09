@@ -1818,7 +1818,7 @@ key: const Key('miniplayer_dismiss'),
 direction: DismissDirection.down,
 onDismissed: (_) { audioHandler.customAction('kill'); },
 child: GestureDetector(
-onTap: () => showModalBottomSheet(context: context, isScrollControlled: true, backgroundColor: Colors.transparent, builder: (context) => const FullScreenPlayer()),
+onTap: () => showModalBottomSheet(context: context, isScrollControlled: true, backgroundColor: Colors.transparent, builder: (context) => FullScreenPlayer()),
 child: ValueListenableBuilder<Color>(
 valueListenable: appColor, builder: (context, color, _) {
 return Container(
@@ -1864,7 +1864,7 @@ return IconButton(icon: Icon(playing ? Icons.pause_circle_filled : Icons.play_ci
 class FullScreenPlayer extends StatelessWidget {
 
 
-  const FullScreenPlayer({super.key});
+  FullScreenPlayer({Key? key}) : super(key: key);
 
 
   void _showSleepTimerDialog(BuildContext context) { showDialog(context: context, builder: (context) => AlertDialog(backgroundColor: const Color(0xFF1A1A1A), title: const Text("Temporizador de Sueño", style: TextStyle(color: Colors.white)), content: Column(mainAxisSize: MainAxisSize.min, children: [ListTile(title: const Text("Apagar en 15 minutos", style: TextStyle(color: Colors.white)), onTap: () { audioHandler.customAction('setSleepTimer', {'minutes': 15}); Navigator.pop(context); ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Temporizador activado"))); }), ListTile(title: const Text("Apagar en 30 minutos", style: TextStyle(color: Colors.white)), onTap: () { audioHandler.customAction('setSleepTimer', {'minutes': 30}); Navigator.pop(context); ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Temporizador activado"))); }), ListTile(title: const Text("Apagar en 60 minutos", style: TextStyle(color: Colors.white)), onTap: () { audioHandler.customAction('setSleepTimer', {'minutes': 60}); Navigator.pop(context); ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Temporizador activado"))); }), ListTile(title: const Text("Desactivar", style: TextStyle(color: Colors.redAccent)), onTap: () { audioHandler.customAction('setSleepTimer', {'minutes': 0}); Navigator.pop(context); ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Temporizador desactivado"))); })]))); }
