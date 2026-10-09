@@ -934,7 +934,15 @@ streamInfo = isHDMode.value ? manifest.muxed.withHighestBitrate() : manifest.mux
 throw Exception("No streams");
 }
 
-      await _player.setAudioSource(AudioSource.uri(Uri.parse(streamInfo.url.toString()), tag: item));
+     await _player.setAudioSource(
+AudioSource.uri(
+Uri.parse(streamInfo.url.toString()),
+headers: const {
+'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36'
+},
+tag: item
+)
+);
 
 
       if (savedPosition > 0) { await _player.seek(Duration(milliseconds: savedPosition)); } 
