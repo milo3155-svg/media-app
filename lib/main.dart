@@ -1227,9 +1227,62 @@ class HomeScreen extends StatelessWidget {
 
   const HomeScreen({super.key});
 
-
-  Widget _buildHorizontalList(List<Map> items) { return SizedBox(height: 180, child: ListView.builder(scrollDirection: Axis.horizontal, padding: const EdgeInsets.symmetric(horizontal: 16), itemCount: items.length, itemBuilder: (context, index) { final item = items[index]; return GestureDetector(onTap: () async { final mediaItem = MediaItem(id: item['id'], title: item['title'], artist: item['artist'], artUri: Uri.parse(item['artUri']), duration: Duration(milliseconds: item['duration'])); await globalPlay(mediaItem); }, child: Container(width: 120, margin: const EdgeInsets.only(right: 16), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [ClipRRect(borderRadius: BorderRadius.circular(12), child: CachedNetworkImage(imageUrl: item['artUri'], width: 120, height: 120, fit: BoxFit.cover)), const SizedBox(height: 8), Text(item['title'], maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.white)), Text(item['artist'], maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.grey, fontSize: 11))]))); }); }
-
+  Widget _buildHorizontalList(List<Map> items) { 
+    return SizedBox(
+      height: 180, 
+      child: ListView.builder(
+        scrollDirection: Axis.horizontal, 
+        padding: const EdgeInsets.symmetric(horizontal: 16), 
+        itemCount: items.length, 
+        itemBuilder: (context, index) { 
+          final item = items[index]; 
+          return GestureDetector(
+            onTap: () async { 
+              final mediaItem = MediaItem(
+                id: item['id'], 
+                title: item['title'], 
+                artist: item['artist'], 
+                artUri: Uri.parse(item['artUri']), 
+                duration: Duration(milliseconds: item['duration'])
+              ); 
+              await globalPlay(mediaItem); 
+            }, 
+            child: Container(
+              width: 120, 
+              margin: const EdgeInsets.only(right: 16), 
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start, 
+                children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(12), 
+                    child: CachedNetworkImage(
+                      imageUrl: item['artUri'], 
+                      width: 120, 
+                      height: 120, 
+                      fit: BoxFit.cover
+                    )
+                  ), 
+                  const SizedBox(height: 8), 
+                  Text(
+                    item['title'], 
+                    maxLines: 1, 
+                    overflow: TextOverflow.ellipsis, 
+                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.white)
+                  ), 
+                  Text(
+                    item['artist'], 
+                    maxLines: 1, 
+                    overflow: TextOverflow.ellipsis, 
+                    style: const TextStyle(color: Colors.grey, fontSize: 11)
+                  )
+                ]
+              )
+            )
+          ); 
+        }
+      )
+    ); 
+  }
 
   @override Widget build(BuildContext context) {
 
