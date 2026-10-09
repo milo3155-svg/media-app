@@ -1948,12 +1948,15 @@ class FullScreenPlayer extends StatelessWidget {
     );
 
 
+ );
   }
-  }
-    
-  }
-  
-  class YTStreamSource extends StreamAudioSource {
+}
+
+// Cierre oficial de la clase contenedora anterior
+}
+
+// Clase puente en la raíz del archivo
+class YTStreamSource extends StreamAudioSource {
   final String url;
   final int totalBytes;
   final bool isMp4;
@@ -1975,9 +1978,5 @@ class FullScreenPlayer extends StatelessWidget {
     );
   }
 }
-  
-
-  
-
   
 
