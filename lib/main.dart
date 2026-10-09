@@ -922,20 +922,15 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
       await _player.seek(Duration.zero); 
 
 
-      var manifest = await _yt.videos.streamsClient.getManifest(item.id); 
-
-
-      StreamInfo streamInfo;
-
-
-      if (manifest.muxed.isNotEmpty) { streamInfo = isHDMode.value ? manifest.muxed.withHighestBitrate() : manifest.muxed.reduce((a, b) => a.bitrate.bitsPerSecond < b.bitrate.bitsPerSecond ? a : b); } 
-
-
-      else if (manifest.audioOnly.isNotEmpty) { streamInfo = isHDMode.value ? manifest.audioOnly.withHighestBitrate() : manifest.audioOnly.reduce((a, b) => a.bitrate.bitsPerSecond < b.bitrate.bitsPerSecond ? a : b); } 
-
-
-      else { throw Exception("No streams"); }
-
+      var manifest = await _yt.videos.streamsClient.getManifest(item.id);
+StreamInfo streamInfo;
+if (manifest.audioOnly.isNotEmpty) {
+streamInfo = isHDMode.value ? manifest.audioOnly.withHighestBitrate() : manifest.audioOnly.reduce((a, b) => a.bitrate.bitsPerSecond < b.bitrate.bitsPerSecond ? a : b);
+} else if (manifest.muxed.isNotEmpty) {
+streamInfo = isHDMode.value ? manifest.muxed.withHighestBitrate() : manifest.muxed.reduce((a, b) => a.bitrate.bitsPerSecond < b.bitrate.bitsPerSecond ? a : b);
+} else {
+throw Exception("No streams");
+}
 
       await _player.setAudioSource(AudioSource.uri(Uri.parse(streamInfo.url.toString()), tag: item));
 
