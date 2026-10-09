@@ -1947,7 +1947,7 @@ class FullScreenPlayer extends StatelessWidget {
 
 
  );
-  }
+  };
 }
 
 // Cierre oficial de la clase contenedora anterior
