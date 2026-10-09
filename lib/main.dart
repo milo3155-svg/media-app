@@ -1950,9 +1950,8 @@ class FullScreenPlayer extends StatelessWidget {
 
   }
 }
-  }
-  
-class YTStreamSource extends StreamAudioSource {
+
+  class YTStreamSource extends StreamAudioSource {
   final String url;
   final int totalBytes;
   final bool isMp4;
@@ -1974,6 +1973,8 @@ class YTStreamSource extends StreamAudioSource {
     );
   }
 }
+  
+
   
 
   
