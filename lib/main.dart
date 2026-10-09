@@ -1958,23 +1958,26 @@ class FullScreenPlayer extends StatelessWidget {
   }
 
 class YTStreamSource extends StreamAudioSource {
-final dynamic streamInfo;
-YTStreamSource(this.streamInfo, {Object? tag}) : super(tag: tag);
+final String url;
+final int totalBytes;
+final bool isMp4;
+YTStreamSource({required this.url, required this.totalBytes, required this.isMp4, super.tag});
 @override
 Future<StreamAudioResponse> request([int? start, int? end]) async {
 start ??= 0;
-final request = await HttpClient().getUrl(streamInfo.url);
+final request = await HttpClient().getUrl(Uri.parse(url));
 request.headers.set('Range', 'bytes=start-{end != null ? (end - 1).toString() : ''}');
 final response = await request.close();
 return StreamAudioResponse(
-sourceLength: streamInfo.size.totalBytes,
+sourceLength: totalBytes,
 contentLength: response.contentLength,
 offset: start,
 stream: response,
-contentType: streamInfo.url.toString().contains('webm') ? 'audio/webm' : 'audio/mp4',
+contentType: isMp4 ? 'audio/mp4' : 'audio/webm',
 );
 }
 }
 
 
-}
+  
+
