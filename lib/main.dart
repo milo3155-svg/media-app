@@ -934,19 +934,12 @@ streamInfo = isHDMode.value ? manifest.muxed.withHighestBitrate() : manifest.mux
 throw Exception("No streams");
 }
 
-    await _player.setAudioSource(YTStreamSource(streamInfo, tag: item));
-
-
-      if (savedPosition > 0) { await _player.seek(Duration(milliseconds: savedPosition)); } 
-
-
-      await _player.play();
-
-
-    } catch (e) { playbackState.add(playbackState.value.copyWith(processingState: AudioProcessingState.error, playing: false)); }
-
-
-  }
+    await _player.setAudioSource(YTStreamSource(
+  streamInfo.url.toString(),
+  streamInfo.size.totalBytes,
+  streamInfo.container.name == 'mp4',
+  tag: item
+));
 
 
   @override Future<void> updateQueue(List<MediaItem> newQueue) async { queue.add(newQueue); }
@@ -1958,26 +1951,28 @@ class FullScreenPlayer extends StatelessWidget {
   }
 
 class YTStreamSource extends StreamAudioSource {
-final String url;
-final int totalBytes;
-final bool isMp4;
-YTStreamSource({required this.url, required this.totalBytes, required this.isMp4, super.tag});
-@override
-Future<StreamAudioResponse> request([int? start, int? end]) async {
-start ??= 0;
-final request = await HttpClient().getUrl(Uri.parse(url));
-request.headers.set('Range', 'bytes=start-{end != null ? (end - 1).toString() : ''}');
-final response = await request.close();
-return StreamAudioResponse(
-sourceLength: totalBytes,
-contentLength: response.contentLength,
-offset: start,
-stream: response,
-contentType: isMp4 ? 'audio/mp4' : 'audio/webm',
-);
-}
-}
+  final String url;
+  final int totalBytes;
+  final bool isMp4;
 
+  YTStreamSource(this.url, this.totalBytes, this.isMp4, {dynamic tag}) : super(tag: tag);
+
+  @override
+  Future<StreamAudioResponse> request([int? start, int? end]) async {
+    start ??= 0;
+    final request = await HttpClient().getUrl(Uri.parse(url));
+    request.headers.set('Range', 'bytes=$start-${end != null ? (end - 1).toString() : ''}');
+    final response = await request.close();
+    return StreamAudioResponse(
+      sourceLength: totalBytes,
+      contentLength: response.contentLength,
+      offset: start,
+      stream: response,
+      contentType: isMp4 ? 'audio/mp4' : 'audio/webm',
+    );
+  }
+}
+  
 
   
 
