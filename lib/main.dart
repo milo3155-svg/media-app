@@ -922,10 +922,12 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
       await _player.seek(Duration.zero); 
 
 
-      var manifest = await _yt.videos.streamsClient.getManifest(item.id);
+     var manifest = await _yt.videos.streamsClient.getManifest(item.id);
 StreamInfo streamInfo;
-if (manifest.audioOnly.isNotEmpty) {
-streamInfo = isHDMode.value ? manifest.audioOnly.withHighestBitrate() : manifest.audioOnly.reduce((a, b) => a.bitrate.bitsPerSecond < b.bitrate.bitsPerSecond ? a : b);
+var audioStreams = manifest.audioOnly.where((s) => s.container.name == 'mp4').toList();
+if (audioStreams.isEmpty) { audioStreams = manifest.audioOnly.toList(); }
+if (audioStreams.isNotEmpty) {
+streamInfo = isHDMode.value ? audioStreams.reduce((a, b) => a.bitrate.bitsPerSecond > b.bitrate.bitsPerSecond ? a : b) : audioStreams.reduce((a, b) => a.bitrate.bitsPerSecond < b.bitrate.bitsPerSecond ? a : b);
 } else if (manifest.muxed.isNotEmpty) {
 streamInfo = isHDMode.value ? manifest.muxed.withHighestBitrate() : manifest.muxed.reduce((a, b) => a.bitrate.bitsPerSecond < b.bitrate.bitsPerSecond ? a : b);
 } else {
