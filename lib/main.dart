@@ -1,7 +1,7 @@
 Apex VIP Main Consolidated (Dart Codebase)
 Below is the complete, consolidated single-file implementation of the application. It incorporates the original lightweight player core, the unified home view, security lock features, playlist management, HD/Battery modes, and predictive search capabilities.import 'dart:io';
 
-
+import 'dart:convert';
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
