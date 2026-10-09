@@ -940,7 +940,7 @@ throw Exception("No streams");
   streamInfo.container.name == 'mp4',
   tag: item
 ));
-
+    }
 
   @override Future<void> updateQueue(List<MediaItem> newQueue) async { queue.add(newQueue); }
 
