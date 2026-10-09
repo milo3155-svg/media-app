@@ -1957,9 +1957,9 @@ class FullScreenPlayer extends StatelessWidget {
 
   }
 
-  class YTStreamSource extends StreamAudioSource {
-final StreamInfo streamInfo;
-YTStreamSource(this.streamInfo, {super.tag});
+class YTStreamSource extends StreamAudioSource {
+final dynamic streamInfo;
+YTStreamSource(this.streamInfo, {Object? tag}) : super(tag: tag);
 @override
 Future<StreamAudioResponse> request([int? start, int? end]) async {
 start ??= 0;
@@ -1971,7 +1971,7 @@ sourceLength: streamInfo.size.totalBytes,
 contentLength: response.contentLength,
 offset: start,
 stream: response,
-contentType: streamInfo.container.name == 'mp4' ? 'audio/mp4' : 'audio/webm',
+contentType: streamInfo.url.toString().contains('webm') ? 'audio/webm' : 'audio/mp4',
 );
 }
 }
