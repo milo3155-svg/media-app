@@ -1768,122 +1768,58 @@ class SportsScreen extends StatelessWidget { const SportsScreen({super.key}); @o
 // ============================================================================
 
 
-class MiniPlayer extends StatelessWidget { 
-
-
-  const MiniPlayer({super.key}); 
-
-
-  @override Widget build(BuildContext context) { 
-
-
-    return StreamBuilder<MediaItem?>(stream: audioHandler.mediaItem, builder: (context, snapshot) { 
-
-
-      final mediaItem = snapshot.data; if (mediaItem == null) return const SizedBox.shrink(); 
-
-
-      return Dismissible(
-
-
-        key: const Key('miniplayer_dismiss'),
-
-
-        direction: DismissDirection.down,
-
-
-        onDismissed: (_) { audioHandler.customAction('kill'); },
-
-
-        child: GestureDetector(
-
-
-          onTap: () => showModalBottomSheet(context: context, isScrollControlled: true, backgroundColor: Colors.transparent, builder: (context) => const FullScreenPlayer()), 
-
-
-          child: ValueListenableBuilder<Color>(
-
-
-            valueListenable: appColor, builder: (context, color, _) {
-
-
-              return Container(
-
-
-                margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-
-
-                decoration: BoxDecoration(
-
-
-                  borderRadius: BorderRadius.circular(16),
-
-
-                  border: Border.all(color: color, width: 1.5),
-
-
-                  boxShadow: [BoxShadow(color: color.withOpacity(0.3), blurRadius: 12, spreadRadius: 1)],
-
-
-                  color: Colors.black.withOpacity(0.5), 
-
-
-                ),
-
-
-                child: ClipRRect(
-
-
-                  borderRadius: BorderRadius.circular(16),
-
-
-                  child: BackdropFilter(
-
-
-                    filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
-
-
-                    child: Padding(
-
-
-                      padding: const EdgeInsets.all(8.0),
-
-
-                      child: Row(children: [ClipRRect(borderRadius: BorderRadius.circular(10), child: CachedNetworkImage(imageUrl: mediaItem.artUri.toString(), width: 45, height: 45, fit: BoxFit.cover)), const SizedBox(width: 12), Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [Text(mediaItem.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white)), Text(mediaItem.artist ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white70, fontSize: 12))])), StreamBuilder<PlaybackState>(stream: audioHandler.playbackState, builder: (context, snapshot) { final playing = snapshot.data?.playing ?? false; final isBuffering = snapshot.data?.processingState == AudioProcessingState.buffering || snapshot.data?.processingState == AudioProcessingState.loading; if (isBuffering) return Padding(padding: const EdgeInsets.all(12.0), child: SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2, color: color))); return IconButton(icon: Icon(playing ? Icons.pause_circle_filled : Icons.play_circle_fill), iconSize: 42, color: color, onPressed: () => playing ? audioHandler.pause() : audioHandler.play()); })]),
-
-
-|---|
-
-
-                  )
-
-
-                )
-
-
-              );
-
-
-            }
-
-
-          )
-
-
-        )
-
-
-      ); 
-
-
-    }); 
-
-
-  } 
-
-
+class MiniPlayer extends StatelessWidget {
+const MiniPlayer({super.key});
+@override Widget build(BuildContext context) {
+return StreamBuilder<MediaItem?>(stream: audioHandler.mediaItem, builder: (context, snapshot) {
+final mediaItem = snapshot.data; if (mediaItem == null) return const SizedBox.shrink();
+return Dismissible(
+key: const Key('miniplayer_dismiss'),
+direction: DismissDirection.down,
+onDismissed: (_) { audioHandler.customAction('kill'); },
+child: GestureDetector(
+onTap: () => showModalBottomSheet(context: context, isScrollControlled: true, backgroundColor: Colors.transparent, builder: (context) => const FullScreenPlayer()),
+child: ValueListenableBuilder<Color>(
+valueListenable: appColor, builder: (context, color, _) {
+return Container(
+margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+decoration: BoxDecoration(
+borderRadius: BorderRadius.circular(16),
+border: Border.all(color: color, width: 1.5),
+boxShadow: [BoxShadow(color: color.withOpacity(0.3), blurRadius: 12, spreadRadius: 1)],
+color: Colors.black.withOpacity(0.5),
+),
+child: ClipRRect(
+borderRadius: BorderRadius.circular(16),
+child: BackdropFilter(
+filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+child: Padding(
+padding: const EdgeInsets.all(8.0),
+child: Row(children: [
+ClipRRect(borderRadius: BorderRadius.circular(10), child: CachedNetworkImage(imageUrl: mediaItem.artUri.toString(), width: 45, height: 45, fit: BoxFit.cover)),
+const SizedBox(width: 12),
+Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+Text(mediaItem.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
+Text(mediaItem.artist ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white70, fontSize: 12))
+])),
+StreamBuilder<PlaybackState>(stream: audioHandler.playbackState, builder: (context, snapshot) {
+final playing = snapshot.data?.playing ?? false;
+final isBuffering = snapshot.data?.processingState == AudioProcessingState.buffering || snapshot.data?.processingState == AudioProcessingState.loading;
+if (isBuffering) return Padding(padding: const EdgeInsets.all(12.0), child: SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2, color: color)));
+return IconButton(icon: Icon(playing ? Icons.pause_circle_filled : Icons.play_circle_fill), iconSize: 42, color: color, onPressed: () => playing ? audioHandler.pause() : audioHandler.play());
+})
+]),
+),
+)
+)
+);
 }
-
+)
+)
+);
+});
+}
+}
 
 class FullScreenPlayer extends StatelessWidget {
 
