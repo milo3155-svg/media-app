@@ -624,14 +624,7 @@ class YMusicPlayerDetailScreen extends StatelessWidget {
       body: SingleChildScrollView(
         child: Column(
           children: [
-            if (item.directStreamUrl == null && playerProvider.webViewController != null)
-              Container(
-                height: 230,
-                width: double.infinity,
-                color: Colors.black,
-                child: WebViewWidget(controller: playerProvider.webViewController!),
-              )
-            else
+        
               ClipRRect(
                 borderRadius: BorderRadius.circular(20),
                 child: Image.network(
