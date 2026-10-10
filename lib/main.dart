@@ -1931,19 +1931,19 @@ class FullScreenPlayer extends StatelessWidget {
               ]
 
 
-            ),
+            );
 
 
-          },
+          }
 
 
-        },
+        }
 
 
       ),
 
 
-    );
+});
 
 
  );
