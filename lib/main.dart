@@ -1938,7 +1938,7 @@ class FullScreenPlayer extends StatelessWidget {
   ),
 ],
 ),
-);
+),
 }
 }
 
