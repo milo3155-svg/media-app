@@ -1860,102 +1860,174 @@ return IconButton(icon: Icon(playing ? Icons.pause_circle_filled : Icons.play_ci
 }
 
 class FullScreenPlayer extends StatelessWidget {
-
-
   FullScreenPlayer({Key? key}) : super(key: key);
 
+  void _showSleepTimerDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: const Color(0xFF1A1A1A),
+        title: const Text("Temporizador de Sueño", style: TextStyle(color: Colors.white)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              title: const Text("Apagar en 15 minutos", style: TextStyle(color: Colors.white)),
+              onTap: () {
+                audioHandler.customAction('setSleepTimer', {'minutes': 15});
+                Navigator.pop(context);
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Temporizador activado")));
+              }
+            ),
+            ListTile(
+              title: const Text("Apagar en 30 minutos", style: TextStyle(color: Colors.white)),
+              onTap: () {
+                audioHandler.customAction('setSleepTimer', {'minutes': 30});
+                Navigator.pop(context);
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Temporizador activado")));
+              }
+            ),
+            ListTile(
+              title: const Text("Apagar en 60 minutos", style: TextStyle(color: Colors.white)),
+              onTap: () {
+                audioHandler.customAction('setSleepTimer', {'minutes': 60});
+                Navigator.pop(context);
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Temporizador activado")));
+              }
+            ),
+            ListTile(
+              title: const Text("Desactivar", style: TextStyle(color: Colors.redAccent)),
+              onTap: () {
+                audioHandler.customAction('setSleepTimer', {'minutes': 0});
+                Navigator.pop(context);
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Temporizador desactivado")));
+              }
+            )
+          ]
+        )
+      )
+    );
+  }
 
-  void _showSleepTimerDialog(BuildContext context) { showDialog(context: context, builder: (context) => AlertDialog(backgroundColor: const Color(0xFF1A1A1A), title: const Text("Temporizador de Sueño", style: TextStyle(color: Colors.white)), content: Column(mainAxisSize: MainAxisSize.min, children: [ListTile(title: const Text("Apagar en 15 minutos", style: TextStyle(color: Colors.white)), onTap: () { audioHandler.customAction('setSleepTimer', {'minutes': 15}); Navigator.pop(context); ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Temporizador activado"))); }), ListTile(title: const Text("Apagar en 30 minutos", style: TextStyle(color: Colors.white)), onTap: () { audioHandler.customAction('setSleepTimer', {'minutes': 30}); Navigator.pop(context); ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Temporizador activado"))); }), ListTile(title: const Text("Apagar en 60 minutos", style: TextStyle(color: Colors.white)), onTap: () { audioHandler.customAction('setSleepTimer', {'minutes': 60}); Navigator.pop(context); ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Temporizador activado"))); }), ListTile(title: const Text("Desactivar", style: TextStyle(color: Colors.redAccent)), onTap: () { audioHandler.customAction('setSleepTimer', {'minutes': 0}); Navigator.pop(context); ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Temporizador desactivado"))); })]))); }
-
-
-  @override Widget build(BuildContext context) {
-
-
+  @override
+  Widget build(BuildContext context) {
     return Container(
-
-
-      height: MediaQuery.of(context).size.height * 0.95, decoration: const BoxDecoration(color: Color(0xFF0D0D0D), borderRadius: BorderRadius.vertical(top: Radius.circular(30))),
-
-
+      height: MediaQuery.of(context).size.height * 0.95,
+      decoration: const BoxDecoration(
+        color: Color(0xFF0D0D0D),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(30))
+      ),
       child: StreamBuilder<MediaItem?>(
-
-
-        stream: audioHandler.mediaItem, builder: (context, snapshot) {
-
-
-          final mediaItem = snapshot.data; if (mediaItem == null) return const SizedBox.shrink();
-
+        stream: audioHandler.mediaItem,
+        builder: (context, snapshot) {
+          final mediaItem = snapshot.data;
+          if (mediaItem == null) return const SizedBox.shrink();
 
           return Padding(
-
-
             padding: const EdgeInsets.symmetric(horizontal: 24.0),
-
-
             child: Column(
-
-
-              crossAxisAlignment: CrossAxisAlignment.center, children: [
-
-
-                const SizedBox(height: 16), Container(width: 40, height: 5, decoration: BoxDecoration(color: Colors.grey[600], borderRadius: BorderRadius.circular(10))), const SizedBox(height: 30),
-
-
-                ValueListenableBuilder<Color>(valueListenable: appColor, builder: (context, color, _) {
-
-
-                  return Container(decoration: BoxDecoration(boxShadow: [BoxShadow(color: color.withOpacity(0.15), blurRadius: 40, spreadRadius: 10)], borderRadius: BorderRadius.circular(20)), child: ClipRRect(borderRadius: BorderRadius.circular(20), child: CachedNetworkImage(imageUrl: mediaItem.artUri.toString(), width: MediaQuery.of(context).size.width * 0.85, height: MediaQuery.of(context).size.width * 0.85, fit: BoxFit.cover)));
-
-
-                }), const SizedBox(height: 30),
-
-
-                Row(crossAxisAlignment: CrossAxisAlignment.start, children: [Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(mediaItem.title, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.white)), const SizedBox(height: 8), Text(mediaItem.artist ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 18, color: Colors.grey))])), ValueListenableBuilder(valueListenable: Hive.box('favorites').listenable(), builder: (context, Box box, _) { final isFav = box.containsKey(mediaItem.id); return ValueListenableBuilder<Color>(valueListenable: appColor, builder: (context, color, _) => IconButton(icon: Icon(isFav ? Icons.favorite : Icons.favorite_border), iconSize: 32, color: isFav ? Colors.redAccent : color, onPressed: () { if (isFav) box.delete(mediaItem.id); else box.put(mediaItem.id, {'id': mediaItem.id, 'title': mediaItem.title, 'artist': mediaItem.artist, 'artUri': mediaItem.artUri.toString(), 'duration': mediaItem.duration?.inMilliseconds ?? 0}); })); })]), const SizedBox(height: 24),
-
-
-               StreamBuilder<Duration>(
-              stream: AudioService.position,
-              builder: (context, snapshotDuration) {
-                return StreamBuilder<PlaybackState>(
-                  stream: audioHandler.playbackState,
-                  builder: (context, snapshot) {
-                    return Column(
-                      children: [
-                        const SizedBox(height: 20),
-                        const Spacer(),
-                        GestureDetector(
-                          onTap: () {
-                            showModalBottomSheet(
-                              context: context,
-                              backgroundColor: const Color(0xFF1A1A1A),
-                              builder: (context) => const SizedBox(
-                                height: 150,
-                                child: Center(
-                                  child: Text("Opciones", style: TextStyle(color: Colors.white)),
-                                ),
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                const SizedBox(height: 16),
+                Container(width: 40, height: 5, decoration: BoxDecoration(color: Colors.grey[600], borderRadius: BorderRadius.circular(10))),
+                const SizedBox(height: 30),
+                ValueListenableBuilder<Color>(
+                  valueListenable: appColor,
+                  builder: (context, color, _) {
+                    return Container(
+                      decoration: BoxDecoration(
+                        boxShadow: [BoxShadow(color: color.withOpacity(0.15), blurRadius: 40, spreadRadius: 10)],
+                        borderRadius: BorderRadius.circular(20)
+                      ),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(20),
+                        child: CachedNetworkImage(
+                          imageUrl: mediaItem.artUri.toString(),
+                          width: MediaQuery.of(context).size.width * 0.85,
+                          height: MediaQuery.of(context).size.width * 0.85,
+                          fit: BoxFit.cover
+                        )
+                      )
+                    );
+                  }
+                ),
+                const SizedBox(height: 30),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(mediaItem.title, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.white)),
+                          const SizedBox(height: 8),
+                          Text(mediaItem.artist ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 18, color: Colors.grey))
+                        ]
+                      )
+                    ),
+                    ValueListenableBuilder(
+                      valueListenable: Hive.box('favorites').listenable(),
+                      builder: (context, Box box, _) {
+                        final isFav = box.containsKey(mediaItem.id);
+                        return ValueListenableBuilder<Color>(
+                          valueListenable: appColor,
+                          builder: (context, color, _) => IconButton(
+                            icon: Icon(isFav ? Icons.favorite : Icons.favorite_border),
+                            iconSize: 32,
+                            color: isFav ? Colors.redAccent : color,
+                            onPressed: () {
+                              if (isFav) box.delete(mediaItem.id);
+                              else box.put(mediaItem.id, {'id': mediaItem.id, 'title': mediaItem.title, 'artist': mediaItem.artist, 'artUri': mediaItem.artUri.toString(), 'duration': mediaItem.duration?.inMilliseconds ?? 0});
+                            }
+                          )
+                        );
+                      }
+                    )
+                  ]
+                ),
+                const SizedBox(height: 24),
+                StreamBuilder<Duration>(
+                  stream: AudioService.position,
+                  builder: (context, snapshotDuration) {
+                    return StreamBuilder<PlaybackState>(
+                      stream: audioHandler.playbackState,
+                      builder: (context, snapshot) {
+                        return Column(
+                          children: [
+                            const SizedBox(height: 20),
+                            const Spacer(),
+                            GestureDetector(
+                              onTap: () {
+                                showModalBottomSheet(
+                                  context: context,
+                                  backgroundColor: const Color(0xFF1A1A1A),
+                                  builder: (context) => const SizedBox(
+                                    height: 150,
+                                    child: Center(
+                                      child: Text("Opciones", style: TextStyle(color: Colors.white)),
+                                    ),
+                                  ),
+                                );
+                              },
+                              child: const Padding(
+                                padding: EdgeInsets.all(12.0),
+                                child: Icon(Icons.keyboard_arrow_up, color: Colors.white, size: 30),
                               ),
-                            );
-                          },
-                          child: const Padding(
-                            padding: EdgeInsets.all(12.0),
-                            child: Icon(Icons.keyboard_arrow_up, color: Colors.white, size: 30),
-                          ),
-                        ),
-                      ],
+                            ),
+                          ],
+                        );
+                      },
                     );
                   },
-                );
-              },
+                ),
+              ],
             ),
-          ],
-        ),
+          ); 
+        },
       ),
-    ],
-  ),
-);
+    ); 
+  }
 }
-}
-// Cierre oficial de la clase contenedora anterior
 
 // Clase puente en la raíz del archivo
 class YTStreamSource extends StreamAudioSource {
