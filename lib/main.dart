@@ -1913,50 +1913,48 @@ class FullScreenPlayer extends StatelessWidget {
                 Row(crossAxisAlignment: CrossAxisAlignment.start, children: [Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(mediaItem.title, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.white)), const SizedBox(height: 8), Text(mediaItem.artist ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 18, color: Colors.grey))])), ValueListenableBuilder(valueListenable: Hive.box('favorites').listenable(), builder: (context, Box box, _) { final isFav = box.containsKey(mediaItem.id); return ValueListenableBuilder<Color>(valueListenable: appColor, builder: (context, color, _) => IconButton(icon: Icon(isFav ? Icons.favorite : Icons.favorite_border), iconSize: 32, color: isFav ? Colors.redAccent : color, onPressed: () { if (isFav) box.delete(mediaItem.id); else box.put(mediaItem.id, {'id': mediaItem.id, 'title': mediaItem.title, 'artist': mediaItem.artist, 'artUri': mediaItem.artUri.toString(), 'duration': mediaItem.duration?.inMilliseconds ?? 0}); })); })]), const SizedBox(height: 24),
 
 
-                StreamBuilder<Duration>(stream: AudioService.position, builder: (context, snapshotDuration) { final position = snapshotDuration.data ?? Duration.zero; final duration = mediaItem.duration ?? Duration.zero; double positionValue = position.inMilliseconds.toDouble(); double durationValue = duration.inMilliseconds.toDouble(); if (positionValue > durationValue) positionValue = durationValue; if (durationValue == 0.0) durationValue = 1.0; return StreamBuilder<PlaybackState>(stream: audioHandler.playbackState, builder: (context, snapshotState) { double bufferedValue = snapshotState.data?.bufferedPosition.inMilliseconds.toDouble() ?? 0.0; if (bufferedValue > durationValue) bufferedValue = durationValue; return ValueListenableBuilder<Color>(valueListenable: appColor, builder: (context, color, _) { return Column(children: [SliderTheme(data: SliderTheme.of(context).copyWith(trackHeight: 4, thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 8), overlayShape: const RoundSliderOverlayShape(overlayRadius: 16), activeTrackColor: color, inactiveTrackColor: Colors.grey[800], secondaryActiveTrackColor: Colors.white30, thumbColor: color), child: Slider(value: positionValue, secondaryTrackValue: bufferedValue, max: durationValue, onChanged: (value) => audioHandler.seek(Duration(milliseconds: value.toInt())))), Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [Text(formatGlobalDuration(position), style: const TextStyle(fontSize: 12, color: Colors.grey)), Text(formatGlobalDuration(duration), style: const TextStyle(fontSize: 12, color: Colors.grey))])]); }); }); }),
-
-
-                const SizedBox(height: 20),
-
-
-                StreamBuilder<PlaybackState>(stream: audioHandler.playbackState, builder: (context, snapshot) { final playing = snapshot.data?.playing ?? false; final isBuffering = snapshot.data?.processingState == AudioProcessingState.buffering || snapshot.data?.processingState == AudioProcessingState.loading; return ValueListenableBuilder<Color>(valueListenable: appColor, builder: (context, color, _) { return Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [ ValueListenableBuilder<int>(valueListenable: sleepTimerRemaining, builder: (context, timeLeft, _) { if (timeLeft > 0) { final m = (timeLeft ~/ 60).toString().padLeft(2, '0'); final s = (timeLeft % 60).toString().padLeft(2, '0'); return GestureDetector(onTap: () => _showSleepTimerDialog(context), child: Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5), decoration: BoxDecoration(color: color.withOpacity(0.2), borderRadius: BorderRadius.circular(15)), child: Text("$m:$s", style: TextStyle(color: color, fontWeight: FontWeight.bold, fontSize: 13)))); } return IconButton(icon: Icon(Icons.timer, color: color), onPressed: () => _showSleepTimerDialog(context)); }), IconButton(icon: const Icon(Icons.skip_previous), iconSize: 48, color: Colors.white, onPressed: audioHandler.skipToPrevious), Container(width: 80, height: 80, decoration: BoxDecoration(shape: BoxShape.circle, color: color, boxShadow: [BoxShadow(color: color.withOpacity(0.5), blurRadius: 15)]), child: isBuffering ? Padding(padding: const EdgeInsets.all(20.0), child: CircularProgressIndicator(color: color == Colors.white ? Colors.black : Colors.white, strokeWidth: 3)) : IconButton(icon: Icon(playing ? Icons.pause : Icons.play_arrow), iconSize: 48, color: color == Colors.white ? Colors.black : Colors.white, onPressed: () => playing ? audioHandler.pause() : audioHandler.play())), IconButton(icon: const Icon(Icons.skip_next), iconSize: 48, color: Colors.white, onPressed: audioHandler.skipToNext), IconButton(icon: const Icon(Icons.shuffle), color: Colors.white, onPressed: () { (audioHandler as MyAudioHandler).shuffleQueue(); ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Lista mezclada"), backgroundColor: Colors.black)); }), 
-
-
-                const Spacer(),
-
-
-              GestureDetector(
-              onTap: () {
-                showModalBottomSheet(
-                  context: context,
-                  backgroundColor: const Color(0xFF1A1A1A),
-                  builder: (context) {
-                    return const SizedBox(
-                      height: 150,
-                      child: Center(
-                        child: Text("Opciones", style: TextStyle(color: Colors.white))
-                      ),
+               StreamBuilder<Duration>(
+              stream: AudioService.position,
+              builder: (context, snapshotDuration) {
+                return StreamBuilder<PlaybackState>(
+                  stream: audioHandler.playbackState,
+                  builder: (context, snapshot) {
+                    return Column(
+                      children: [
+                        const SizedBox(height: 20),
+                        const Spacer(),
+                        GestureDetector(
+                          onTap: () {
+                            showModalBottomSheet(
+                              context: context,
+                              backgroundColor: const Color(0xFF1A1A1A),
+                              builder: (context) => const SizedBox(
+                                height: 150,
+                                child: Center(
+                                  child: Text("Opciones", style: TextStyle(color: Colors.white)),
+                                ),
+                              ),
+                            );
+                          },
+                          child: const Padding(
+                            padding: EdgeInsets.all(12.0),
+                            child: Icon(Icons.keyboard_arrow_up, color: Colors.white, size: 30),
+                          ),
+                        ),
+                      ],
                     );
                   },
                 );
               },
-              child: const Padding(
-                padding: EdgeInsets.all(12.0),
-                child: Icon(Icons.keyboard_arrow_up, color: Colors.white, size: 30),
-              ),
             ),
-          ], // 1. Cierra children de la Column interna
-        ),   // 2. Cierra la Column interna
-      ),     // 3. Cierra el Expanded
-    ],       // 4. Cierra children del Row
-  ),         // 5. Cierra el Row
-],           // 6. Cierra children de la Columna principal
-),             // 7. Cierra la Columna principal
-);               // 8. Cierra el return Padding
-}                  // 9. Cierra el builder
-);                   // 10. Cierra el StreamBuilder
-}                      // 11. Cierra el método build
-}                        // 12. Cierra la clase FullScreenPlayer
+          ],
+        ),
+      ),
+    ],
+  ),
+);
+}
+}
 // Cierre oficial de la clase contenedora anterior
 
 // Clase puente en la raíz del archivo
