@@ -1925,23 +1925,39 @@ class FullScreenPlayer extends StatelessWidget {
                 const Spacer(),
 
 
-                GestureDetector(onTap: () { showModalBottomSheet(context: context, backgroundColor: const Color(0xFF1A1A1A), shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))), builder: (context) => Column(children: [const Padding(padding: EdgeInsets.symmetric(vertical: 20.0), child: Text("Siguiente en la lista", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white))), Expanded(child: StreamBuilder<List<MediaItem>>(stream: audioHandler.queue, builder: (context, snapshot) { final queueList = (snapshot.data ?? []).where((item) => item.id != mediaItem.id).toList(); if (queueList.isEmpty) return const Center(child: Text("La Radio Infinita decidirá qué sigue...", style: TextStyle(color: Colors.grey))); return ListView.builder(itemCount: queueList.length, itemBuilder: (context, index) { final item = queueList[index]; return ListTile(leading: ClipRRect(borderRadius: BorderRadius.circular(6), child: CachedNetworkImage(imageUrl: item.artUri.toString(), width: 45, height: 45, fit: BoxFit.cover)), title: Text(item.title, maxLines: 1, overflow: TextOverflow.ellipsis), subtitle: Text(item.artist ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.grey)), onTap: () { audioHandler.playMediaItem(item); Navigator.pop(context); }); }); }))])); }, child: const Column(children: [Icon(Icons.keyboard_arrow_up, color: Colors.grey, size: 30), Text("Cola", style: TextStyle(color: Colors.grey, fontSize: 12)), SizedBox(height: 20)])),
-
-], // 1. Cierra los children de la Column interna (línea 1913)
-              ),   // 2. Cierra la Column interna
-            ),     // 3. Cierra el Expanded
-          ],       // 4. Cierra los children del Row
-        ),         // 5. Cierra el Row
-      ],           // 6. Cierra los children de la Columna principal (línea 1895)
-    ),             // 7. Cierra la Columna principal
-  );               // 8. Cierra el return Padding (línea 1889)
-}                  // 9. Cierra la función builder (línea 1883)
-);                 // 10. Cierra el StreamBuilder principal
-}                  // 11. Cierra la función build
-}                  // 12. Cierra la clase FullScreenPlayer
-
+              GestureDetector(
+              onTap: () {
+                showModalBottomSheet(
+                  context: context,
+                  backgroundColor: const Color(0xFF1A1A1A),
+                  builder: (context) {
+                    return const SizedBox(
+                      height: 150,
+                      child: Center(
+                        child: Text("Opciones", style: TextStyle(color: Colors.white))
+                      ),
+                    );
+                  },
+                );
+              },
+              child: const Padding(
+                padding: EdgeInsets.all(12.0),
+                child: Icon(Icons.keyboard_arrow_up, color: Colors.white, size: 30),
+              ),
+            ),
+          ], // 1. Cierra children de la Column interna
+        ),   // 2. Cierra la Column interna
+      ),     // 3. Cierra el Expanded
+    ],       // 4. Cierra children del Row
+  ),         // 5. Cierra el Row
+],           // 6. Cierra children de la Columna principal
+),             // 7. Cierra la Columna principal
+);               // 8. Cierra el return Padding
+}                  // 9. Cierra el builder
+);                   // 10. Cierra el StreamBuilder
+}                      // 11. Cierra el método build
+}                        // 12. Cierra la clase FullScreenPlayer
 // Cierre oficial de la clase contenedora anterior
-}
 
 // Clase puente en la raíz del archivo
 class YTStreamSource extends StreamAudioSource {
