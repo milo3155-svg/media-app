@@ -1927,20 +1927,25 @@ class FullScreenPlayer extends StatelessWidget {
 
                 GestureDetector(onTap: () { showModalBottomSheet(context: context, backgroundColor: const Color(0xFF1A1A1A), shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))), builder: (context) => Column(children: [const Padding(padding: EdgeInsets.symmetric(vertical: 20.0), child: Text("Siguiente en la lista", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white))), Expanded(child: StreamBuilder<List<MediaItem>>(stream: audioHandler.queue, builder: (context, snapshot) { final queueList = (snapshot.data ?? []).where((item) => item.id != mediaItem.id).toList(); if (queueList.isEmpty) return const Center(child: Text("La Radio Infinita decidirá qué sigue...", style: TextStyle(color: Colors.grey))); return ListView.builder(itemCount: queueList.length, itemBuilder: (context, index) { final item = queueList[index]; return ListTile(leading: ClipRRect(borderRadius: BorderRadius.circular(6), child: CachedNetworkImage(imageUrl: item.artUri.toString(), width: 45, height: 45, fit: BoxFit.cover)), title: Text(item.title, maxLines: 1, overflow: TextOverflow.ellipsis), subtitle: Text(item.artist ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.grey)), onTap: () { audioHandler.playMediaItem(item); Navigator.pop(context); }); }); }))])); }, child: const Column(children: [Icon(Icons.keyboard_arrow_up, color: Colors.grey, size: 30), Text("Cola", style: TextStyle(color: Colors.grey, fontSize: 12)), SizedBox(height: 20)])),
 
-
-  ],
-              );
-            }
-          ),
-        ],
-      );
-    }
-  ),
-],
-),
-),
-}
-}
+], // Cierra los children de PlaybackState
+                );   // Cierra el widget de PlaybackState
+              }      // Cierra el builder de PlaybackState
+            ),       // Cierra el StreamBuilder PlaybackState
+          ],         // Cierra los children de Duration
+        );           // Cierra el widget de Duration
+      }              // Cierra el builder de Duration
+    ),               // Cierra el StreamBuilder Duration
+  ],                 // Cierra los children de la Columna interna
+),                   // Cierra la Columna interna
+),                   // Cierra el Expanded
+],                   // Cierra los children del Row
+),                   // Cierra el Row
+],                   // Cierra los children de la Columna principal
+),                   // Cierra la Columna principal
+);                   // Cierra el return Padding de la línea 1889
+}                    // Cierra el builder del StreamBuilder principal
+);                   // Cierra el StreamBuilder principal
+} 
 
 // Cierre oficial de la clase contenedora anterior
 }
