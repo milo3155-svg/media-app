@@ -29,7 +29,7 @@ jobs:
       run: flutter pub get
 
     - name: Compilar el APK
-      run: flutter build apk --release --android-skip-build-dependency-validation
+      run: flutter build apk --release
 
     - name: Subir el APK listo
       uses: actions/upload-artifact@v4
