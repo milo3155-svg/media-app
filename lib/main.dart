@@ -1931,7 +1931,7 @@ class FullScreenPlayer extends StatelessWidget {
               ]
 
 
-            );
+            ),
 
 
           },
