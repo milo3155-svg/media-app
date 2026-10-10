@@ -941,7 +941,7 @@ throw Exception("No streams");
   tag: item
 ));
 }
-
+}
   @override Future<void> updateQueue(List<MediaItem> newQueue) async { queue.add(newQueue); }
 
 
