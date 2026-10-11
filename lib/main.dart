@@ -44,20 +44,11 @@ class MediaItemModel {
 // ==========================================
 class YMusicPlayerProvider extends ChangeNotifier {
   final AudioPlayer _audioPlayer = AudioPlayer();
-  WebViewController? _webViewController;
   MediaItemModel? _currentItem;
 
   MediaItemModel? get currentItem => _currentItem;
-  WebViewController? get webViewController => _webViewController;
 
   YMusicPlayerProvider() {
-    _initWebView();
-  }
-
-  void _initWebView() {
-    _webViewController = WebViewController()
-      ..setJavaScriptMode(JavaScriptMode.unrestricted)
-      ..setUserAgent('Mozilla/5.0 (Linux; Android 10; Pixel 10 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36');
   }
 
   Future<void> playItem(MediaItemModel item) async {
@@ -66,23 +57,15 @@ class YMusicPlayerProvider extends ChangeNotifier {
 
     // 1. Si es radio (audio directo)
     if (item.directStreamUrl != null) {
-      _webViewController?.loadRequest(Uri.parse('about:blank'));
       await _audioPlayer.stop();
       await _audioPlayer.play(UrlSource(item.directStreamUrl!));
     } 
     // 2. Si es YouTube
-    else {
-      await _audioPlayer.stop();
-      final String targetUrl = 'https://www.youtube.com/embed/${item.id}?autoplay=1';
-      _webViewController?.loadRequest(Uri.parse(targetUrl));
-    }
-
-    notifyListeners();
+   
   }
 
   Future<void> closePlayer() async {
     await _audioPlayer.stop();
-    _webViewController?.loadRequest(Uri.parse('about:blank'));
     _currentItem = null;
     notifyListeners();
   }
