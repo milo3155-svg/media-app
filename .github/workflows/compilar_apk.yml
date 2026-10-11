@@ -24,9 +24,11 @@ jobs:
       with:
         flutter-version: '3.24.3'
         architecture: x64
-
-    - name: Descargar librerías
-      run: flutter pub get
+    - name: Clean and Install dependencies
+      run: |
+        flutter clean
+        flutter pub get
+   
 
     - name: Compilar el APK
       run: flutter build apk --release
