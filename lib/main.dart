@@ -4,6 +4,7 @@ import 'package:share_plus/share_plus.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart' as yt_exp;
 
+
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
   runApp(
@@ -61,7 +62,14 @@ class YMusicPlayerProvider extends ChangeNotifier {
       await _audioPlayer.play(UrlSource(item.directStreamUrl!));
     } 
     // 2. Si es YouTube
-   
+   else{
+     await _audioPlayer.stop();
+     final yt = yt_exp.YoutubeExplode();
+     final manifest = await yt.videos.streamsClient.getManifest(item.id);
+     final streamInfo = manifest.audioOnly.withHighestBitrate();
+     await _audioPlayer.play(UrlSource(streamInfo.url.toString()));
+     yt.close();
+   }
   }
 
   Future<void> closePlayer() async {
