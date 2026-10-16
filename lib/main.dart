@@ -46,35 +46,95 @@ class MediaItemModel {
 class YMusicPlayerProvider extends ChangeNotifier {
   final AudioPlayer _audioPlayer = AudioPlayer();
   MediaItemModel? _currentItem;
+  bool _isPlaying = false;
+  bool _isLoading = false;
+  String _statusMessage = 'Reproductor listo.';
+  Duration _duration = Duration.zero;
+  Duration _position = Duration.zero;
 
   MediaItemModel? get currentItem => _currentItem;
+  bool get isPlaying => _isPlaying;
+  bool get isLoading => _isLoading;
+  String get statusMessage => _statusMessage;
+  Duration get duration => _duration;
+  Duration get position => _position;
 
   YMusicPlayerProvider() {
+    _audioPlayer.onPlayerStateChanged.listen((state) {
+      _isPlaying = state == PlayerState.playing;
+      notifyListeners();
+    });
+    _audioPlayer.onDurationChanged.listen((newDuration) {
+      _duration = newDuration;
+      notifyListeners();
+    });
+    _audioPlayer.onPositionChanged.listen((newPosition) {
+      _position = newPosition;
+      notifyListeners();
+    });
   }
 
   Future<void> playItem(MediaItemModel item) async {
     _currentItem = item;
+    _isLoading = true;
+    _position = Duration.zero;
+    _duration = Duration.zero;
+    _statusMessage = 'Extrayendo flujo de audio...';
     notifyListeners();
 
     // 1. Si es radio (audio directo)
     if (item.directStreamUrl != null) {
-      await _audioPlayer.stop();
-      await _audioPlayer.play(UrlSource(item.directStreamUrl!));
-    } 
+      try {
+        await _audioPlayer.stop();
+        await _audioPlayer.play(UrlSource(item.directStreamUrl!));
+        _statusMessage = 'Transmitiendo radio en vivo.';
+      } catch (e) {
+        _statusMessage = 'Error en radio: $e';
+      } finally {
+        _isLoading = false;
+        notifyListeners();
+      }
+    }
     // 2. Si es YouTube
-   else{
-     await _audioPlayer.stop();
-     final yt = yt_exp.YoutubeExplode();
-     final manifest = await yt.videos.streamsClient.getManifest(item.id);
-     final streamInfo = manifest.audioOnly.withHighestBitrate();
-     await _audioPlayer.play(UrlSource(streamInfo.url.toString()));
-     yt.close();
-   }
+    else {
+      final yt = yt_exp.YoutubeExplode();
+      try {
+        await _audioPlayer.stop();
+        final manifest = await yt.videos.streamsClient.getManifest(item.id);
+        final mp4Audios = manifest.audioOnly.where((s) => s.container.name == 'mp4');
+        final streamInfo = mp4Audios.isNotEmpty
+            ? mp4Audios.withHighestBitrate()
+            : manifest.audioOnly.withHighestBitrate();
+
+        await _audioPlayer.play(UrlSource(streamInfo.url.toString()));
+        _statusMessage = 'Reproduciendo (${streamInfo.container.name.toUpperCase()})';
+      } catch (e) {
+        _statusMessage = 'Error al reproducir: $e';
+      } finally {
+        yt.close();
+        _isLoading = false;
+        notifyListeners();
+      }
+    }
+  }
+
+  Future<void> togglePlayPause() async {
+    if (_isPlaying) {
+      await _audioPlayer.pause();
+    } else {
+      await _audioPlayer.resume();
+    }
+  }
+
+  Future<void> seek(Duration position) async {
+    await _audioPlayer.seek(position);
   }
 
   Future<void> closePlayer() async {
     await _audioPlayer.stop();
     _currentItem = null;
+    _position = Duration.zero;
+    _duration = Duration.zero;
     notifyListeners();
   }
 
@@ -578,10 +638,21 @@ class _SearchTabState extends State<SearchTab> with AutomaticKeepAliveClientMixi
 }
 
 // ==========================================
-// REPRODUCTOR DETALLADO CON WEBVIEW CONECTADO
+// ==========================================
+// REPRODUCTOR DETALLADO NATIVO
 // ==========================================
 class YMusicPlayerDetailScreen extends StatelessWidget {
   const YMusicPlayerDetailScreen({super.key});
+
+  String _formatDuration(Duration d) {
+    final minutes = d.inMinutes.remainder(60).toString().padLeft(2, '0');
+    final seconds = d.inSeconds.remainder(60).toString().padLeft(2, '0');
+    final hours = d.inHours;
+    if (hours > 0) {
+      return '$hours:$minutes:$seconds';
+    }
+    return '$minutes:$seconds';
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -597,6 +668,10 @@ class YMusicPlayerDetailScreen extends StatelessWidget {
     }
 
     final isFav = vault.isFavorite(item.id);
+    final maxSeconds = playerProvider.duration.inSeconds.toDouble();
+    final currentSeconds = playerProvider.position.inSeconds
+        .toDouble()
+        .clamp(0.0, maxSeconds > 0 ? maxSeconds : 1.0);
 
     return Scaffold(
       appBar: AppBar(
@@ -614,22 +689,20 @@ class YMusicPlayerDetailScreen extends StatelessWidget {
       body: SingleChildScrollView(
         child: Column(
           children: [
-        
-              ClipRRect(
-                borderRadius: BorderRadius.circular(20),
-                child: Image.network(
-                  item.thumbnailUrl,
-                  width: double.infinity,
+            ClipRRect(
+              borderRadius: BorderRadius.circular(20),
+              child: Image.network(
+                item.thumbnailUrl,
+                width: double.infinity,
+                height: 230,
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => Container(
                   height: 230,
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) => Container(
-                    height: 230,
-                    color: Colors.grey[900],
-                    child: const Icon(Icons.radio, size: 80, color: Colors.white70),
-                  ),
+                  color: Colors.grey[900],
+                  child: const Icon(Icons.radio, size: 80, color: Colors.white70),
                 ),
               ),
-
+            ),
             Padding(
               padding: const EdgeInsets.all(20.0),
               child: Column(
@@ -644,6 +717,39 @@ class YMusicPlayerDetailScreen extends StatelessWidget {
                     item.author,
                     style: const TextStyle(fontSize: 14, color: Colors.grey),
                   ),
+                  const SizedBox(height: 20),
+                  Slider(
+                    value: currentSeconds,
+                    min: 0.0,
+                    max: maxSeconds > 0 ? maxSeconds : 1.0,
+                    onChanged: maxSeconds > 0
+                        ? (val) {
+                            playerProvider.seek(Duration(seconds: val.toInt()));
+                          }
+                        : null,
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(_formatDuration(playerProvider.position)),
+                        Text(_formatDuration(playerProvider.duration)),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Center(
+                    child: playerProvider.isLoading
+                        ? const CircularProgressIndicator()
+                        : IconButton.filled(
+                            iconSize: 48,
+                            icon: Icon(
+                              playerProvider.isPlaying ? Icons.pause : Icons.play_arrow,
+                            ),
+                            onPressed: playerProvider.togglePlayPause,
+                          ),
+                  ),
                   const Divider(height: 32),
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -651,14 +757,22 @@ class YMusicPlayerDetailScreen extends StatelessWidget {
                       color: Colors.purple.withOpacity(0.15),
                       borderRadius: BorderRadius.circular(12),
                     ),
-                    child: const Row(
+                    child: Row(
                       children: [
-                        Icon(Icons.check_circle_outline, color: Colors.greenAccent, size: 22),
-                        SizedBox(width: 10),
+                        Icon(
+                          playerProvider.statusMessage.startsWith('Error')
+                              ? Icons.error_outline
+                              : Icons.check_circle_outline,
+                          color: playerProvider.statusMessage.startsWith('Error')
+                              ? Colors.redAccent
+                              : Colors.greenAccent,
+                          size: 22,
+                        ),
+                        const SizedBox(width: 10),
                         Expanded(
                           child: Text(
-                            'Reproductor activo.',
-                            style: TextStyle(fontSize: 13),
+                            playerProvider.statusMessage,
+                            style: const TextStyle(fontSize: 13),
                           ),
                         ),
                       ],
@@ -673,7 +787,6 @@ class YMusicPlayerDetailScreen extends StatelessWidget {
     );
   }
 }
-
 // ==========================================
 // BÓVEDA (FAVORITOS 👍)
 // ==========================================
