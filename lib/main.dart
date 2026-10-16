@@ -104,11 +104,20 @@ class YMusicPlayerProvider extends ChangeNotifier {
         _statusMessage = 'Extrayendo con cliente seguro...';
         notifyListeners();
 
-        // Forzamos el cliente de Android VR para evitar bloqueos y throttling de VEVO
-        final manifest = await yt.videos.streamsClient.getManifest(
-          item.id,
-          ytClients: [yt_exp.YoutubeApiClient.androidVr],
-        );
+        yt_exp.StreamManifest? manifest;
+        
+        // Estrategia Pro: Intento primario con cliente Android VR y fallback a TV Embedded
+        try {
+          manifest = await yt.videos.streamsClient.getManifest(
+            item.id,
+            ytClients: [yt_exp.YoutubeApiClient.androidVr],
+          );
+        } catch (_) {
+          manifest = await yt.videos.streamsClient.getManifest(
+            item.id,
+            ytClients: [yt_exp.YoutubeApiClient.tvEmbedded],
+          );
+        }
         
         final mp4Audios = manifest.audioOnly.where((s) => s.container.name == 'mp4');
         final streamInfo = mp4Audios.isNotEmpty
@@ -125,34 +134,6 @@ class YMusicPlayerProvider extends ChangeNotifier {
         notifyListeners();
       }
     }
-
-  Future<void> togglePlayPause() async {
-    if (_isPlaying) {
-      await _audioPlayer.pause();
-    } else {
-      await _audioPlayer.resume();
-    }
-  }
-
-  Future<void> seek(Duration position) async {
-    await _audioPlayer.seek(position);
-  }
-
-  Future<void> closePlayer() async {
-    await _audioPlayer.stop();
-    _currentItem = null;
-    _position = Duration.zero;
-    _duration = Duration.zero;
-    notifyListeners();
-  }
-
-  @override
-  void dispose() {
-    _audioPlayer.dispose();
-    super.dispose();
-  }
-}
-
 // ==========================================
 // BÓVEDA (FAVORITOS 👍)
 // ==========================================
