@@ -95,12 +95,21 @@ class YMusicPlayerProvider extends ChangeNotifier {
         notifyListeners();
       }
     }
-    // 2. Si es YouTube
+  
+// 2. Si es YouTube
     else {
       final yt = yt_exp.YoutubeExplode();
       try {
         await _audioPlayer.stop();
-        final manifest = await yt.videos.streamsClient.getManifest(item.id);
+        _statusMessage = 'Extrayendo con cliente seguro...';
+        notifyListeners();
+
+        // Forzamos el cliente de Android VR para evitar bloqueos y throttling de VEVO
+        final manifest = await yt.videos.streamsClient.getManifest(
+          item.id,
+          ytClients: [yt_exp.YoutubeApiClient.androidVr],
+        );
+        
         final mp4Audios = manifest.audioOnly.where((s) => s.container.name == 'mp4');
         final streamInfo = mp4Audios.isNotEmpty
             ? mp4Audios.withHighestBitrate()
@@ -116,7 +125,6 @@ class YMusicPlayerProvider extends ChangeNotifier {
         notifyListeners();
       }
     }
-  }
 
   Future<void> togglePlayPause() async {
     if (_isPlaying) {
