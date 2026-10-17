@@ -33,9 +33,13 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   HttpOverrides.global = VIPHttpOverrides();
   await Hive.initFlutter();
-  await Hive.openBox('favorites'); await Hive.openBox('history'); await Hive.openBox('search_history'); 
+  await Hive.openBox('favorites'); 
+  await Hive.openBox('history'); 
+  await Hive.openBox('search_history'); 
   await Hive.openBox('playlists'); 
-  final session = await AudioSession.instance; await session.configure(const AudioSessionConfiguration.music());
+  
+  final session = await AudioSession.instance; 
+  await session.configure(const AudioSessionConfiguration.music());
   
   audioHandler = await AudioService.init(
     builder: () => MyAudioHandler(), 
@@ -45,7 +49,7 @@ Future<void> main() async {
       androidNotificationOngoing: false, 
       androidShowNotificationBadge: true, 
       androidStopForegroundOnPause: false, 
-      androidNotificationIcon: 'drawable/ic_notification' 
+      androidNotificationIcon: 'mipmap/ic_launcher' 
     )
   );
   runApp(const MediaApp());
@@ -181,6 +185,7 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
       } else { sleepTimerRemaining.value = 0; } 
     } 
   }
+  
   @override Future<void> play() => _player.play(); 
   @override Future<void> pause() => _player.pause(); 
   @override Future<void> seek(Duration position) => _player.seek(position);
@@ -196,7 +201,19 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
     final queueList = queue.value; final currentItem = mediaItem.value; final currentIndex = queueList.indexWhere((item) => item.id == currentItem?.id); if (currentIndex != -1 && currentIndex < queueList.length - 1) await playMediaItem(queueList[currentIndex + 1]);
   }
 
-  @override Future<void> skipToPrevious() async { final queueList = queue.value; if (queueList.isEmpty) return; final currentItem = mediaItem.value; final currentIndex = queueList.indexWhere((item) => item.id == currentItem?.id); if (currentIndex > 0) await playMediaItem(queueList[currentIndex - 1]); }
+  @override Future<void> skipToPrevious() async { 
+    final queueList = queue.value; if (queueList.isEmpty) return; 
+    final currentItem = mediaItem.value; 
+    final currentIndex = queueList.indexWhere((item) => item.id == currentItem?.id); 
+    if (currentIndex > 0) await playMediaItem(queueList[currentIndex - 1]); 
+  }
+
+  @override Future<void> skipToQueueItem(int index) async {
+    final queueList = queue.value;
+    if (index >= 0 && index < queueList.length) {
+      await playMediaItem(queueList[index]);
+    }
+  }
 
   @override
   Future<void> playMediaItem(MediaItem item) async {
@@ -230,7 +247,7 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
       await _player.play();
     } catch (e) { playbackState.add(playbackState.value.copyWith(processingState: AudioProcessingState.error, playing: false)); }
   }
-  
+
   @override Future<void> updateQueue(List<MediaItem> newQueue) async { queue.add(newQueue); }
   
   void shuffleQueue() { final currentQueue = queue.value.toList()..shuffle(); queue.add(currentQueue); }
@@ -250,6 +267,12 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
   void addToQueueEnd(MediaItem item) {
     final currentQueue = List<MediaItem>.from(queue.value);
     currentQueue.add(item);
+    updateQueue(currentQueue);
+  }
+
+  void removeFromQueue(MediaItem item) {
+    final currentQueue = List<MediaItem>.from(queue.value);
+    currentQueue.removeWhere((i) => i.id == item.id);
     updateQueue(currentQueue);
   }
 }
@@ -354,34 +377,6 @@ void globalShowOptions(BuildContext context, Video video, Color color) {
       );
     },
   );
-}
-
-Future<void> globalPlay(MediaItem item) async {
-  await audioHandler.updateQueue([item]); 
-  await audioHandler.playMediaItem(item);
-}
-
-Future<void> globalPlayQueue(List<MediaItem> items, int startIndex) async {
-  await audioHandler.updateQueue(items);
-  await audioHandler.playMediaItem(items[startIndex]);
-}
-
-void insertNextInQueue(MediaItem item) {
-  final currentQueue = List<MediaItem>.from(queue.value);
-  final currentItem = mediaItem.value;
-  final currentIndex = currentQueue.indexWhere((i) => i.id == currentItem?.id);
-  if (currentIndex != -1) {
-    currentQueue.insert(currentIndex + 1, item);
-  } else {
-    currentQueue.add(item);
-  }
-  updateQueue(currentQueue);
-}
-
-void addToQueueEnd(MediaItem item) {
-  final currentQueue = List<MediaItem>.from(queue.value);
-  currentQueue.add(item);
-  updateQueue(currentQueue);
 }
 
 void _showPlaylistDialog(BuildContext context, Video video, Color color) {
@@ -624,6 +619,52 @@ class _MiniPlayerState extends State<MiniPlayer> {
 
 class FullScreenPlayer extends StatelessWidget {
   const FullScreenPlayer({super.key});
+
+  void _showQueueBottomSheet(BuildContext context, List<MediaItem> queueList, int currentIndex, Color color) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF1A1A1A),
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (context) {
+        return Container(
+          height: MediaQuery.of(context).size.height * 0.6,
+          padding: const EdgeInsets.only(top: 16),
+          child: Column(
+            children: [
+              const Text("Cola de Reproducción", style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+              const Divider(color: Colors.white24),
+              Expanded(
+                child: ListView.builder(
+                  itemCount: queueList.length,
+                  itemBuilder: (context, index) {
+                    final item = queueList[index];
+                    final isPlaying = index == currentIndex;
+                    return ListTile(
+                      leading: isPlaying ? Icon(Icons.volume_up, color: color) : Text('${index + 1}', style: const TextStyle(color: Colors.grey, fontSize: 16)),
+                      title: Text(item.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: isPlaying ? color : Colors.white)),
+                      subtitle: Text(item.artist ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.grey)),
+                      trailing: IconButton(icon: const Icon(Icons.close, color: Colors.grey), onPressed: () {
+                        if (audioHandler is MyAudioHandler) {
+                          (audioHandler as MyAudioHandler).removeFromQueue(item);
+                          Navigator.pop(context);
+                        }
+                      }),
+                      onTap: () {
+                        Navigator.pop(context);
+                        audioHandler.skipToQueueItem(index);
+                      },
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        );
+      }
+    );
+  }
+
   @override Widget build(BuildContext context) {
     return Container(
       height: MediaQuery.of(context).size.height * 0.95, decoration: const BoxDecoration(color: Color(0xFF0D0D0D), borderRadius: BorderRadius.vertical(top: Radius.circular(30))),
@@ -638,7 +679,37 @@ class FullScreenPlayer extends StatelessWidget {
           StreamBuilder<Duration>(stream: AudioService.position, builder: (context, snapshotPosition) { final pos = snapshotPosition.data ?? Duration.zero; return StreamBuilder<PlaybackState>(stream: audioHandler.playbackState, builder: (context, snapshot) { final state = snapshot.data; final isLoading = state?.processingState == AudioProcessingState.loading || state?.processingState == AudioProcessingState.buffering; final dur = mediaItem.duration ?? Duration.zero; return Column(children: [Padding(padding: const EdgeInsets.symmetric(horizontal: 30), child: ValueListenableBuilder<Color>(valueListenable: appColor, builder: (context, color, _) { return SliderTheme(data: SliderTheme.of(context).copyWith(trackHeight: 4, activeTrackColor: color, inactiveTrackColor: Colors.white24, thumbColor: color, thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6), overlayShape: const RoundSliderOverlayShape(overlayRadius: 14)), child: Slider(value: isLoading ? 0.0 : pos.inMilliseconds.toDouble().clamp(0.0, dur.inMilliseconds.toDouble() > 0 ? dur.inMilliseconds.toDouble() : 1.0), max: dur.inMilliseconds.toDouble() > 0 ? dur.inMilliseconds.toDouble() : 1.0, onChanged: (v) { if (!isLoading) audioHandler.seek(Duration(milliseconds: v.round())); })); })), Padding(padding: const EdgeInsets.symmetric(horizontal: 30), child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [Text(formatGlobalDuration(pos), style: const TextStyle(color: Colors.grey, fontSize: 12)), Text(formatGlobalDuration(mediaItem.duration), style: const TextStyle(color: Colors.grey, fontSize: 12))]))]); }); }),
           const Spacer(),
           Padding(padding: const EdgeInsets.symmetric(horizontal: 30), child: StreamBuilder<PlaybackState>(stream: audioHandler.playbackState, builder: (context, snapshot) { final state = snapshot.data; final playing = state?.playing ?? false; final isLoading = state?.processingState == AudioProcessingState.loading || state?.processingState == AudioProcessingState.buffering; return Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [ValueListenableBuilder<int>(valueListenable: sleepTimerRemaining, builder: (context, remaining, _) { return IconButton(icon: Icon(Icons.timer, color: remaining > 0 ? appColor.value : Colors.grey), onPressed: () => _showSleepTimerDialog(context)); }), IconButton(icon: const Icon(Icons.skip_previous, color: Colors.white, size: 36), onPressed: () => audioHandler.skipToPrevious()), ValueListenableBuilder<Color>(valueListenable: appColor, builder: (context, color, _) { return Container(width: 70, height: 70, decoration: BoxDecoration(shape: BoxShape.circle, color: color, boxShadow: [BoxShadow(color: color.withOpacity(0.4), blurRadius: 20, spreadRadius: 5)]), child: IconButton(icon: isLoading ? const CircularProgressIndicator(color: Colors.black) : Icon(playing ? Icons.pause : Icons.play_arrow, color: Colors.black, size: 36), onPressed: () { if (playing) { audioHandler.pause(); } else { audioHandler.play(); } })); }), IconButton(icon: const Icon(Icons.skip_next, color: Colors.white, size: 36), onPressed: () => audioHandler.skipToNext()), IconButton(icon: const Icon(Icons.shuffle, color: Colors.white), onPressed: () { if (audioHandler is MyAudioHandler) { (audioHandler as MyAudioHandler).shuffleQueue(); ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Cola mezclada'), duration: Duration(seconds: 1))); } })]); })),
-          const Spacer()
+          const Spacer(),
+          // EL INDICADOR DE COLA DESLIZABLE (Siguiente 1 de 25)
+          StreamBuilder<List<MediaItem>>(
+            stream: audioHandler.queue,
+            builder: (context, queueSnapshot) {
+              final queueList = queueSnapshot.data ?? [];
+              if (queueList.isEmpty) return const SizedBox.shrink();
+              final currentIndex = queueList.indexWhere((i) => i.id == mediaItem.id);
+              return GestureDetector(
+                onTap: () {
+                  ValueListenableBuilder<Color>(
+                    valueListenable: appColor,
+                    builder: (context, color, _) {
+                      _showQueueBottomSheet(context, queueList, currentIndex, color);
+                      return const SizedBox.shrink();
+                    }
+                  );
+                  _showQueueBottomSheet(context, queueList, currentIndex, appColor.value);
+                },
+                child: Padding(
+                  padding: const EdgeInsets.only(bottom: 30),
+                  child: Column(
+                    children: [
+                      const Icon(Icons.keyboard_arrow_up, color: Colors.grey),
+                      Text('Siguiente: ${currentIndex + 1} de ${queueList.length}', style: const TextStyle(color: Colors.grey, fontWeight: FontWeight.bold)),
+                    ],
+                  ),
+                ),
+              );
+            }
+          ),
         ]);
       })
     );
