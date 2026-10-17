@@ -238,50 +238,49 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
     });
 
     try {
-      playbackState.add(playbackState.value.copyWith(processingState: AudioProcessingState.loading, playing: true));
-      await _player.stop(); 
-      
-      // Implementación de cliente dual para evadir el Error 403 (estado zombie)
-      yt_exp.StreamManifest? manifest;
       try {
-        manifest = await _yt.videos.streamsClient.getManifest(item.id, ytClients: [yt_exp.YoutubeApiClient.androidVr]);
-      } catch (_) {
-        manifest = await _yt.videos.streamsClient.getManifest(item.id, ytClients: [yt_exp.YoutubeApiClient.tvEmbedded]);
-      }
-      
-      var video = await _yt.videos.get(item.id); 
-      
-      final mp4Audios = manifest.audioOnly.where((s) => s.container.name == 'mp4' || s.container.name == 'm4a');
-      final streamInfo = mp4Audios.isNotEmpty ? mp4Audios.withHighestBitrate() : manifest.audioOnly.withHighestBitrate();
-      
-      final updatedItem = item.copyWith(
-        duration: video.duration, 
-        title: video.title,       
-      );
-      mediaItem.add(updatedItem);
-
-      // Migración a AudioSource.uri para prevenir corrupción de caché local
-      final source = AudioSource.uri(
-        Uri.parse(streamInfo.url.toString()),
-        tag: updatedItem,
-      );
-      
-      await _player.setAudioSource(source);
-      
-      // Prevención de bucle de fin de pista
-      final durMs = video.duration?.inMilliseconds ?? 0;
-      if (savedPosition > 0 && savedPosition < (durMs - 5000)) { 
-        await _player.seek(Duration(milliseconds: savedPosition)); 
-      } else {
-        await _player.seek(Duration.zero);
-      }
-      
-      await _player.play();
-    } catch (e) { 
-      print("Error de reproducción: $e");
-      playbackState.add(playbackState.value.copyWith(processingState: AudioProcessingState.error, playing: false)); 
+    playbackState.add(playbackState.value.copyWith(processingState: AudioProcessingState.loading, playing: true));
+    await _player.stop(); 
+    
+    // Eliminamos los prefijos yt_exp. para que el compilador lo reconozca
+    StreamManifest? manifest;
+    try {
+      manifest = await _yt.videos.streamsClient.getManifest(item.id, ytClients: [YoutubeApiClient.androidVr]);
+    } catch (_) {
+      manifest = await _yt.videos.streamsClient.getManifest(item.id, ytClients: [YoutubeApiClient.tvEmbedded]);
     }
+    
+    var video = await _yt.videos.get(item.id); 
+    
+    final mp4Audios = manifest!.audioOnly.where((s) => s.container.name == 'mp4' || s.container.name == 'm4a');
+    final streamInfo = mp4Audios.isNotEmpty ? mp4Audios.withHighestBitrate() : manifest.audioOnly.withHighestBitrate();
+    
+    final updatedItem = item.copyWith(
+      duration: video.duration, 
+      title: video.title,       
+    );
+    mediaItem.add(updatedItem);
+
+    final source = AudioSource.uri(
+      Uri.parse(streamInfo.url.toString()),
+      tag: updatedItem,
+    );
+    
+    await _player.setAudioSource(source);
+    
+    final durMs = video.duration?.inMilliseconds ?? 0;
+    if (savedPosition > 0 && savedPosition < (durMs - 5000)) { 
+      await _player.seek(Duration(milliseconds: savedPosition)); 
+    } else {
+      await _player.seek(Duration.zero);
+    }
+    
+    await _player.play();
+  } catch (e) { 
+    print("Error de reproducción: $e");
+    playbackState.add(playbackState.value.copyWith(processingState: AudioProcessingState.error, playing: false)); 
   }
+      
   @override Future<void> updateQueue(List<MediaItem> newQueue) async { queue.add(newQueue); }
   void shuffleQueue() { final currentQueue = queue.value.toList()..shuffle(); queue.add(currentQueue); }
 
