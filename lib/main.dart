@@ -13,9 +13,9 @@ import 'dart:math' as math;
 import 'dart:async'; 
 
 class VIPHttpOverrides extends HttpOverrides {
-@override HttpClient createHttpClient(SecurityContext? context) {
-  return super.createHttpClient(context)..userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36';
-}
+  @override HttpClient createHttpClient(SecurityContext? context) {
+    return super.createHttpClient(context)..userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36';
+  }
 }
 
 late MyAudioHandler audioHandler;
@@ -24,39 +24,39 @@ final ValueNotifier<Color> appColor = ValueNotifier<Color>(Colors.cyanAccent);
 final ValueNotifier<int> sleepTimerRemaining = ValueNotifier<int>(0); 
 
 String formatGlobalDuration(Duration? d) {
-if (d == null) return "Live";
-final minutes = d.inMinutes.remainder(60).toString().padLeft(2, '0');
-final seconds = d.inSeconds.remainder(60).toString().padLeft(2, '0');
-return "${d.inHours > 0 ? '${d.inHours}:' : ''}$minutes:$seconds";
+  if (d == null) return "Live";
+  final minutes = d.inMinutes.remainder(60).toString().padLeft(2, '0');
+  final seconds = d.inSeconds.remainder(60).toString().padLeft(2, '0');
+  return "${d.inHours > 0 ? '${d.inHours}:' : ''}$minutes:$seconds";
 }
 
 Future<void> main() async {
-WidgetsFlutterBinding.ensureInitialized();
-HttpOverrides.global = VIPHttpOverrides();
-
-await Hive.initFlutter();
-await Hive.openBox('favorites'); 
-await Hive.openBox('history'); 
-await Hive.openBox('search_history'); 
-await Hive.openBox('playlists'); 
-
-final session = await AudioSession.instance; 
-await session.configure(const AudioSessionConfiguration.music());
-
-audioHandler = await AudioService.init(
-  builder: () => MyAudioHandler(), 
-  config: const AudioServiceConfig(
-    androidNotificationChannelId: 'com.example.media_app.audio_master_v62', 
-    androidNotificationChannelName: 'Spotify Killer VIP', 
-    androidNotificationOngoing: false, 
-    androidShowNotificationBadge: true, 
-    androidStopForegroundOnPause: false, 
-    // USAMOS EL FONDO POR DEFECTO PARA EVITAR EL CRASHEO POR ÍCONO FALTANTE
-    androidNotificationIcon: 'drawable/ic_notification' 
-  )
-);
-runApp(const MediaApp());
+  WidgetsFlutterBinding.ensureInitialized();
+  HttpOverrides.global = VIPHttpOverrides();
+  
+  await Hive.initFlutter();
+  await Hive.openBox('favorites'); 
+  await Hive.openBox('history'); 
+  await Hive.openBox('search_history'); 
+  await Hive.openBox('playlists'); 
+  
+  final session = await AudioSession.instance; 
+  await session.configure(const AudioSessionConfiguration.music());
+  
+  audioHandler = await AudioService.init(
+    builder: () => MyAudioHandler(), 
+    config: const AudioServiceConfig(
+      androidNotificationChannelId: 'com.example.media_app.audio_master_v62', 
+      androidNotificationChannelName: 'Spotify Killer VIP', 
+      androidNotificationOngoing: false, 
+      androidShowNotificationBadge: true, 
+      androidStopForegroundOnPause: false, 
+      androidNotificationIcon: 'mipmap/ic_launcher' 
+    )
+  );
+  runApp(const MediaApp());
 }
+
 class ConspiracyLogo extends StatelessWidget {
   final double size; final Color color; const ConspiracyLogo({super.key, this.size = 150.0, required this.color});
   @override Widget build(BuildContext context) { return SizedBox(width: size, height: size, child: CustomPaint(painter: _OsirisEyePainter(color: color))); }
@@ -217,64 +217,63 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
     }
   }
 
+  // AQUÍ ESTÁ LA MAGIA QUE SÍ TE FUNCIONA (Extraído de tu código exitoso)
   @override
-Future<void> playMediaItem(MediaItem item) async {
-  mediaItem.add(item); 
-  final historyBox = Hive.box('history'); 
-  int playCount = 1; int savedPosition = 0; 
-  if (historyBox.containsKey(item.id)) { 
-    final existingItem = historyBox.get(item.id); 
-    playCount = (existingItem['playCount'] ?? 0) + 1; 
-    savedPosition = existingItem['savedPosition'] ?? 0; 
-  }
-  historyBox.put(item.id, {
-    'id': item.id, 
-    'title': item.title, 
-    'artist': item.artist, 
-    'artUri': item.artUri?.toString() ?? '', 
-    'duration': item.duration?.inMilliseconds ?? 0, 
-    'timestamp': DateTime.now().millisecondsSinceEpoch, 
-    'playCount': playCount, 
-    'savedPosition': 0
-  });
+  Future<void> playMediaItem(MediaItem item) async {
+    mediaItem.add(item); 
+    final historyBox = Hive.box('history'); 
+    int playCount = 1; int savedPosition = 0; 
+    if (historyBox.containsKey(item.id)) { 
+      final existingItem = historyBox.get(item.id); 
+      playCount = (existingItem['playCount'] ?? 0) + 1; 
+      savedPosition = existingItem['savedPosition'] ?? 0; 
+    }
+    historyBox.put(item.id, {
+      'id': item.id, 
+      'title': item.title, 
+      'artist': item.artist, 
+      'artUri': item.artUri?.toString() ?? '', 
+      'duration': item.duration?.inMilliseconds ?? 0, 
+      'timestamp': DateTime.now().millisecondsSinceEpoch, 
+      'playCount': playCount, 
+      'savedPosition': 0
+    });
 
-  try {
-    playbackState.add(playbackState.value.copyWith(processingState: AudioProcessingState.loading, playing: true));
-    await _player.stop(); 
-    await _player.seek(Duration.zero); 
+    try {
+      playbackState.add(playbackState.value.copyWith(processingState: AudioProcessingState.loading, playing: true));
+      await _player.stop(); 
+      await _player.seek(Duration.zero); 
 
-    // Extracción limpia con el cliente de Android VR para saltar bloqueos
-    var manifest = await _yt.videos.streamsClient.getManifest(
-      item.id,
-      ytClients: [YoutubeApiClient.androidVr],
-    ); 
-    var video = await _yt.videos.get(item.id); 
-    
-    final mp4Audios = manifest.audioOnly.where((s) => s.container.name == 'mp4' || s.container.name == 'm4a');
-    final streamInfo = mp4Audios.isNotEmpty ? mp4Audios.withHighestBitrate() : manifest.audioOnly.withHighestBitrate();
-    
-    // Usamos LockCachingAudioSource que demostró estabilidad en caché local
-    final cachingSource = LockCachingAudioSource(
-      Uri.parse(streamInfo.url.toString()),
-      tag: item.copyWith(
-        duration: video.duration, 
-        title: video.title,
-        artUri: Uri.parse(video.thumbnails.highResUrl),
-        id: video.id.value,
-      ),
-    );
-    
-    await _player.setAudioSource(cachingSource);
-    
-    if (savedPosition > 0) { 
-      await _player.seek(Duration(milliseconds: savedPosition)); 
-    } 
-    await _player.play();
-  } catch (e) { 
-    print("Error de reproducción: $e");
-    playbackState.add(playbackState.value.copyWith(processingState: AudioProcessingState.error, playing: false)); 
+      var manifest = await _yt.videos.streamsClient.getManifest(
+        item.id,
+        ytClients: [YoutubeApiClient.androidVr],
+      ); 
+      var video = await _yt.videos.get(item.id); 
+      
+      final mp4Audios = manifest.audioOnly.where((s) => s.container.name == 'mp4' || s.container.name == 'm4a');
+      final streamInfo = mp4Audios.isNotEmpty ? mp4Audios.withHighestBitrate() : manifest.audioOnly.withHighestBitrate();
+      
+      final cachingSource = LockCachingAudioSource(
+        Uri.parse(streamInfo.url.toString()),
+        tag: item.copyWith(
+          duration: video.duration, 
+          title: video.title,
+          artUri: Uri.parse(video.thumbnails.highResUrl),
+          id: video.id.value,
+        ),
+      );
+      
+      await _player.setAudioSource(cachingSource);
+      
+      if (savedPosition > 0) { 
+        await _player.seek(Duration(milliseconds: savedPosition)); 
+      } 
+      await _player.play();
+    } catch (e) { 
+      print("Error de reproducción: $e");
+      playbackState.add(playbackState.value.copyWith(processingState: AudioProcessingState.error, playing: false)); 
+    }
   }
-}
 
   @override Future<void> updateQueue(List<MediaItem> newQueue) async { queue.add(newQueue); }
   
@@ -413,21 +412,21 @@ void _showPlaylistDialog(BuildContext context, Video video, Color color) {
   showDialog(
     context: context, 
     builder: (context) => AlertDialog(backgroundColor: const Color(0xFF1A1A1A), title: const Text("Mis Playlists", style: TextStyle(color: Colors.white)), content: SizedBox(width: double.maxFinite, child: Column(mainAxisSize: MainAxisSize.min, children: [
-            ListTile(leading: const Icon(Icons.add, color: Colors.white), title: const Text("Crear Nueva Playlist", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white)), onTap: () { Navigator.pop(context); _showCreatePlaylistDialog(context, songData, color); }), const Divider(color: Colors.white24),
-            if (box.isEmpty) const Padding(padding: EdgeInsets.all(16), child: Text("No tienes playlists aún", style: TextStyle(color: Colors.grey)))
-            else ...box.keys.map((key) => ListTile(leading: const Icon(Icons.queue_music, color: Colors.grey), title: Text(key.toString(), style: const TextStyle(color: Colors.white)), onTap: () {
-                List currentList = box.get(key) ?? []; if (!currentList.any((s) => s['id'] == songData['id'])) { currentList.add(songData); box.put(key, currentList); ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Agregada a $key'), backgroundColor: color)); } else { ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Ya está en esta playlist'), backgroundColor: Colors.redAccent)); } Navigator.pop(context);
-              })).toList()
-          ])))
+      ListTile(leading: const Icon(Icons.add, color: Colors.white), title: const Text("Crear Nueva Playlist", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white)), onTap: () { Navigator.pop(context); _showCreatePlaylistDialog(context, songData, color); }), const Divider(color: Colors.white24),
+      if (box.isEmpty) const Padding(padding: EdgeInsets.all(16), child: Text("No tienes playlists aún", style: TextStyle(color: Colors.grey)))
+      else ...box.keys.map((key) => ListTile(leading: const Icon(Icons.queue_music, color: Colors.grey), title: Text(key.toString(), style: const TextStyle(color: Colors.white)), onTap: () {
+        List currentList = box.get(key) ?? []; if (!currentList.any((s) => s['id'] == songData['id'])) { currentList.add(songData); box.put(key, currentList); ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Agregada a $key'), backgroundColor: color)); } else { ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Ya está en esta playlist'), backgroundColor: Colors.redAccent)); } Navigator.pop(context);
+      })).toList()
+    ])))
   );
 }
 
 void _showCreatePlaylistDialog(BuildContext context, Map songData, Color color) {
   final textController = TextEditingController();
   showDialog(context: context, builder: (context) => AlertDialog(backgroundColor: const Color(0xFF1A1A1A), title: const Text("Nueva Playlist", style: TextStyle(color: Colors.white)), content: TextField(controller: textController, style: const TextStyle(color: Colors.white), decoration: InputDecoration(hintText: "Nombre de la playlist", hintStyle: const TextStyle(color: Colors.grey), enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: color)), focusedBorder: UnderlineInputBorder(borderSide: BorderSide(color: color)))), actions: [
-        TextButton(onPressed: () => Navigator.pop(context), child: const Text("Cancelar", style: TextStyle(color: Colors.grey))),
-        TextButton(onPressed: () { if (textController.text.trim().isNotEmpty) { Hive.box('playlists').put(textController.text.trim(), [songData]); Navigator.pop(context); ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Playlist creada'), backgroundColor: color)); } }, child: Text("Crear", style: TextStyle(color: color, fontWeight: FontWeight.bold)))
-      ]));
+    TextButton(onPressed: () => Navigator.pop(context), child: const Text("Cancelar", style: TextStyle(color: Colors.grey))),
+    TextButton(onPressed: () { if (textController.text.trim().isNotEmpty) { Hive.box('playlists').put(textController.text.trim(), [songData]); Navigator.pop(context); ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Playlist creada'), backgroundColor: color)); } }, child: Text("Crear", style: TextStyle(color: color, fontWeight: FontWeight.bold)))
+  ]));
 }
 
 class MediaApp extends StatelessWidget {
@@ -443,16 +442,16 @@ class MediaApp extends StatelessWidget {
             bottomNavigationBarTheme: BottomNavigationBarThemeData(backgroundColor: Colors.transparent, selectedItemColor: color, unselectedItemColor: Colors.grey, type: BottomNavigationBarType.fixed, elevation: 0), 
             appBarTheme: const AppBarTheme(backgroundColor: Color(0xFF0D0D0D), elevation: 0, centerTitle: true)
           ), 
-          home: const SuperAppSkeleton()
+          home: const MainNavigationScreen()
         );
       }
     );
   }
 }
 
-class SuperAppSkeleton extends StatefulWidget { const SuperAppSkeleton({super.key}); @override State<SuperAppSkeleton> createState() => _SuperAppSkeletonState(); }
-class _SuperAppSkeletonState extends State<SuperAppSkeleton> {
-  int _currentIndex = 0; final List<Widget> _screens = const [HomeScreen(), SearchScreen(), VaultScreen()];
+class MainNavigationScreen extends StatefulWidget { const MainNavigationScreen({super.key}); @override State<MainNavigationScreen> createState() => _MainNavigationScreenState(); }
+class _MainNavigationScreenState extends State<MainNavigationScreen> {
+  int _currentIndex = 0; final List<Widget> _screens = const [HomeScreen(), SportsTab(), SearchScreen(), VaultScreen(), SettingsTab()];
   @override Widget build(BuildContext context) {
     return Scaffold(
       extendBody: true,
@@ -467,7 +466,17 @@ class _SuperAppSkeletonState extends State<SuperAppSkeleton> {
           filter: ImageFilter.blur(sigmaX: 15.0, sigmaY: 15.0),
           child: Container(
             decoration: BoxDecoration(color: Colors.black.withOpacity(0.4), border: const Border(top: BorderSide(color: Colors.white10))),
-            child: BottomNavigationBar(currentIndex: _currentIndex, onTap: (index) => setState(() => _currentIndex = index), items: const [BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Inicio'), BottomNavigationBarItem(icon: Icon(Icons.search), label: 'Buscar'), BottomNavigationBarItem(icon: Icon(Icons.folder_special), label: 'Bóveda')])
+            child: BottomNavigationBar(
+              currentIndex: _currentIndex, 
+              onTap: (index) => setState(() => _currentIndex = index), 
+              items: const [
+                BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Inicio'), 
+                BottomNavigationBarItem(icon: Icon(Icons.sports_soccer), label: 'Deportes'), 
+                BottomNavigationBarItem(icon: Icon(Icons.search), label: 'Buscar'), 
+                BottomNavigationBarItem(icon: Icon(Icons.folder_special), label: 'Bóveda'),
+                BottomNavigationBarItem(icon: Icon(Icons.settings), label: 'Ajustes')
+              ]
+            )
           )
         )
       )
@@ -480,6 +489,31 @@ class HomeScreen extends StatelessWidget {
   Widget _buildHorizontalList(List<Map> items) { return SizedBox(height: 180, child: ListView.builder(scrollDirection: Axis.horizontal, itemCount: items.length, padding: const EdgeInsets.symmetric(horizontal: 16), itemBuilder: (context, index) { final item = items[index]; return GestureDetector(onTap: () async { final newItem = MediaItem(id: item['id'], title: item['title'], artist: item['artist'], artUri: Uri.parse(item['artUri']), duration: Duration(milliseconds: item['duration'])); await globalPlay(newItem); }, child: Container(width: 140, margin: const EdgeInsets.only(right: 16), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [ClipRRect(borderRadius: BorderRadius.circular(8), child: Image.network(item['artUri'], width: 140, height: 140, fit: BoxFit.cover)), const SizedBox(height: 8), Text(item['title'], maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)), Text(item['artist'], maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.grey, fontSize: 12))]))); })); }
   @override Widget build(BuildContext context) {
     return Scaffold(body: SafeArea(child: SingleChildScrollView(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [const Padding(padding: EdgeInsets.all(16.0), child: Text("Para ti", style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold))), ValueListenableBuilder(valueListenable: Hive.box('history').listenable(), builder: (context, Box box, _) { if (box.isEmpty) return const SizedBox.shrink(); final items = box.values.toList().cast<Map>()..sort((a, b) => (b['timestamp'] as int? ?? 0).compareTo(a['timestamp'] as int? ?? 0)); return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [const Padding(padding: EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0), child: Text("Escuchado recientemente", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold))), _buildHorizontalList(items.take(10).toList())]); }), const SizedBox(height: 100)]))));
+  }
+}
+
+class SportsTab extends StatelessWidget {
+  const SportsTab({super.key});
+  @override Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('⚽ Deportes & Ligas', style: TextStyle(fontWeight: FontWeight.bold)), backgroundColor: Colors.transparent),
+      body: const Center(child: Text('Filtros de ligas, equipos y partidos en vivo en la próxima fase.', style: TextStyle(color: Colors.grey))),
+    );
+  }
+}
+
+class SettingsTab extends StatelessWidget {
+  const SettingsTab({super.key});
+  @override Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('🎨 Ajustes', style: TextStyle(fontWeight: FontWeight.bold)), backgroundColor: Colors.transparent),
+      body: ListView(
+        padding: const EdgeInsets.all(16.0),
+        children: [
+          ListTile(leading: const Icon(Icons.share, color: Colors.white), title: const Text('Compartir App', style: TextStyle(color: Colors.white)), onTap: () => Share.share('¡Prueba mi app multimedia VIP!')),
+        ],
+      ),
+    );
   }
 }
 
@@ -526,7 +560,6 @@ class _SearchScreenState extends State<SearchScreen> {
       appBar: AppBar(title: const Text('Buscador VIP', style: TextStyle(fontWeight: FontWeight.bold)), backgroundColor: Colors.transparent),
       body: Column(
         children: [
-          // Busca la línea que empieza con: Padding(padding: const EdgeInsets.symmetric... child: TextField(
           Padding(padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0), child: TextField(controller: searchController, decoration: InputDecoration(hintText: 'Buscar canciones, artistas, podcasts...', prefixIcon: const Icon(Icons.search, color: Colors.grey), suffixIcon: IconButton(icon: const Icon(Icons.clear, color: Colors.grey), onPressed: () { searchController.clear(); setState(() { videos.clear(); }); }), filled: true, fillColor: const Color(0xFF1A1A1A), border: OutlineInputBorder(borderRadius: BorderRadius.circular(30.0), borderSide: BorderSide.none)), onSubmitted: searchVideos, onChanged: (query) { if (_debounce?.isActive ?? false) _debounce!.cancel(); _debounce = Timer(const Duration(milliseconds: 500), () { if (query.length > 2) { searchVideos(query); } }); })),
           if (isLoading) Expanded(child: Center(child: ValueListenableBuilder<Color>(valueListenable: appColor, builder: (context, color, _) => CircularProgressIndicator(color: color))))
           else if (videos.isEmpty) Expanded(child: SingleChildScrollView(child: _buildSearchHistory()))
