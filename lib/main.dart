@@ -8,14 +8,14 @@ import 'package:audio_service/audio_service.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 import 'package:hive_flutter/hive_flutter.dart';
+import 'package:share_plus/share_plus.dart';
 import 'dart:math' as math;
 import 'dart:async'; 
-import 'package:just_audio_background/just_audio_background.dart'; // <-- Agrega este import arriba
 
 class VIPHttpOverrides extends HttpOverrides {
-  @override HttpClient createHttpClient(SecurityContext? context) {
-    return super.createHttpClient(context)..userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36';
-  }
+@override HttpClient createHttpClient(SecurityContext? context) {
+  return super.createHttpClient(context)..userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36';
+}
 }
 
 late MyAudioHandler audioHandler;
@@ -24,46 +24,38 @@ final ValueNotifier<Color> appColor = ValueNotifier<Color>(Colors.cyanAccent);
 final ValueNotifier<int> sleepTimerRemaining = ValueNotifier<int>(0); 
 
 String formatGlobalDuration(Duration? d) {
-  if (d == null) return "Live";
-  final minutes = d.inMinutes.remainder(60).toString().padLeft(2, '0');
-  final seconds = d.inSeconds.remainder(60).toString().padLeft(2, '0');
-  return "${d.inHours > 0 ? '${d.inHours}:' : ''}$minutes:$seconds";
+if (d == null) return "Live";
+final minutes = d.inMinutes.remainder(60).toString().padLeft(2, '0');
+final seconds = d.inSeconds.remainder(60).toString().padLeft(2, '0');
+return "${d.inHours > 0 ? '${d.inHours}:' : ''}$minutes:$seconds";
 }
 
 Future<void> main() async {
-  WidgetsFlutterBinding.ensureInitialized();
-  
-  // --> INYECCIÓN CLAVE PARA EVITAR EL CRASHEO NATIVO:
-  await JustAudioBackground.init(
-    androidNotificationChannelId: 'com.ryanheise.bg_demo.channel.audio',
-    androidNotificationChannelName: 'Audio playback',
-    androidNotificationOngoing: true,
-    androidShowNotificationBadge: true,
-  );
-  
-  HttpOverrides.global = VIPHttpOverrides();
-  
-  await Hive.initFlutter();
-  await Hive.openBox('favorites'); 
-  await Hive.openBox('history'); 
-  await Hive.openBox('search_history'); 
-  await Hive.openBox('playlists'); 
-  
-  final session = await AudioSession.instance; 
-  await session.configure(const AudioSessionConfiguration.music());
-  
-  audioHandler = await AudioService.init(
-    builder: () => MyAudioHandler(), 
-    config: const AudioServiceConfig(
-      androidNotificationChannelId: 'com.example.media_app.audio_master_v62', 
-      androidNotificationChannelName: 'Spotify Killer VIP', 
-      androidNotificationOngoing: false, 
-      androidShowNotificationBadge: true, 
-      androidStopForegroundOnPause: false, 
-      androidNotificationIcon: 'mipmap/ic_launcher' 
-    )
-  );
-  runApp(const MediaApp());
+WidgetsFlutterBinding.ensureInitialized();
+HttpOverrides.global = VIPHttpOverrides();
+
+await Hive.initFlutter();
+await Hive.openBox('favorites'); 
+await Hive.openBox('history'); 
+await Hive.openBox('search_history'); 
+await Hive.openBox('playlists'); 
+
+final session = await AudioSession.instance; 
+await session.configure(const AudioSessionConfiguration.music());
+
+audioHandler = await AudioService.init(
+  builder: () => MyAudioHandler(), 
+  config: const AudioServiceConfig(
+    androidNotificationChannelId: 'com.example.media_app.audio_master_v62', 
+    androidNotificationChannelName: 'Spotify Killer VIP', 
+    androidNotificationOngoing: false, 
+    androidShowNotificationBadge: true, 
+    androidStopForegroundOnPause: false, 
+    // USAMOS EL FONDO POR DEFECTO PARA EVITAR EL CRASHEO POR ÍCONO FALTANTE
+    androidNotificationIcon: 'drawable/launch_background' 
+  )
+);
+runApp(const MediaApp());
 }
 class ConspiracyLogo extends StatelessWidget {
   final double size; final Color color; const ConspiracyLogo({super.key, this.size = 150.0, required this.color});
