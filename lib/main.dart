@@ -230,8 +230,130 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
       await _player.play();
     } catch (e) { playbackState.add(playbackState.value.copyWith(processingState: AudioProcessingState.error, playing: false)); }
   }
+  
   @override Future<void> updateQueue(List<MediaItem> newQueue) async { queue.add(newQueue); }
+  
   void shuffleQueue() { final currentQueue = queue.value.toList()..shuffle(); queue.add(currentQueue); }
+
+  void insertNextInQueue(MediaItem item) {
+    final currentQueue = List<MediaItem>.from(queue.value);
+    final currentItem = mediaItem.value;
+    final currentIndex = currentQueue.indexWhere((i) => i.id == currentItem?.id);
+    if (currentIndex != -1) {
+      currentQueue.insert(currentIndex + 1, item);
+    } else {
+      currentQueue.add(item);
+    }
+    updateQueue(currentQueue);
+  }
+
+  void addToQueueEnd(MediaItem item) {
+    final currentQueue = List<MediaItem>.from(queue.value);
+    currentQueue.add(item);
+    updateQueue(currentQueue);
+  }
+}
+
+Future<void> globalPlay(MediaItem item) async {
+  await audioHandler.updateQueue([item]); 
+  await audioHandler.playMediaItem(item);
+}
+
+Future<void> globalPlayQueue(List<MediaItem> items, int startIndex) async {
+  await audioHandler.updateQueue(items);
+  await audioHandler.playMediaItem(items[startIndex]);
+}
+
+void globalShowOptions(BuildContext context, Video video, Color color) {
+  final newItem = MediaItem(
+    id: video.id.value,
+    title: video.title,
+    artist: video.author,
+    duration: video.duration,
+    artUri: Uri.parse(video.thumbnails.highResUrl),
+  );
+
+  showModalBottomSheet(
+    context: context,
+    backgroundColor: const Color(0xFF1A1A1A),
+    isScrollControlled: true,
+    shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+    builder: (context) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 8),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: ClipRRect(borderRadius: BorderRadius.circular(4), child: Image.network(video.thumbnails.lowResUrl, width: 40, height: 40, fit: BoxFit.cover)),
+              title: Text(video.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white)),
+              subtitle: Text(video.author, style: const TextStyle(color: Colors.grey)),
+            ),
+            const Divider(color: Colors.white24),
+            ListTile(
+              leading: const Icon(Icons.playlist_play, color: Colors.white),
+              title: const Text('Siguiente en cola', style: TextStyle(color: Colors.white)),
+              onTap: () {
+                Navigator.pop(context);
+                if (audioHandler is MyAudioHandler) {
+                  (audioHandler as MyAudioHandler).insertNextInQueue(newItem);
+                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('"${video.title}" sonará a continuación'), backgroundColor: color));
+                }
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.playlist_add, color: Colors.white),
+              title: const Text('Última en cola', style: TextStyle(color: Colors.white)),
+              onTap: () {
+                Navigator.pop(context);
+                if (audioHandler is MyAudioHandler) {
+                  (audioHandler as MyAudioHandler).addToQueueEnd(newItem);
+                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('"${video.title}" agregada al final de la cola'), backgroundColor: color));
+                }
+              },
+            ),
+            const Divider(color: Colors.white24),
+            ListTile(
+              leading: const Icon(Icons.radio, color: Colors.white),
+              title: const Text('Iniciar Radio de la canción', style: TextStyle(color: Colors.white)),
+              onTap: () async {
+                Navigator.pop(context);
+                await globalPlay(newItem);
+                ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Iniciando Radio de ${video.title}'), backgroundColor: color));
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.queue_music, color: Colors.white),
+              title: const Text('Añadir a lista de reproducción', style: TextStyle(color: Colors.white)),
+              onTap: () {
+                Navigator.pop(context);
+                _showPlaylistDialog(context, video, color);
+              },
+            ),
+            ValueListenableBuilder(
+              valueListenable: Hive.box('favorites').listenable(),
+              builder: (context, Box box, _) {
+                final isFav = box.containsKey(video.id.value);
+                return ListTile(
+                  leading: Icon(isFav ? Icons.favorite : Icons.favorite_border, color: isFav ? Colors.redAccent : Colors.white),
+                  title: Text(isFav ? 'Eliminar de Favoritos' : 'Añadir a favoritos', style: const TextStyle(color: Colors.white)),
+                  onTap: () {
+                    if (isFav) {
+                      box.delete(video.id.value);
+                    } else {
+                      box.put(video.id.value, {'id': video.id.value, 'title': video.title, 'artist': video.author, 'artUri': video.thumbnails.highResUrl, 'duration': video.duration?.inMilliseconds ?? 0});
+                    }
+                    Navigator.pop(context);
+                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(isFav ? 'Eliminado de Favoritos' : 'Añadido a Favoritos'), backgroundColor: color));
+                  },
+                );
+              },
+            ),
+          ],
+        ),
+      );
+    },
+  );
 }
 
 Future<void> globalPlay(MediaItem item) async {
