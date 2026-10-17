@@ -52,7 +52,7 @@ audioHandler = await AudioService.init(
     androidShowNotificationBadge: true, 
     androidStopForegroundOnPause: false, 
     // USAMOS EL FONDO POR DEFECTO PARA EVITAR EL CRASHEO POR ÍCONO FALTANTE
-    androidNotificationIcon: 'drawable/launch_background' 
+    androidNotificationIcon: 'drawable/ic_notification' 
   )
 );
 runApp(const MediaApp());
