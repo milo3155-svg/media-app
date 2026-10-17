@@ -10,6 +10,7 @@ import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'dart:math' as math;
 import 'dart:async'; 
+import 'package:just_audio_background/just_audio_background.dart'; // <-- Agrega este import arriba
 
 class VIPHttpOverrides extends HttpOverrides {
   @override HttpClient createHttpClient(SecurityContext? context) {
@@ -31,7 +32,17 @@ String formatGlobalDuration(Duration? d) {
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  
+  // --> INYECCIÓN CLAVE PARA EVITAR EL CRASHEO NATIVO:
+  await JustAudioBackground.init(
+    androidNotificationChannelId: 'com.ryanheise.bg_demo.channel.audio',
+    androidNotificationChannelName: 'Audio playback',
+    androidNotificationOngoing: true,
+    androidShowNotificationBadge: true,
+  );
+  
   HttpOverrides.global = VIPHttpOverrides();
+  
   await Hive.initFlutter();
   await Hive.openBox('favorites'); 
   await Hive.openBox('history'); 
@@ -54,7 +65,6 @@ Future<void> main() async {
   );
   runApp(const MediaApp());
 }
-
 class ConspiracyLogo extends StatelessWidget {
   final double size; final Color color; const ConspiracyLogo({super.key, this.size = 150.0, required this.color});
   @override Widget build(BuildContext context) { return SizedBox(width: size, height: size, child: CustomPaint(painter: _OsirisEyePainter(color: color))); }
