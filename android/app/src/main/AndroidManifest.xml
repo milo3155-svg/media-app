@@ -17,7 +17,7 @@
         android:usesCleartextTraffic="true">
 
         <!-- EL ICONO INMORTAL DE NOTIFICACION -->
-        <meta-data android:name="keep_icon" android:resource="@android:drawable/ic_notification" />
+        <meta-data android:name="keep_icon" android:resource="@drawable/ic_notification" />
         <meta-data android:name="vn.hunghd.flutterdownloader.MAX_CONCURRENT_TASKS" android:value="3" />
 
         <activity
