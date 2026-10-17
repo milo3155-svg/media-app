@@ -218,48 +218,63 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
   }
 
   @override
-  Future<void> playMediaItem(MediaItem item) async {
-    mediaItem.add(item); 
-    final historyBox = Hive.box('history'); 
-    int playCount = 1; int savedPosition = 0; 
-    if (historyBox.containsKey(item.id)) { final existingItem = historyBox.get(item.id); playCount = (existingItem['playCount'] ?? 0) + 1; savedPosition = existingItem['savedPosition'] ?? 0; }
-    
-    // Validación segura de la imagen de portada para evitar crasheos
-    final safeArtUri = item.artUri?.toString() ?? 'https://via.placeholder.com/150';
-
-    historyBox.put(item.id, {'id': item.id, 'title': item.title, 'artist': item.artist, 'artUri': safeArtUri, 'duration': item.duration?.inMilliseconds ?? 0, 'timestamp': DateTime.now().millisecondsSinceEpoch, 'playCount': playCount, 'savedPosition': 0});
-    
-    try {
-      playbackState.add(playbackState.value.copyWith(processingState: AudioProcessingState.loading, playing: true));
-      await _player.stop(); 
-      await _player.seek(Duration.zero); 
-      var manifest = await _yt.videos.streamsClient.getManifest(item.id); 
-      var video = await _yt.videos.get(item.id); 
-      
-      final mp4Audios = manifest.audioOnly.where((s) => s.container.name == 'mp4' || s.container.name == 'm4a');
-      final streamInfo = mp4Audios.isNotEmpty ? mp4Audios.withHighestBitrate() : manifest.audioOnly.withHighestBitrate();
-      
-      // Validación extra para evitar errores de parseo de Uri en video.thumbnails
-      final videoSafeArtUri = video.thumbnails.highResUrl.isNotEmpty ? video.thumbnails.highResUrl : safeArtUri;
-
-      final source = AudioSource.uri(
-        Uri.parse(streamInfo.url.toString()),
-        tag: MediaItem(
-          id: item.id,
-          album: "Media VIP",
-          title: video.title,
-          artist: item.artist,
-          duration: video.duration,
-          artUri: Uri.parse(videoSafeArtUri), // PROTEGIDO
-        ),
-      );
-      
-      await _player.setAudioSource(source);
-      
-      if (savedPosition > 0) { await _player.seek(Duration(milliseconds: savedPosition)); } 
-      await _player.play();
-    } catch (e) { playbackState.add(playbackState.value.copyWith(processingState: AudioProcessingState.error, playing: false)); }
+Future<void> playMediaItem(MediaItem item) async {
+  mediaItem.add(item); 
+  final historyBox = Hive.box('history'); 
+  int playCount = 1; int savedPosition = 0; 
+  if (historyBox.containsKey(item.id)) { 
+    final existingItem = historyBox.get(item.id); 
+    playCount = (existingItem['playCount'] ?? 0) + 1; 
+    savedPosition = existingItem['savedPosition'] ?? 0; 
   }
+  historyBox.put(item.id, {
+    'id': item.id, 
+    'title': item.title, 
+    'artist': item.artist, 
+    'artUri': item.artUri?.toString() ?? '', 
+    'duration': item.duration?.inMilliseconds ?? 0, 
+    'timestamp': DateTime.now().millisecondsSinceEpoch, 
+    'playCount': playCount, 
+    'savedPosition': 0
+  });
+
+  try {
+    playbackState.add(playbackState.value.copyWith(processingState: AudioProcessingState.loading, playing: true));
+    await _player.stop(); 
+    await _player.seek(Duration.zero); 
+
+    // Extracción limpia con el cliente de Android VR para saltar bloqueos
+    var manifest = await _yt.videos.streamsClient.getManifest(
+      item.id,
+      ytClients: [YoutubeApiClient.androidVr, YoutubeApiClient.tvEmbedded],
+    ); 
+    var video = await _yt.videos.get(item.id); 
+    
+    final mp4Audios = manifest.audioOnly.where((s) => s.container.name == 'mp4' || s.container.name == 'm4a');
+    final streamInfo = mp4Audios.isNotEmpty ? mp4Audios.withHighestBitrate() : manifest.audioOnly.withHighestBitrate();
+    
+    // Usamos LockCachingAudioSource que demostró estabilidad en caché local
+    final cachingSource = LockCachingAudioSource(
+      Uri.parse(streamInfo.url.toString()),
+      tag: item.copyWith(
+        duration: video.duration, 
+        title: video.title,
+        artUri: Uri.parse(video.thumbnails.highResUrl),
+        id: video.id.value,
+      ),
+    );
+    
+    await _player.setAudioSource(cachingSource);
+    
+    if (savedPosition > 0) { 
+      await _player.seek(Duration(milliseconds: savedPosition)); 
+    } 
+    await _player.play();
+  } catch (e) { 
+    print("Error de reproducción: $e");
+    playbackState.add(playbackState.value.copyWith(processingState: AudioProcessingState.error, playing: false)); 
+  }
+}
 
   @override Future<void> updateQueue(List<MediaItem> newQueue) async { queue.add(newQueue); }
   
