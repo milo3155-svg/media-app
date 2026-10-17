@@ -214,24 +214,45 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
   }
 
   // MOTOR ORIGINAL INTACTO QUE SÍ REPRODUCE
-  @override
+ @override
   Future<void> playMediaItem(MediaItem item) async {
     mediaItem.add(item); 
     final historyBox = Hive.box('history'); 
     int playCount = 1; int savedPosition = 0; 
-    if (historyBox.containsKey(item.id)) { final existingItem = historyBox.get(item.id); playCount = (existingItem['playCount'] ?? 0) + 1; savedPosition = existingItem['savedPosition'] ?? 0; }
-    historyBox.put(item.id, {'id': item.id, 'title': item.title, 'artist': item.artist, 'artUri': item.artUri.toString(), 'duration': item.duration?.inMilliseconds ?? 0, 'timestamp': DateTime.now().millisecondsSinceEpoch, 'playCount': playCount, 'savedPosition': 0});
+    
+    if (historyBox.containsKey(item.id)) { 
+      final existingItem = historyBox.get(item.id); 
+      playCount = (existingItem['playCount'] ?? 0) + 1; 
+      savedPosition = existingItem['savedPosition'] ?? 0; 
+    }
+    
+    historyBox.put(item.id, {
+      'id': item.id, 
+      'title': item.title, 
+      'artist': item.artist, 
+      'artUri': item.artUri?.toString() ?? '', 
+      'duration': item.duration?.inMilliseconds ?? 0, 
+      'timestamp': DateTime.now().millisecondsSinceEpoch, 
+      'playCount': playCount, 
+      'savedPosition': 0
+    });
+
     try {
       playbackState.add(playbackState.value.copyWith(processingState: AudioProcessingState.loading, playing: true));
       await _player.stop(); 
-      await _player.seek(Duration.zero); 
-      var manifest = await _yt.videos.streamsClient.getManifest(item.id); 
+      
+      // Implementación de cliente dual para evadir el Error 403 (estado zombie)
+      yt_exp.StreamManifest? manifest;
+      try {
+        manifest = await _yt.videos.streamsClient.getManifest(item.id, ytClients: [yt_exp.YoutubeApiClient.androidVr]);
+      } catch (_) {
+        manifest = await _yt.videos.streamsClient.getManifest(item.id, ytClients: [yt_exp.YoutubeApiClient.tvEmbedded]);
+      }
+      
       var video = await _yt.videos.get(item.id); 
       
-      StreamInfo streamInfo;
-      if (manifest.muxed.isNotEmpty) { streamInfo = isHDMode.value ? manifest.muxed.withHighestBitrate() : manifest.muxed.reduce((a, b) => a.bitrate.bitsPerSecond < b.bitrate.bitsPerSecond ? a : b); } 
-      else if (manifest.audioOnly.isNotEmpty) { streamInfo = isHDMode.value ? manifest.audioOnly.withHighestBitrate() : manifest.audioOnly.reduce((a, b) => a.bitrate.bitsPerSecond < b.bitrate.bitsPerSecond ? a : b); } 
-      else { throw Exception("No streams"); }
+      final mp4Audios = manifest.audioOnly.where((s) => s.container.name == 'mp4' || s.container.name == 'm4a');
+      final streamInfo = mp4Audios.isNotEmpty ? mp4Audios.withHighestBitrate() : manifest.audioOnly.withHighestBitrate();
       
       final updatedItem = item.copyWith(
         duration: video.duration, 
@@ -239,17 +260,28 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
       );
       mediaItem.add(updatedItem);
 
-      final cachingSource = LockCachingAudioSource(
+      // Migración a AudioSource.uri para prevenir corrupción de caché local
+      final source = AudioSource.uri(
         Uri.parse(streamInfo.url.toString()),
         tag: updatedItem,
       );
-      await _player.setAudioSource(cachingSource);
       
-      if (savedPosition > 0) { await _player.seek(Duration(milliseconds: savedPosition)); } 
+      await _player.setAudioSource(source);
+      
+      // Prevención de bucle de fin de pista
+      final durMs = video.duration?.inMilliseconds ?? 0;
+      if (savedPosition > 0 && savedPosition < (durMs - 5000)) { 
+        await _player.seek(Duration(milliseconds: savedPosition)); 
+      } else {
+        await _player.seek(Duration.zero);
+      }
+      
       await _player.play();
-    } catch (e) { playbackState.add(playbackState.value.copyWith(processingState: AudioProcessingState.error, playing: false)); }
+    } catch (e) { 
+      print("Error de reproducción: $e");
+      playbackState.add(playbackState.value.copyWith(processingState: AudioProcessingState.error, playing: false)); 
+    }
   }
-
   @override Future<void> updateQueue(List<MediaItem> newQueue) async { queue.add(newQueue); }
   void shuffleQueue() { final currentQueue = queue.value.toList()..shuffle(); queue.add(currentQueue); }
 
