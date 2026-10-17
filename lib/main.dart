@@ -222,17 +222,43 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
     int playCount = 1; int savedPosition = 0; 
     if (historyBox.containsKey(item.id)) { final existingItem = historyBox.get(item.id); playCount = (existingItem['playCount'] ?? 0) + 1; savedPosition = existingItem['savedPosition'] ?? 0; }
     historyBox.put(item.id, {'id': item.id, 'title': item.title, 'artist': item.artist, 'artUri': item.artUri.toString(), 'duration': item.duration?.inMilliseconds ?? 0, 'timestamp': DateTime.now().millisecondsSinceEpoch, 'playCount': playCount, 'savedPosition': 0});
-    try {
+   try {
       playbackState.add(playbackState.value.copyWith(processingState: AudioProcessingState.loading, playing: true));
       await _player.stop(); 
       await _player.seek(Duration.zero); 
       var manifest = await _yt.videos.streamsClient.getManifest(item.id); 
-      var video = await _yt.videos.get(item.id); 
       
       StreamInfo streamInfo;
-      if (manifest.muxed.isNotEmpty) { streamInfo = isHDMode.value ? manifest.muxed.withHighestBitrate() : manifest.muxed.reduce((a, b) => a.bitrate.bitsPerSecond < b.bitrate.bitsPerSecond ? a : b); } 
-      else if (manifest.audioOnly.isNotEmpty) { streamInfo = isHDMode.value ? manifest.audioOnly.withHighestBitrate() : manifest.audioOnly.reduce((a, b) => a.bitrate.bitsPerSecond < b.bitrate.bitsPerSecond ? a : b); } 
-      else { throw Exception("No streams"); }
+      if (manifest.muxed.isNotEmpty) { 
+        streamInfo = isHDMode.value ? manifest.muxed.withHighestBitrate() : manifest.muxed.reduce((a, b) => a.bitrate.bitsPerSecond < b.bitrate.bitsPerSecond ? a : b); 
+      } 
+      else if (manifest.audioOnly.isNotEmpty) { 
+        streamInfo = isHDMode.value ? manifest.audioOnly.withHighestBitrate() : manifest.audioOnly.reduce((a, b) => a.bitrate.bitsPerSecond < b.bitrate.bitsPerSecond ? a : b); 
+      } 
+      else { 
+        throw Exception("No streams"); 
+      }
+      
+      // SOLUCIÓN AL CRASH Y A LA DURACIÓN: Usamos un AudioSource estándar con los metadatos directos
+      final source = AudioSource.uri(
+        Uri.parse(streamInfo.url.toString()),
+        tag: MediaItem(
+          id: item.id,
+          album: "Media VIP",
+          title: item.title,
+          artist: item.artist,
+          duration: item.duration,
+          artUri: Uri.parse(item.artUri.toString()),
+        ),
+      );
+      
+      await _player.setAudioSource(source);
+      
+      if (savedPosition > 0) { await _player.seek(Duration(milliseconds: savedPosition)); } 
+      await _player.play();
+    } catch (e) { 
+      playbackState.add(playbackState.value.copyWith(processingState: AudioProcessingState.error, playing: false)); 
+    }
       
      final cachingSource = LockCachingAudioSource(
         Uri.parse(streamInfo.url.toString()),
