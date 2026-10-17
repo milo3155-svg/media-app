@@ -223,7 +223,12 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
     final historyBox = Hive.box('history'); 
     int playCount = 1; int savedPosition = 0; 
     if (historyBox.containsKey(item.id)) { final existingItem = historyBox.get(item.id); playCount = (existingItem['playCount'] ?? 0) + 1; savedPosition = existingItem['savedPosition'] ?? 0; }
-    historyBox.put(item.id, {'id': item.id, 'title': item.title, 'artist': item.artist, 'artUri': item.artUri?.toString() ?? '', 'duration': item.duration?.inMilliseconds ?? 0, 'timestamp': DateTime.now().millisecondsSinceEpoch, 'playCount': playCount, 'savedPosition': 0});
+    
+    // Validación segura de la imagen de portada para evitar crasheos
+    final safeArtUri = item.artUri?.toString() ?? 'https://via.placeholder.com/150';
+
+    historyBox.put(item.id, {'id': item.id, 'title': item.title, 'artist': item.artist, 'artUri': safeArtUri, 'duration': item.duration?.inMilliseconds ?? 0, 'timestamp': DateTime.now().millisecondsSinceEpoch, 'playCount': playCount, 'savedPosition': 0});
+    
     try {
       playbackState.add(playbackState.value.copyWith(processingState: AudioProcessingState.loading, playing: true));
       await _player.stop(); 
@@ -234,6 +239,9 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
       final mp4Audios = manifest.audioOnly.where((s) => s.container.name == 'mp4' || s.container.name == 'm4a');
       final streamInfo = mp4Audios.isNotEmpty ? mp4Audios.withHighestBitrate() : manifest.audioOnly.withHighestBitrate();
       
+      // Validación extra para evitar errores de parseo de Uri en video.thumbnails
+      final videoSafeArtUri = video.thumbnails.highResUrl.isNotEmpty ? video.thumbnails.highResUrl : safeArtUri;
+
       final source = AudioSource.uri(
         Uri.parse(streamInfo.url.toString()),
         tag: MediaItem(
@@ -242,7 +250,7 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
           title: video.title,
           artist: item.artist,
           duration: video.duration,
-          artUri: Uri.parse(video.thumbnails.highResUrl),
+          artUri: Uri.parse(videoSafeArtUri), // PROTEGIDO
         ),
       );
       
