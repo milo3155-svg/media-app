@@ -298,11 +298,16 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
     updateQueue(currentQueue);
   }
 
-  void removeFromQueue(MediaItem item) {
-    final currentQueue = List<MediaItem>.from(queue.value);
-    currentQueue.removeWhere((i) => i.id == item.id);
-    updateQueue(currentQueue);
-  }
+  void shuffleQueue() { 
+  final currentQueue = queue.value.toList()..shuffle(); 
+  queue.add(currentQueue); 
+}
+
+void removeFromQueue(MediaItem item) {
+  final currentQueue = List<MediaItem>.from(queue.value);
+  currentQueue.removeWhere((i) => i.id == item.id);
+  updateQueue(currentQueue);
+}
 }
 
 Future<void> globalPlay(MediaItem item) async {
