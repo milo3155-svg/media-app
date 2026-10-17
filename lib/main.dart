@@ -8,7 +8,6 @@ import 'package:audio_service/audio_service.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 import 'package:hive_flutter/hive_flutter.dart';
-import 'package:share_plus/share_plus.dart';
 import 'dart:math' as math;
 import 'dart:async'; 
 
@@ -24,7 +23,7 @@ final ValueNotifier<Color> appColor = ValueNotifier<Color>(Colors.cyanAccent);
 final ValueNotifier<int> sleepTimerRemaining = ValueNotifier<int>(0); 
 
 String formatGlobalDuration(Duration? d) {
-  if (d == null) return "Live";
+  if (d == null || d == Duration.zero) return "";
   final minutes = d.inMinutes.remainder(60).toString().padLeft(2, '0');
   final seconds = d.inSeconds.remainder(60).toString().padLeft(2, '0');
   return "${d.inHours > 0 ? '${d.inHours}:' : ''}$minutes:$seconds";
@@ -33,13 +32,11 @@ String formatGlobalDuration(Duration? d) {
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   HttpOverrides.global = VIPHttpOverrides();
-  
   await Hive.initFlutter();
   await Hive.openBox('favorites'); 
   await Hive.openBox('history'); 
   await Hive.openBox('search_history'); 
   await Hive.openBox('playlists'); 
-  
   final session = await AudioSession.instance; 
   await session.configure(const AudioSessionConfiguration.music());
   
@@ -51,7 +48,7 @@ Future<void> main() async {
       androidNotificationOngoing: false, 
       androidShowNotificationBadge: true, 
       androidStopForegroundOnPause: false, 
-      androidNotificationIcon: 'mipmap/ic_launcher' 
+      androidNotificationIcon: 'drawable/ic_notification' 
     )
   );
   runApp(const MediaApp());
@@ -139,6 +136,7 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
           String clean1 = currentItem.title.toLowerCase().replaceAll(RegExp(r'[^a-z0-9áéíóúñ\s]'), ''); 
           Set<String> words1 = clean1.split(' ').where((w) => w.length > 2).toSet();
           for (var v in relatedVideos) {
+            if (v.duration != null && (v.duration!.inMinutes >= 15 || v.duration!.inSeconds < 60)) continue;
             bool isClone = false; 
             String clean2 = v.title.toLowerCase().replaceAll(RegExp(r'[^a-z0-9áéíóúñ\s]'), ''); 
             Set<String> words2 = clean2.split(' ').where((w) => w.length > 2).toSet();
@@ -150,14 +148,18 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
             if (isClone) continue; 
             nextVideo = v; break; 
           }
-          nextVideo ??= relatedVideos.first;
         }
       } catch (_) {}
 
       if (nextVideo == null) {
-        final query = "${currentItem.artist} mix";
+        final query = "${currentItem.artist} éxitos";
         final searchResults = await _yt.search.search(query);
-        final list = searchResults.where((v) => v.id.value != currentItem.id).toList();
+        final list = searchResults.where((v) => 
+          v.id.value != currentItem.id && 
+          v.duration != null && 
+          v.duration!.inMinutes < 15 && 
+          v.duration!.inSeconds >= 60
+        ).toList();
         if (list.isNotEmpty) nextVideo = list.first;
       }
 
@@ -187,7 +189,6 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
       } else { sleepTimerRemaining.value = 0; } 
     } 
   }
-  
   @override Future<void> play() => _player.play(); 
   @override Future<void> pause() => _player.pause(); 
   @override Future<void> seek(Duration position) => _player.seek(position);
@@ -203,12 +204,7 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
     final queueList = queue.value; final currentItem = mediaItem.value; final currentIndex = queueList.indexWhere((item) => item.id == currentItem?.id); if (currentIndex != -1 && currentIndex < queueList.length - 1) await playMediaItem(queueList[currentIndex + 1]);
   }
 
-  @override Future<void> skipToPrevious() async { 
-    final queueList = queue.value; if (queueList.isEmpty) return; 
-    final currentItem = mediaItem.value; 
-    final currentIndex = queueList.indexWhere((item) => item.id == currentItem?.id); 
-    if (currentIndex > 0) await playMediaItem(queueList[currentIndex - 1]); 
-  }
+  @override Future<void> skipToPrevious() async { final queueList = queue.value; if (queueList.isEmpty) return; final currentItem = mediaItem.value; final currentIndex = queueList.indexWhere((item) => item.id == currentItem?.id); if (currentIndex > 0) await playMediaItem(queueList[currentIndex - 1]); }
 
   @override Future<void> skipToQueueItem(int index) async {
     final queueList = queue.value;
@@ -217,66 +213,44 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
     }
   }
 
-  // AQUÍ ESTÁ LA MAGIA QUE SÍ TE FUNCIONA (Extraído de tu código exitoso)
+  // MOTOR ORIGINAL INTACTO QUE SÍ REPRODUCE
   @override
   Future<void> playMediaItem(MediaItem item) async {
     mediaItem.add(item); 
     final historyBox = Hive.box('history'); 
     int playCount = 1; int savedPosition = 0; 
-    if (historyBox.containsKey(item.id)) { 
-      final existingItem = historyBox.get(item.id); 
-      playCount = (existingItem['playCount'] ?? 0) + 1; 
-      savedPosition = existingItem['savedPosition'] ?? 0; 
-    }
-    historyBox.put(item.id, {
-      'id': item.id, 
-      'title': item.title, 
-      'artist': item.artist, 
-      'artUri': item.artUri?.toString() ?? '', 
-      'duration': item.duration?.inMilliseconds ?? 0, 
-      'timestamp': DateTime.now().millisecondsSinceEpoch, 
-      'playCount': playCount, 
-      'savedPosition': 0
-    });
-
+    if (historyBox.containsKey(item.id)) { final existingItem = historyBox.get(item.id); playCount = (existingItem['playCount'] ?? 0) + 1; savedPosition = existingItem['savedPosition'] ?? 0; }
+    historyBox.put(item.id, {'id': item.id, 'title': item.title, 'artist': item.artist, 'artUri': item.artUri.toString(), 'duration': item.duration?.inMilliseconds ?? 0, 'timestamp': DateTime.now().millisecondsSinceEpoch, 'playCount': playCount, 'savedPosition': 0});
     try {
       playbackState.add(playbackState.value.copyWith(processingState: AudioProcessingState.loading, playing: true));
       await _player.stop(); 
       await _player.seek(Duration.zero); 
-
-      var manifest = await _yt.videos.streamsClient.getManifest(
-        item.id,
-        ytClients: [YoutubeApiClient.androidVr],
-      ); 
+      var manifest = await _yt.videos.streamsClient.getManifest(item.id); 
       var video = await _yt.videos.get(item.id); 
       
-      final mp4Audios = manifest.audioOnly.where((s) => s.container.name == 'mp4' || s.container.name == 'm4a');
-      final streamInfo = mp4Audios.isNotEmpty ? mp4Audios.withHighestBitrate() : manifest.audioOnly.withHighestBitrate();
+      StreamInfo streamInfo;
+      if (manifest.muxed.isNotEmpty) { streamInfo = isHDMode.value ? manifest.muxed.withHighestBitrate() : manifest.muxed.reduce((a, b) => a.bitrate.bitsPerSecond < b.bitrate.bitsPerSecond ? a : b); } 
+      else if (manifest.audioOnly.isNotEmpty) { streamInfo = isHDMode.value ? manifest.audioOnly.withHighestBitrate() : manifest.audioOnly.reduce((a, b) => a.bitrate.bitsPerSecond < b.bitrate.bitsPerSecond ? a : b); } 
+      else { throw Exception("No streams"); }
       
+      final updatedItem = item.copyWith(
+        duration: video.duration, 
+        title: video.title,       
+      );
+      mediaItem.add(updatedItem);
+
       final cachingSource = LockCachingAudioSource(
         Uri.parse(streamInfo.url.toString()),
-        tag: item.copyWith(
-          duration: video.duration, 
-          title: video.title,
-          artUri: Uri.parse(video.thumbnails.highResUrl),
-          id: video.id.value,
-        ),
+        tag: updatedItem,
       );
-      
       await _player.setAudioSource(cachingSource);
       
-      if (savedPosition > 0) { 
-        await _player.seek(Duration(milliseconds: savedPosition)); 
-      } 
+      if (savedPosition > 0) { await _player.seek(Duration(milliseconds: savedPosition)); } 
       await _player.play();
-    } catch (e) { 
-      print("Error de reproducción: $e");
-      playbackState.add(playbackState.value.copyWith(processingState: AudioProcessingState.error, playing: false)); 
-    }
+    } catch (e) { playbackState.add(playbackState.value.copyWith(processingState: AudioProcessingState.error, playing: false)); }
   }
 
   @override Future<void> updateQueue(List<MediaItem> newQueue) async { queue.add(newQueue); }
-  
   void shuffleQueue() { final currentQueue = queue.value.toList()..shuffle(); queue.add(currentQueue); }
 
   void insertNextInQueue(MediaItem item) {
@@ -324,86 +298,82 @@ void globalShowOptions(BuildContext context, Video video, Color color) {
   );
 
   showModalBottomSheet(
-    context: context,
-    backgroundColor: const Color(0xFF1A1A1A),
-    isScrollControlled: true,
-    shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-    builder: (context) {
+    context: context, backgroundColor: const Color(0xFF1A1A1A), isScrollControlled: true,
+    shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))), 
+    builder: (context) { 
+      final inQueue = audioHandler.queue.value.any((i) => i.id == video.id.value);
       return Padding(
-        padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 8),
+        padding: const EdgeInsets.symmetric(vertical: 10), 
         child: Column(
-          mainAxisSize: MainAxisSize.min,
+          mainAxisSize: MainAxisSize.min, 
           children: [
             ListTile(
-              leading: ClipRRect(borderRadius: BorderRadius.circular(4), child: Image.network(video.thumbnails.lowResUrl, width: 40, height: 40, fit: BoxFit.cover)),
-              title: Text(video.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white)),
-              subtitle: Text(video.author, style: const TextStyle(color: Colors.grey)),
-            ),
-            const Divider(color: Colors.white24),
+              leading: ClipRRect(borderRadius: BorderRadius.circular(4), child: Image.network(video.thumbnails.lowResUrl, width: 40, height: 40, fit: BoxFit.cover)), 
+              title: Text(video.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white)), 
+              subtitle: Text("${video.author} • ${formatGlobalDuration(video.duration)}", style: const TextStyle(color: Colors.grey))
+            ), 
+            const Divider(color: Colors.white24), 
             ListTile(
-              leading: const Icon(Icons.playlist_play, color: Colors.white),
-              title: const Text('Siguiente en cola', style: TextStyle(color: Colors.white)),
-              onTap: () {
-                Navigator.pop(context);
-                if (audioHandler is MyAudioHandler) {
-                  (audioHandler as MyAudioHandler).insertNextInQueue(newItem);
-                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('"${video.title}" sonará a continuación'), backgroundColor: color));
+              leading: const Icon(Icons.playlist_play, color: Colors.white), 
+              title: const Text('Siguiente en cola', style: TextStyle(color: Colors.white)), 
+              onTap: () { 
+                Navigator.pop(context); 
+                audioHandler.insertNextInQueue(newItem); 
+                ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Sonará a continuación: ${video.title}'), backgroundColor: color)); 
+              }
+            ),
+            ListTile(
+              leading: const Icon(Icons.add_to_queue, color: Colors.white), 
+              title: const Text('Última en cola', style: TextStyle(color: Colors.white)), 
+              onTap: () { 
+                Navigator.pop(context); 
+                audioHandler.addToQueueEnd(newItem); 
+                ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Añadida al final de la cola: ${video.title}'), backgroundColor: color)); 
+              }
+            ),
+            if (inQueue)
+              ListTile(
+                leading: const Icon(Icons.remove_from_queue, color: Colors.redAccent), 
+                title: const Text('Eliminar de la cola de reproducción', style: TextStyle(color: Colors.redAccent)), 
+                onTap: () { 
+                  Navigator.pop(context); 
+                  audioHandler.removeFromQueue(newItem); 
+                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Eliminada de la cola'), backgroundColor: Colors.redAccent)); 
                 }
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.playlist_add, color: Colors.white),
-              title: const Text('Última en cola', style: TextStyle(color: Colors.white)),
-              onTap: () {
-                Navigator.pop(context);
-                if (audioHandler is MyAudioHandler) {
-                  (audioHandler as MyAudioHandler).addToQueueEnd(newItem);
-                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('"${video.title}" agregada al final de la cola'), backgroundColor: color));
-                }
-              },
-            ),
-            const Divider(color: Colors.white24),
-            ListTile(
-              leading: const Icon(Icons.radio, color: Colors.white),
-              title: const Text('Iniciar Radio de la canción', style: TextStyle(color: Colors.white)),
-              onTap: () async {
-                Navigator.pop(context);
-                await globalPlay(newItem);
-                ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Iniciando Radio de ${video.title}'), backgroundColor: color));
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.queue_music, color: Colors.white),
-              title: const Text('Añadir a lista de reproducción', style: TextStyle(color: Colors.white)),
-              onTap: () {
-                Navigator.pop(context);
-                _showPlaylistDialog(context, video, color);
-              },
-            ),
+              ),
             ValueListenableBuilder(
               valueListenable: Hive.box('favorites').listenable(),
               builder: (context, Box box, _) {
                 final isFav = box.containsKey(video.id.value);
                 return ListTile(
-                  leading: Icon(isFav ? Icons.favorite : Icons.favorite_border, color: isFav ? Colors.redAccent : Colors.white),
-                  title: Text(isFav ? 'Eliminar de Favoritos' : 'Añadir a favoritos', style: const TextStyle(color: Colors.white)),
-                  onTap: () {
-                    if (isFav) {
-                      box.delete(video.id.value);
-                    } else {
-                      box.put(video.id.value, {'id': video.id.value, 'title': video.title, 'artist': video.author, 'artUri': video.thumbnails.highResUrl, 'duration': video.duration?.inMilliseconds ?? 0});
-                    }
-                    Navigator.pop(context);
-                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(isFav ? 'Eliminado de Favoritos' : 'Añadido a Favoritos'), backgroundColor: color));
-                  },
+                  leading: Icon(isFav ? Icons.favorite : Icons.favorite_border, color: isFav ? Colors.redAccent : Colors.white), 
+                  title: Text(isFav ? 'Eliminar de Favoritos' : 'Añadir a favoritos', style: const TextStyle(color: Colors.white)), 
+                  onTap: () { 
+                    if (isFav) { box.delete(video.id.value); } else { box.put(video.id.value, {'id': video.id.value, 'title': video.title, 'artist': video.author, 'artUri': video.thumbnails.highResUrl, 'duration': video.duration?.inMilliseconds ?? 0}); }
+                    Navigator.pop(context); ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(isFav ? 'Eliminado de Favoritos' : 'Añadido a Favoritos'), backgroundColor: color)); 
+                  }
                 );
-              },
+              }
             ),
-          ],
-        ),
-      );
-    },
-  );
+            ListTile(
+              leading: const Icon(Icons.playlist_add, color: Colors.white), 
+              title: const Text('Añadir a lista de reproducción', style: TextStyle(color: Colors.white)), 
+              onTap: () { Navigator.pop(context); _showPlaylistDialog(context, video, color); }
+            ),
+            ListTile(
+              leading: const Icon(Icons.radio, color: Colors.white), 
+              title: const Text('Iniciar Radio de la canción', style: TextStyle(color: Colors.white)), 
+              onTap: () async { 
+                Navigator.pop(context); 
+                await globalPlay(newItem); 
+                ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Iniciando Radio de ${video.title}'), backgroundColor: color)); 
+              }
+            ),
+          ]
+        )
+      ); 
+    }
+  ); 
 }
 
 void _showPlaylistDialog(BuildContext context, Video video, Color color) {
@@ -412,21 +382,21 @@ void _showPlaylistDialog(BuildContext context, Video video, Color color) {
   showDialog(
     context: context, 
     builder: (context) => AlertDialog(backgroundColor: const Color(0xFF1A1A1A), title: const Text("Mis Playlists", style: TextStyle(color: Colors.white)), content: SizedBox(width: double.maxFinite, child: Column(mainAxisSize: MainAxisSize.min, children: [
-      ListTile(leading: const Icon(Icons.add, color: Colors.white), title: const Text("Crear Nueva Playlist", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white)), onTap: () { Navigator.pop(context); _showCreatePlaylistDialog(context, songData, color); }), const Divider(color: Colors.white24),
-      if (box.isEmpty) const Padding(padding: EdgeInsets.all(16), child: Text("No tienes playlists aún", style: TextStyle(color: Colors.grey)))
-      else ...box.keys.map((key) => ListTile(leading: const Icon(Icons.queue_music, color: Colors.grey), title: Text(key.toString(), style: const TextStyle(color: Colors.white)), onTap: () {
-        List currentList = box.get(key) ?? []; if (!currentList.any((s) => s['id'] == songData['id'])) { currentList.add(songData); box.put(key, currentList); ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Agregada a $key'), backgroundColor: color)); } else { ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Ya está en esta playlist'), backgroundColor: Colors.redAccent)); } Navigator.pop(context);
-      })).toList()
-    ])))
+            ListTile(leading: const Icon(Icons.add, color: Colors.white), title: const Text("Crear Nueva Playlist", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white)), onTap: () { Navigator.pop(context); _showCreatePlaylistDialog(context, songData, color); }), const Divider(color: Colors.white24),
+            if (box.isEmpty) const Padding(padding: EdgeInsets.all(16), child: Text("No tienes playlists aún", style: TextStyle(color: Colors.grey)))
+            else ...box.keys.map((key) => ListTile(leading: const Icon(Icons.queue_music, color: Colors.grey), title: Text(key.toString(), style: const TextStyle(color: Colors.white)), onTap: () {
+                List currentList = box.get(key) ?? []; if (!currentList.any((s) => s['id'] == songData['id'])) { currentList.add(songData); box.put(key, currentList); ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Agregada a $key'), backgroundColor: color)); } else { ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Ya está en esta playlist'), backgroundColor: Colors.redAccent)); } Navigator.pop(context);
+              })).toList()
+          ])))
   );
 }
 
 void _showCreatePlaylistDialog(BuildContext context, Map songData, Color color) {
   final textController = TextEditingController();
   showDialog(context: context, builder: (context) => AlertDialog(backgroundColor: const Color(0xFF1A1A1A), title: const Text("Nueva Playlist", style: TextStyle(color: Colors.white)), content: TextField(controller: textController, style: const TextStyle(color: Colors.white), decoration: InputDecoration(hintText: "Nombre de la playlist", hintStyle: const TextStyle(color: Colors.grey), enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: color)), focusedBorder: UnderlineInputBorder(borderSide: BorderSide(color: color)))), actions: [
-    TextButton(onPressed: () => Navigator.pop(context), child: const Text("Cancelar", style: TextStyle(color: Colors.grey))),
-    TextButton(onPressed: () { if (textController.text.trim().isNotEmpty) { Hive.box('playlists').put(textController.text.trim(), [songData]); Navigator.pop(context); ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Playlist creada'), backgroundColor: color)); } }, child: Text("Crear", style: TextStyle(color: color, fontWeight: FontWeight.bold)))
-  ]));
+        TextButton(onPressed: () => Navigator.pop(context), child: const Text("Cancelar", style: TextStyle(color: Colors.grey))),
+        TextButton(onPressed: () { if (textController.text.trim().isNotEmpty) { Hive.box('playlists').put(textController.text.trim(), [songData]); Navigator.pop(context); ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Playlist creada'), backgroundColor: color)); } }, child: Text("Crear", style: TextStyle(color: color, fontWeight: FontWeight.bold)))
+      ]));
 }
 
 class MediaApp extends StatelessWidget {
@@ -442,16 +412,16 @@ class MediaApp extends StatelessWidget {
             bottomNavigationBarTheme: BottomNavigationBarThemeData(backgroundColor: Colors.transparent, selectedItemColor: color, unselectedItemColor: Colors.grey, type: BottomNavigationBarType.fixed, elevation: 0), 
             appBarTheme: const AppBarTheme(backgroundColor: Color(0xFF0D0D0D), elevation: 0, centerTitle: true)
           ), 
-          home: const MainNavigationScreen()
+          home: const SuperAppSkeleton()
         );
       }
     );
   }
 }
 
-class MainNavigationScreen extends StatefulWidget { const MainNavigationScreen({super.key}); @override State<MainNavigationScreen> createState() => _MainNavigationScreenState(); }
-class _MainNavigationScreenState extends State<MainNavigationScreen> {
-  int _currentIndex = 0; final List<Widget> _screens = const [HomeScreen(), SportsTab(), SearchScreen(), VaultScreen(), SettingsTab()];
+class SuperAppSkeleton extends StatefulWidget { const SuperAppSkeleton({super.key}); @override State<SuperAppSkeleton> createState() => _SuperAppSkeletonState(); }
+class _SuperAppSkeletonState extends State<SuperAppSkeleton> {
+  int _currentIndex = 0; final List<Widget> _screens = const [HomeScreen(), SearchScreen(), VaultScreen()];
   @override Widget build(BuildContext context) {
     return Scaffold(
       extendBody: true,
@@ -466,17 +436,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
           filter: ImageFilter.blur(sigmaX: 15.0, sigmaY: 15.0),
           child: Container(
             decoration: BoxDecoration(color: Colors.black.withOpacity(0.4), border: const Border(top: BorderSide(color: Colors.white10))),
-            child: BottomNavigationBar(
-              currentIndex: _currentIndex, 
-              onTap: (index) => setState(() => _currentIndex = index), 
-              items: const [
-                BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Inicio'), 
-                BottomNavigationBarItem(icon: Icon(Icons.sports_soccer), label: 'Deportes'), 
-                BottomNavigationBarItem(icon: Icon(Icons.search), label: 'Buscar'), 
-                BottomNavigationBarItem(icon: Icon(Icons.folder_special), label: 'Bóveda'),
-                BottomNavigationBarItem(icon: Icon(Icons.settings), label: 'Ajustes')
-              ]
-            )
+            child: BottomNavigationBar(currentIndex: _currentIndex, onTap: (index) => setState(() => _currentIndex = index), items: const [BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Inicio'), BottomNavigationBarItem(icon: Icon(Icons.search), label: 'Buscar'), BottomNavigationBarItem(icon: Icon(Icons.folder_special), label: 'Bóveda')])
           )
         )
       )
@@ -492,36 +452,12 @@ class HomeScreen extends StatelessWidget {
   }
 }
 
-class SportsTab extends StatelessWidget {
-  const SportsTab({super.key});
-  @override Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('⚽ Deportes & Ligas', style: TextStyle(fontWeight: FontWeight.bold)), backgroundColor: Colors.transparent),
-      body: const Center(child: Text('Filtros de ligas, equipos y partidos en vivo en la próxima fase.', style: TextStyle(color: Colors.grey))),
-    );
-  }
-}
-
-class SettingsTab extends StatelessWidget {
-  const SettingsTab({super.key});
-  @override Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('🎨 Ajustes', style: TextStyle(fontWeight: FontWeight.bold)), backgroundColor: Colors.transparent),
-      body: ListView(
-        padding: const EdgeInsets.all(16.0),
-        children: [
-          ListTile(leading: const Icon(Icons.share, color: Colors.white), title: const Text('Compartir App', style: TextStyle(color: Colors.white)), onTap: () => Share.share('¡Prueba mi app multimedia VIP!')),
-        ],
-      ),
-    );
-  }
-}
-
 class SearchScreen extends StatefulWidget { const SearchScreen({super.key}); @override State<SearchScreen> createState() => _SearchScreenState(); }
 class _SearchScreenState extends State<SearchScreen> {
   final searchController = TextEditingController(); late final YoutubeExplode _yt;
   List<Video> videos = []; List<String> searchSuggestions = []; bool isLoading = false;
   Timer? _debounce;
+  String _lastQuery = "";
   
   final Map<String, String> _categories = {"Tendencias": "Tendencias musica en español", "Podcasts": "Podcasts en español", "Electrónica": "Electronic music mix", "Rock": "Rock clasico en español", "Relajación": "Musica relajante lofi"};
 
@@ -529,7 +465,33 @@ class _SearchScreenState extends State<SearchScreen> {
   @override void dispose() { _debounce?.cancel(); searchController.dispose(); super.dispose(); }
 
   void _saveSearchHistory(String query) { if (query.trim().isEmpty) return; final box = Hive.box('search_history'); List history = box.get('history') ?? []; history.remove(query); history.insert(0, query); if (history.length > 10) history = history.sublist(0, 10); box.put('history', history); }
-  void searchVideos(String query) async { if (query.isEmpty) return; FocusScope.of(context).unfocus(); _saveSearchHistory(query); setState(() => isLoading = true); try { final results = await _yt.search.search(query); setState(() { videos = results.toList(); }); } catch (e) { } finally { setState(() => isLoading = false); } }
+  
+  void _onSearchChanged(String query) {
+    if (_debounce?.isActive ?? false) _debounce!.cancel();
+    if (query.trim().isEmpty) {
+      setState(() { searchSuggestions = []; videos = []; });
+      return;
+    }
+    _debounce = Timer(const Duration(milliseconds: 350), () async {
+      try {
+        final suggestions = await _yt.search.getQuerySuggestions(query);
+        if (mounted) setState(() { searchSuggestions = suggestions.take(6).toList(); });
+      } catch (_) {}
+    });
+  }
+
+  void searchVideos(String query) async { 
+    if (query.isEmpty) return; 
+    FocusScope.of(context).unfocus(); 
+    _saveSearchHistory(query); 
+    setState(() { isLoading = true; searchSuggestions = []; _lastQuery = query; }); 
+    try { 
+      final results = await _yt.search.search(query); 
+      setState(() { videos = results.toList(); }); 
+    } catch (e) { } finally { 
+      setState(() => isLoading = false); 
+    } 
+  }
 
   Widget _buildSearchHistory() {
     return Column(
@@ -541,7 +503,12 @@ class _SearchScreenState extends State<SearchScreen> {
             final history = box.get('history') ?? [];
             return Column(
               children: history.map<Widget>((query) {
-                return ListTile(leading: const Icon(Icons.history, color: Colors.grey), title: Text(query, style: const TextStyle(color: Colors.white)), onTap: () { searchController.text = query; searchVideos(query); });
+                return ListTile(
+                  leading: const Icon(Icons.history, color: Colors.grey), 
+                  title: Text(query, style: const TextStyle(color: Colors.white)), 
+                  trailing: IconButton(icon: const Icon(Icons.north_west, color: Colors.grey, size: 18), onPressed: () { searchController.text = query; _onSearchChanged(query); }),
+                  onTap: () { searchController.text = query; searchVideos(query); }
+                );
               }).toList()
             );
           }
@@ -560,7 +527,67 @@ class _SearchScreenState extends State<SearchScreen> {
       appBar: AppBar(title: const Text('Buscador VIP', style: TextStyle(fontWeight: FontWeight.bold)), backgroundColor: Colors.transparent),
       body: Column(
         children: [
-          Padding(padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0), child: TextField(controller: searchController, decoration: InputDecoration(hintText: 'Buscar canciones, artistas, podcasts...', prefixIcon: const Icon(Icons.search, color: Colors.grey), suffixIcon: IconButton(icon: const Icon(Icons.clear, color: Colors.grey), onPressed: () { searchController.clear(); setState(() { videos.clear(); }); }), filled: true, fillColor: const Color(0xFF1A1A1A), border: OutlineInputBorder(borderRadius: BorderRadius.circular(30.0), borderSide: BorderSide.none)), onSubmitted: searchVideos, onChanged: (query) { if (_debounce?.isActive ?? false) _debounce!.cancel(); _debounce = Timer(const Duration(milliseconds: 500), () { if (query.length > 2) { searchVideos(query); } }); })),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0), 
+            child: TextField(
+              controller: searchController, 
+              onChanged: _onSearchChanged,
+              decoration: InputDecoration(
+                hintText: 'Buscar canciones, artistas, podcasts...', 
+                prefixIcon: const Icon(Icons.search, color: Colors.grey), 
+                suffixIcon: IconButton(icon: const Icon(Icons.clear, color: Colors.grey), onPressed: () { searchController.clear(); setState(() { videos.clear(); searchSuggestions.clear(); _lastQuery = ""; }); }), 
+                filled: true, 
+                fillColor: const Color(0xFF1A1A1A), 
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(30.0), borderSide: BorderSide.none)
+              ), 
+              onSubmitted: searchVideos
+            )
+          ),
+          // LISTA DE AUTOLLENADO PREDICTIVO
+          if (searchSuggestions.isNotEmpty)
+            Container(
+              color: const Color(0xFF141414),
+              constraints: const BoxConstraints(maxHeight: 220),
+              child: ListView.builder(
+                shrinkWrap: true,
+                itemCount: searchSuggestions.length,
+                itemBuilder: (context, index) {
+                  final suggestion = searchSuggestions[index];
+                  return ListTile(
+                    dense: true,
+                    leading: const Icon(Icons.search, color: Colors.cyanAccent, size: 18),
+                    title: Text(suggestion, style: const TextStyle(color: Colors.white)),
+                    trailing: IconButton(
+                      icon: const Icon(Icons.north_west, color: Colors.grey, size: 18),
+                      onPressed: () {
+                        searchController.text = suggestion;
+                        searchController.selection = TextSelection.fromPosition(TextPosition(offset: suggestion.length));
+                        _onSearchChanged(suggestion);
+                      },
+                    ),
+                    onTap: () {
+                      searchController.text = suggestion;
+                      searchVideos(suggestion);
+                    },
+                  );
+                },
+              ),
+            ),
+          // FILTROS RÁPIDOS DEL ARTISTA BUSCADO (Lo más sonado, Lo más nuevo, Mix)
+          if (_lastQuery.isNotEmpty && videos.isNotEmpty)
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+              child: Row(
+                children: [
+                  ActionChip(label: const Text("🔥 Lo más sonado"), backgroundColor: const Color(0xFF1A1A1A), onPressed: () => searchVideos("$_lastQuery exitos mas escuchados")),
+                  const SizedBox(width: 8),
+                  ActionChip(label: const Text("🆕 Lo más nuevo"), backgroundColor: const Color(0xFF1A1A1A), onPressed: () => searchVideos("$_lastQuery nuevo 2026")),
+                  const SizedBox(width: 8),
+                  ActionChip(label: const Text("📻 Radio / Mix"), backgroundColor: const Color(0xFF1A1A1A), onPressed: () => searchVideos("$_lastQuery mix oficial")),
+                ],
+              ),
+            ),
           if (isLoading) Expanded(child: Center(child: ValueListenableBuilder<Color>(valueListenable: appColor, builder: (context, color, _) => CircularProgressIndicator(color: color))))
           else if (videos.isEmpty) Expanded(child: SingleChildScrollView(child: _buildSearchHistory()))
           else Expanded(
@@ -568,12 +595,16 @@ class _SearchScreenState extends State<SearchScreen> {
               padding: const EdgeInsets.only(bottom: 100),
               itemCount: videos.length, itemBuilder: (context, index) {
                 final video = videos[index];
+                final durText = formatGlobalDuration(video.duration);
                 return ListTile(
                   contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
                   leading: ClipRRect(borderRadius: BorderRadius.circular(8), child: Image.network(video.thumbnails.lowResUrl, width: 60, height: 60, fit: BoxFit.cover)),
                   title: Text(video.title, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w600)),
-                  subtitle: Text(video.author, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.grey)),
-                  trailing: IconButton(icon: const Icon(Icons.more_vert, color: Colors.grey), onPressed: () { ValueListenableBuilder<Color>(valueListenable: appColor, builder: (context, color, _) { globalShowOptions(context, video, color); return const SizedBox.shrink(); }); }),
+                  subtitle: Text(durText.isNotEmpty ? "${video.author} • $durText" : video.author, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.grey)),
+                  trailing: IconButton(
+                    icon: const Icon(Icons.more_vert, color: Colors.grey), 
+                    onPressed: () => globalShowOptions(context, video, appColor.value),
+                  ),
                   onTap: () async { final newItem = MediaItem(id: video.id.value, title: video.title, artist: video.author, duration: video.duration, artUri: Uri.parse(video.thumbnails.highResUrl)); await globalPlay(newItem); }
                 );
               }
@@ -707,10 +738,8 @@ class FullScreenPlayer extends StatelessWidget {
                       title: Text(item.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: isPlaying ? color : Colors.white)),
                       subtitle: Text(item.artist ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.grey)),
                       trailing: IconButton(icon: const Icon(Icons.close, color: Colors.grey), onPressed: () {
-                        if (audioHandler is MyAudioHandler) {
-                          (audioHandler as MyAudioHandler).removeFromQueue(item);
-                          Navigator.pop(context);
-                        }
+                        audioHandler.removeFromQueue(item);
+                        Navigator.pop(context);
                       }),
                       onTap: () {
                         Navigator.pop(context);
@@ -738,11 +767,36 @@ class FullScreenPlayer extends StatelessWidget {
           const SizedBox(height: 40),
           Padding(padding: const EdgeInsets.symmetric(horizontal: 30), child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(mediaItem.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold)), const SizedBox(height: 4), Text(mediaItem.artist ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 16, color: Colors.grey))])), ValueListenableBuilder(valueListenable: Hive.box('favorites').listenable(), builder: (context, Box box, _) { final isFav = box.containsKey(mediaItem.id); return IconButton(icon: Icon(isFav ? Icons.favorite : Icons.favorite_border, color: isFav ? Colors.redAccent : Colors.white), onPressed: () { if (isFav) { box.delete(mediaItem.id); } else { box.put(mediaItem.id, {'id': mediaItem.id, 'title': mediaItem.title, 'artist': mediaItem.artist, 'artUri': mediaItem.artUri.toString(), 'duration': mediaItem.duration?.inMilliseconds ?? 0}); } }); })])),
           const SizedBox(height: 20),
-          StreamBuilder<Duration>(stream: AudioService.position, builder: (context, snapshotPosition) { final pos = snapshotPosition.data ?? Duration.zero; return StreamBuilder<PlaybackState>(stream: audioHandler.playbackState, builder: (context, snapshot) { final state = snapshot.data; final isLoading = state?.processingState == AudioProcessingState.loading || state?.processingState == AudioProcessingState.buffering; final dur = mediaItem.duration ?? Duration.zero; return Column(children: [Padding(padding: const EdgeInsets.symmetric(horizontal: 30), child: ValueListenableBuilder<Color>(valueListenable: appColor, builder: (context, color, _) { return SliderTheme(data: SliderTheme.of(context).copyWith(trackHeight: 4, activeTrackColor: color, inactiveTrackColor: Colors.white24, thumbColor: color, thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6), overlayShape: const RoundSliderOverlayShape(overlayRadius: 14)), child: Slider(value: isLoading ? 0.0 : pos.inMilliseconds.toDouble().clamp(0.0, dur.inMilliseconds.toDouble() > 0 ? dur.inMilliseconds.toDouble() : 1.0), max: dur.inMilliseconds.toDouble() > 0 ? dur.inMilliseconds.toDouble() : 1.0, onChanged: (v) { if (!isLoading) audioHandler.seek(Duration(milliseconds: v.round())); })); })), Padding(padding: const EdgeInsets.symmetric(horizontal: 30), child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [Text(formatGlobalDuration(pos), style: const TextStyle(color: Colors.grey, fontSize: 12)), Text(formatGlobalDuration(mediaItem.duration), style: const TextStyle(color: Colors.grey, fontSize: 12))]))]); }); }),
+          StreamBuilder<Duration>(stream: AudioService.position, builder: (context, snapshotPosition) { 
+            final pos = snapshotPosition.data ?? Duration.zero; 
+            return StreamBuilder<PlaybackState>(stream: audioHandler.playbackState, builder: (context, snapshot) { 
+              final state = snapshot.data; 
+              final isLoading = state?.processingState == AudioProcessingState.loading || state?.processingState == AudioProcessingState.buffering; 
+              final dur = mediaItem.duration ?? Duration.zero; 
+              final buffered = state?.bufferedPosition ?? Duration.zero;
+              final maxDur = dur.inMilliseconds.toDouble() > 0 ? dur.inMilliseconds.toDouble() : 1.0;
+              return Column(children: [
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 30), 
+                  child: ValueListenableBuilder<Color>(valueListenable: appColor, builder: (context, color, _) { 
+                    return SliderTheme(
+                      data: SliderTheme.of(context).copyWith(trackHeight: 4, activeTrackColor: color, secondaryActiveTrackColor: Colors.white54, inactiveTrackColor: Colors.white24, thumbColor: color, thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6), overlayShape: const RoundSliderOverlayShape(overlayRadius: 14)), 
+                      child: Slider(
+                        value: isLoading ? 0.0 : pos.inMilliseconds.toDouble().clamp(0.0, maxDur), 
+                        secondaryTrackValue: isLoading ? 0.0 : buffered.inMilliseconds.toDouble().clamp(0.0, maxDur),
+                        max: maxDur, 
+                        onChanged: (v) { if (!isLoading) audioHandler.seek(Duration(milliseconds: v.round())); }
+                      )
+                    ); 
+                  })
+                ), 
+                Padding(padding: const EdgeInsets.symmetric(horizontal: 30), child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [Text(formatGlobalDuration(pos), style: const TextStyle(color: Colors.grey, fontSize: 12)), Text(formatGlobalDuration(mediaItem.duration), style: const TextStyle(color: Colors.grey, fontSize: 12))]))
+              ]); 
+            }); 
+          }),
           const Spacer(),
-          Padding(padding: const EdgeInsets.symmetric(horizontal: 30), child: StreamBuilder<PlaybackState>(stream: audioHandler.playbackState, builder: (context, snapshot) { final state = snapshot.data; final playing = state?.playing ?? false; final isLoading = state?.processingState == AudioProcessingState.loading || state?.processingState == AudioProcessingState.buffering; return Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [ValueListenableBuilder<int>(valueListenable: sleepTimerRemaining, builder: (context, remaining, _) { return IconButton(icon: Icon(Icons.timer, color: remaining > 0 ? appColor.value : Colors.grey), onPressed: () => _showSleepTimerDialog(context)); }), IconButton(icon: const Icon(Icons.skip_previous, color: Colors.white, size: 36), onPressed: () => audioHandler.skipToPrevious()), ValueListenableBuilder<Color>(valueListenable: appColor, builder: (context, color, _) { return Container(width: 70, height: 70, decoration: BoxDecoration(shape: BoxShape.circle, color: color, boxShadow: [BoxShadow(color: color.withOpacity(0.4), blurRadius: 20, spreadRadius: 5)]), child: IconButton(icon: isLoading ? const CircularProgressIndicator(color: Colors.black) : Icon(playing ? Icons.pause : Icons.play_arrow, color: Colors.black, size: 36), onPressed: () { if (playing) { audioHandler.pause(); } else { audioHandler.play(); } })); }), IconButton(icon: const Icon(Icons.skip_next, color: Colors.white, size: 36), onPressed: () => audioHandler.skipToNext()), IconButton(icon: const Icon(Icons.shuffle, color: Colors.white), onPressed: () { if (audioHandler is MyAudioHandler) { (audioHandler as MyAudioHandler).shuffleQueue(); ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Cola mezclada'), duration: Duration(seconds: 1))); } })]); })),
+          Padding(padding: const EdgeInsets.symmetric(horizontal: 30), child: StreamBuilder<PlaybackState>(stream: audioHandler.playbackState, builder: (context, snapshot) { final state = snapshot.data; final playing = state?.playing ?? false; final isLoading = state?.processingState == AudioProcessingState.loading || state?.processingState == AudioProcessingState.buffering; return Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [ValueListenableBuilder<int>(valueListenable: sleepTimerRemaining, builder: (context, remaining, _) { return IconButton(icon: Icon(Icons.timer, color: remaining > 0 ? appColor.value : Colors.grey), onPressed: () => _showSleepTimerDialog(context)); }), IconButton(icon: const Icon(Icons.skip_previous, color: Colors.white, size: 36), onPressed: () => audioHandler.skipToPrevious()), ValueListenableBuilder<Color>(valueListenable: appColor, builder: (context, color, _) { return Container(width: 70, height: 70, decoration: BoxDecoration(shape: BoxShape.circle, color: color, boxShadow: [BoxShadow(color: color.withOpacity(0.4), blurRadius: 20, spreadRadius: 5)]), child: IconButton(icon: isLoading ? const CircularProgressIndicator(color: Colors.black) : Icon(playing ? Icons.pause : Icons.play_arrow, color: Colors.black, size: 36), onPressed: () { if (playing) { audioHandler.pause(); } else { audioHandler.play(); } })); }), IconButton(icon: const Icon(Icons.skip_next, color: Colors.white, size: 36), onPressed: () => audioHandler.skipToNext()), IconButton(icon: const Icon(Icons.shuffle, color: Colors.white), onPressed: () { audioHandler.shuffleQueue(); ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Cola mezclada'), duration: Duration(seconds: 1))); })]); })),
           const Spacer(),
-          // EL INDICADOR DE COLA DESLIZABLE (Siguiente 1 de 25)
           StreamBuilder<List<MediaItem>>(
             stream: audioHandler.queue,
             builder: (context, queueSnapshot) {
@@ -750,18 +804,14 @@ class FullScreenPlayer extends StatelessWidget {
               if (queueList.isEmpty) return const SizedBox.shrink();
               final currentIndex = queueList.indexWhere((i) => i.id == mediaItem.id);
               return GestureDetector(
-                onTap: () {
-                  ValueListenableBuilder<Color>(
-                    valueListenable: appColor,
-                    builder: (context, color, _) {
-                      _showQueueBottomSheet(context, queueList, currentIndex, color);
-                      return const SizedBox.shrink();
-                    }
-                  );
-                  _showQueueBottomSheet(context, queueList, currentIndex, appColor.value);
+                onTap: () => _showQueueBottomSheet(context, queueList, currentIndex, appColor.value),
+                onVerticalDragEnd: (details) {
+                  if (details.primaryVelocity != null && details.primaryVelocity! < 0) {
+                    _showQueueBottomSheet(context, queueList, currentIndex, appColor.value);
+                  }
                 },
                 child: Padding(
-                  padding: const EdgeInsets.only(bottom: 30),
+                  padding: const EdgeInsets.only(bottom: 24),
                   child: Column(
                     children: [
                       const Icon(Icons.keyboard_arrow_up, color: Colors.grey),
