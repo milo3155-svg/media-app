@@ -222,89 +222,64 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
     int playCount = 1; int savedPosition = 0; 
     if (historyBox.containsKey(item.id)) { final existingItem = historyBox.get(item.id); playCount = (existingItem['playCount'] ?? 0) + 1; savedPosition = existingItem['savedPosition'] ?? 0; }
     historyBox.put(item.id, {'id': item.id, 'title': item.title, 'artist': item.artist, 'artUri': item.artUri.toString(), 'duration': item.duration?.inMilliseconds ?? 0, 'timestamp': DateTime.now().millisecondsSinceEpoch, 'playCount': playCount, 'savedPosition': 0});
-   try {
+    try {
       playbackState.add(playbackState.value.copyWith(processingState: AudioProcessingState.loading, playing: true));
       await _player.stop(); 
       await _player.seek(Duration.zero); 
       var manifest = await _yt.videos.streamsClient.getManifest(item.id); 
+      var video = await _yt.videos.get(item.id); 
       
       StreamInfo streamInfo;
-      if (manifest.muxed.isNotEmpty) { 
-        streamInfo = isHDMode.value ? manifest.muxed.withHighestBitrate() : manifest.muxed.reduce((a, b) => a.bitrate.bitsPerSecond < b.bitrate.bitsPerSecond ? a : b); 
-      } 
-      else if (manifest.audioOnly.isNotEmpty) { 
-        streamInfo = isHDMode.value ? manifest.audioOnly.withHighestBitrate() : manifest.audioOnly.reduce((a, b) => a.bitrate.bitsPerSecond < b.bitrate.bitsPerSecond ? a : b); 
-      } 
-      else { 
-        throw Exception("No streams"); 
-      }
+      if (manifest.muxed.isNotEmpty) { streamInfo = isHDMode.value ? manifest.muxed.withHighestBitrate() : manifest.muxed.reduce((a, b) => a.bitrate.bitsPerSecond < b.bitrate.bitsPerSecond ? a : b); } 
+      else if (manifest.audioOnly.isNotEmpty) { streamInfo = isHDMode.value ? manifest.audioOnly.withHighestBitrate() : manifest.audioOnly.reduce((a, b) => a.bitrate.bitsPerSecond < b.bitrate.bitsPerSecond ? a : b); } 
+      else { throw Exception("No streams"); }
       
-      // SOLUCIÓN AL CRASH Y A LA DURACIÓN: Usamos un AudioSource estándar con los metadatos directos
       final source = AudioSource.uri(
         Uri.parse(streamInfo.url.toString()),
         tag: MediaItem(
           id: item.id,
           album: "Media VIP",
-          title: item.title,
-          artist: item.artist,
-          duration: item.duration,
-          artUri: Uri.parse(item.artUri.toString()),
-        ),
-      );
-      
-      await _player.setAudioSource(source);
-      
-      if (savedPosition > 0) { await _player.seek(Duration(milliseconds: savedPosition)); } 
-      await _player.play();
-    } catch (e) { 
-      playbackState.add(playbackState.value.copyWith(processingState: AudioProcessingState.error, playing: false)); 
-    }
-      
-     final cachingSource = LockCachingAudioSource(
-        Uri.parse(streamInfo.url.toString()),
-        tag: item.copyWith(
-          duration: video.duration, 
           title: video.title,
-          artUri: Uri.parse(video.thumbnails.highResUrl), // <-- OBLIGATORIO PARA LA NOTIFICACIÓN
-          id: video.id.value,                             // <-- OBLIGATORIO PARA LA SESIÓN
+          artist: item.artist,
+          duration: video.duration,
+          artUri: Uri.parse(video.thumbnails.highResUrl),
         ),
       );
-      await _player.setAudioSource(cachingSource);
+      await _player.setAudioSource(source);
       
       if (savedPosition > 0) { await _player.seek(Duration(milliseconds: savedPosition)); } 
       await _player.play();
     } catch (e) { playbackState.add(playbackState.value.copyWith(processingState: AudioProcessingState.error, playing: false)); }
   }
 
- @override Future<void> updateQueue(List<MediaItem> newQueue) async { queue.add(newQueue); }
+  @override Future<void> updateQueue(List<MediaItem> newQueue) async { queue.add(newQueue); }
+  
+  void shuffleQueue() { final currentQueue = queue.value.toList()..shuffle(); queue.add(currentQueue); }
 
-void shuffleQueue() { final currentQueue = queue.value.toList()..shuffle(); queue.add(currentQueue); }
-
-void insertNextInQueue(MediaItem item) {
-  final currentQueue = List<MediaItem>.from(queue.value);
-  final currentItem = mediaItem.value;
-  final currentIndex = currentQueue.indexWhere((i) => i.id == currentItem?.id);
-  if (currentIndex != -1) {
-    currentQueue.insert(currentIndex + 1, item);
-  } else {
-    currentQueue.add(item);
+  void insertNextInQueue(MediaItem item) {
+    final currentQueue = List<MediaItem>.from(queue.value);
+    final currentItem = mediaItem.value;
+    final currentIndex = currentQueue.indexWhere((i) => i.id == currentItem?.id);
+    if (currentIndex != -1) {
+      currentQueue.insert(currentIndex + 1, item);
+    } else {
+      currentQueue.add(item);
+    }
+    updateQueue(currentQueue);
   }
-  updateQueue(currentQueue);
-}
 
-void addToQueueEnd(MediaItem item) {
-  final currentQueue = List<MediaItem>.from(queue.value);
-  currentQueue.add(item);
-  updateQueue(currentQueue);
-}
+  void addToQueueEnd(MediaItem item) {
+    final currentQueue = List<MediaItem>.from(queue.value);
+    currentQueue.add(item);
+    updateQueue(currentQueue);
+  }
 
-void removeFromQueue(MediaItem item) {
-  final currentQueue = List<MediaItem>.from(queue.value);
-  currentQueue.removeWhere((i) => i.id == item.id);
-  updateQueue(currentQueue);
+  void removeFromQueue(MediaItem item) {
+    final currentQueue = List<MediaItem>.from(queue.value);
+    currentQueue.removeWhere((i) => i.id == item.id);
+    updateQueue(currentQueue);
+  }
 }
-} // <--- ESTA LLAVE CIERRA LA CLASE. NO LA BORRES.
-
 Future<void> globalPlay(MediaItem item) async {
   await audioHandler.updateQueue([item]); 
   await audioHandler.playMediaItem(item);
