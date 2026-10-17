@@ -96,7 +96,7 @@ class YMusicPlayerProvider extends ChangeNotifier {
       }
     }
   
-// 2. Si es YouTube
+// 2. Si es YouTube con Cliente Seguro y Fallback
     else {
       final yt = yt_exp.YoutubeExplode();
       try {
@@ -105,8 +105,6 @@ class YMusicPlayerProvider extends ChangeNotifier {
         notifyListeners();
 
         yt_exp.StreamManifest? manifest;
-        
-        // Estrategia Pro: Intento primario con cliente Android VR y fallback a TV Embedded
         try {
           manifest = await yt.videos.streamsClient.getManifest(
             item.id,
@@ -134,29 +132,34 @@ class YMusicPlayerProvider extends ChangeNotifier {
         notifyListeners();
       }
     }
-// ==========================================
-// BÓVEDA (FAVORITOS 👍)
-// ==========================================
-class VaultProvider extends ChangeNotifier {
-  final List<MediaItemModel> _favorites = [];
+  } // <--- Cierre correcto de playItem
 
-  List<MediaItemModel> get favorites => _favorites;
-
-  bool isFavorite(String id) {
-    return _favorites.any((item) => item.id == id);
+  Future<void> togglePlayPause() async {
+    if (_isPlaying) {
+      await _audioPlayer.pause();
+    } else {
+      await _audioPlayer.resume();
+    }
   }
 
-  void toggleFavorite(MediaItemModel item) {
-    final index = _favorites.indexWhere((element) => element.id == item.id);
-    if (index >= 0) {
-      _favorites.removeAt(index);
-    } else {
-      _favorites.add(item);
-    }
+  Future<void> seek(Duration position) async {
+    await _audioPlayer.seek(position);
+  }
+
+  Future<void> closePlayer() async {
+    await _audioPlayer.stop();
+    _currentItem = null;
+    _position = Duration.zero;
+    _duration = Duration.zero;
     notifyListeners();
   }
-}
 
+  @override
+  void dispose() {
+    _audioPlayer.dispose();
+    super.dispose();
+  }
+} // <--- Cierre correcto de YMusicPlayerProvider
 // ==========================================
 // TEMAS
 // ==========================================
