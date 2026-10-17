@@ -244,39 +244,22 @@ Future<void> globalPlayQueue(List<MediaItem> items, int startIndex) async {
   await audioHandler.playMediaItem(items[startIndex]);
 }
 
-void globalShowOptions(BuildContext context, Video video, Color color) {
-  showModalBottomSheet(
-    context: context, backgroundColor: const Color(0xFF1A1A1A), isScrollControlled: true,
-    shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))), 
-    builder: (context) { 
-      return Padding(
-        padding: const EdgeInsets.symmetric(vertical: 10), 
-        child: Column(
-          mainAxisSize: MainAxisSize.min, 
-          children: [
-            ListTile(leading: ClipRRect(borderRadius: BorderRadius.circular(4), child: Image.network(video.thumbnails.lowResUrl, width: 40, height: 40, fit: BoxFit.cover)), title: Text(video.title, maxLines: 1, overflow: TextOverflow.ellipsis), subtitle: Text(video.author, style: const TextStyle(color: Colors.grey))), 
-            const Divider(color: Colors.white24), 
-            ListTile(leading: const Icon(Icons.radio, color: Colors.white), title: const Text('Ir a radio de la canción'), onTap: () async { Navigator.pop(context); final newItem = MediaItem(id: video.id.value, title: video.title, artist: video.author, duration: video.duration, artUri: Uri.parse(video.thumbnails.highResUrl)); await globalPlay(newItem); ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Iniciando Radio de ${video.title}'), backgroundColor: color)); }),
-            ListTile(leading: const Icon(Icons.playlist_add, color: Colors.white), title: const Text('Agregar a una playlist'), onTap: () { Navigator.pop(context); _showPlaylistDialog(context, video, color); }),
-            ValueListenableBuilder(
-              valueListenable: Hive.box('favorites').listenable(),
-              builder: (context, Box box, _) {
-                final isFav = box.containsKey(video.id.value);
-                return ListTile(
-                  leading: Icon(isFav ? Icons.favorite : Icons.favorite_border, color: isFav ? Colors.redAccent : Colors.white), 
-                  title: Text(isFav ? 'Eliminar de Tus me gusta' : 'Agregar a Tus me gusta'), 
-                  onTap: () { 
-                    if (isFav) { box.delete(video.id.value); } else { box.put(video.id.value, {'id': video.id.value, 'title': video.title, 'artist': video.author, 'artUri': video.thumbnails.highResUrl, 'duration': video.duration?.inMilliseconds ?? 0}); }
-                    Navigator.pop(context); ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(isFav ? 'Eliminado de Favoritos' : 'Agregado a Favoritos'), backgroundColor: color)); 
-                  }
-                );
-              }
-            ),
-          ]
-        )
-      ); 
-    }
-  ); 
+void insertNextInQueue(MediaItem item) {
+  final currentQueue = List<MediaItem>.from(queue.value);
+  final currentItem = mediaItem.value;
+  final currentIndex = currentQueue.indexWhere((i) => i.id == currentItem?.id);
+  if (currentIndex != -1) {
+    currentQueue.insert(currentIndex + 1, item);
+  } else {
+    currentQueue.add(item);
+  }
+  updateQueue(currentQueue);
+}
+
+void addToQueueEnd(MediaItem item) {
+  final currentQueue = List<MediaItem>.from(queue.value);
+  currentQueue.add(item);
+  updateQueue(currentQueue);
 }
 
 void _showPlaylistDialog(BuildContext context, Video video, Color color) {
