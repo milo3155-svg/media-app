@@ -276,31 +276,26 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
     } catch (e) { playbackState.add(playbackState.value.copyWith(processingState: AudioProcessingState.error, playing: false)); }
   }
 
-  @override Future<void> updateQueue(List<MediaItem> newQueue) async { queue.add(newQueue); }
-  
-  void shuffleQueue() { final currentQueue = queue.value.toList()..shuffle(); queue.add(currentQueue); }
+ @override Future<void> updateQueue(List<MediaItem> newQueue) async { queue.add(newQueue); }
 
-  void insertNextInQueue(MediaItem item) {
-    final currentQueue = List<MediaItem>.from(queue.value);
-    final currentItem = mediaItem.value;
-    final currentIndex = currentQueue.indexWhere((i) => i.id == currentItem?.id);
-    if (currentIndex != -1) {
-      currentQueue.insert(currentIndex + 1, item);
-    } else {
-      currentQueue.add(item);
-    }
-    updateQueue(currentQueue);
-  }
+void shuffleQueue() { final currentQueue = queue.value.toList()..shuffle(); queue.add(currentQueue); }
 
-  void addToQueueEnd(MediaItem item) {
-    final currentQueue = List<MediaItem>.from(queue.value);
+void insertNextInQueue(MediaItem item) {
+  final currentQueue = List<MediaItem>.from(queue.value);
+  final currentItem = mediaItem.value;
+  final currentIndex = currentQueue.indexWhere((i) => i.id == currentItem?.id);
+  if (currentIndex != -1) {
+    currentQueue.insert(currentIndex + 1, item);
+  } else {
     currentQueue.add(item);
-    updateQueue(currentQueue);
   }
+  updateQueue(currentQueue);
+}
 
-  void shuffleQueue() { 
-  final currentQueue = queue.value.toList()..shuffle(); 
-  queue.add(currentQueue); 
+void addToQueueEnd(MediaItem item) {
+  final currentQueue = List<MediaItem>.from(queue.value);
+  currentQueue.add(item);
+  updateQueue(currentQueue);
 }
 
 void removeFromQueue(MediaItem item) {
@@ -308,7 +303,7 @@ void removeFromQueue(MediaItem item) {
   currentQueue.removeWhere((i) => i.id == item.id);
   updateQueue(currentQueue);
 }
-}
+} // <--- ESTA LLAVE CIERRA LA CLASE. NO LA BORRES.
 
 Future<void> globalPlay(MediaItem item) async {
   await audioHandler.updateQueue([item]); 
