@@ -234,11 +234,13 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
       else if (manifest.audioOnly.isNotEmpty) { streamInfo = isHDMode.value ? manifest.audioOnly.withHighestBitrate() : manifest.audioOnly.reduce((a, b) => a.bitrate.bitsPerSecond < b.bitrate.bitsPerSecond ? a : b); } 
       else { throw Exception("No streams"); }
       
-      final cachingSource = LockCachingAudioSource(
+     final cachingSource = LockCachingAudioSource(
         Uri.parse(streamInfo.url.toString()),
         tag: item.copyWith(
           duration: video.duration, 
-          title: video.title,       
+          title: video.title,
+          artUri: Uri.parse(video.thumbnails.highResUrl), // <-- OBLIGATORIO PARA LA NOTIFICACIÓN
+          id: video.id.value,                             // <-- OBLIGATORIO PARA LA SESIÓN
         ),
       );
       await _player.setAudioSource(cachingSource);
@@ -498,7 +500,8 @@ class _SearchScreenState extends State<SearchScreen> {
       appBar: AppBar(title: const Text('Buscador VIP', style: TextStyle(fontWeight: FontWeight.bold)), backgroundColor: Colors.transparent),
       body: Column(
         children: [
-          Padding(padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0), child: TextField(controller: searchController, decoration: InputDecoration(hintText: 'Buscar canciones, artistas, podcasts...', prefixIcon: const Icon(Icons.search, color: Colors.grey), suffixIcon: IconButton(icon: const Icon(Icons.clear, color: Colors.grey), onPressed: () { searchController.clear(); setState(() { videos.clear(); }); }), filled: true, fillColor: const Color(0xFF1A1A1A), border: OutlineInputBorder(borderRadius: BorderRadius.circular(30.0), borderSide: BorderSide.none)), onSubmitted: searchVideos)),
+          // Busca la línea que empieza con: Padding(padding: const EdgeInsets.symmetric... child: TextField(
+          Padding(padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0), child: TextField(controller: searchController, decoration: InputDecoration(hintText: 'Buscar canciones, artistas, podcasts...', prefixIcon: const Icon(Icons.search, color: Colors.grey), suffixIcon: IconButton(icon: const Icon(Icons.clear, color: Colors.grey), onPressed: () { searchController.clear(); setState(() { videos.clear(); }); }), filled: true, fillColor: const Color(0xFF1A1A1A), border: OutlineInputBorder(borderRadius: BorderRadius.circular(30.0), borderSide: BorderSide.none)), onSubmitted: searchVideos, onChanged: (query) { if (_debounce?.isActive ?? false) _debounce!.cancel(); _debounce = Timer(const Duration(milliseconds: 500), () { if (query.length > 2) { searchVideos(query); } }); })),
           if (isLoading) Expanded(child: Center(child: ValueListenableBuilder<Color>(valueListenable: appColor, builder: (context, color, _) => CircularProgressIndicator(color: color))))
           else if (videos.isEmpty) Expanded(child: SingleChildScrollView(child: _buildSearchHistory()))
           else Expanded(
