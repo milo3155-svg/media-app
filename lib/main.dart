@@ -246,7 +246,7 @@ Future<void> playMediaItem(MediaItem item) async {
     // Extracción limpia con el cliente de Android VR para saltar bloqueos
     var manifest = await _yt.videos.streamsClient.getManifest(
       item.id,
-      ytClients: [YoutubeApiClient.androidVr, YoutubeApiClient.tvEmbedded],
+      ytClients: [YoutubeApiClient.androidVr],
     ); 
     var video = await _yt.videos.get(item.id); 
     
