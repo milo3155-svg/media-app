@@ -155,39 +155,41 @@ Future<void> skipToNextBase() async {
 
 // --- MOTOR PIPED API PARA BURLAR EL BLOQUEO (OPCIÓN A) ---
 // --- MOTOR V3: IP-MATCH & TÚNELES PROXY ---
+// --- MOTOR V4: BYPASS ABSOLUTO (SIN YOUTUBE EXPLODE) ---
 Future<String> _getStreamUrl(String videoId) async {
-  // 1. Extracción Local: Genera la URL con la IP de tu teléfono para que Google no la bloquee.
-  try {
-    var manifest = await _yt.videos.streamsClient.getManifest(
-      videoId, 
-      ytClients: [YoutubeApiClient.ios]
-    );
-    if (manifest.audioOnly.isNotEmpty) {
-      return manifest.audioOnly.withHighestBitrate().url.toString();
-    }
-  } catch (e) {
-    print("Extracción local falló: $e");
-  }
-
-  // 2. Túneles Proxy: Si falla lo local, pasamos el audio a través de servidores puente directos
+  // Lista de servidores descentralizados que ya tienen el PO Token resuelto
   final proxies = [
-    "https://inv.tux.pizza/latest_version?id=$videoId&itag=140",
-    "https://invidious.nerdvpn.de/latest_version?id=$videoId&itag=140",
-    "https://invidious.jing.rocks/latest_version?id=$videoId&itag=140"
+    'https://pipedapi.kavin.rocks',
+    'https://pipedapi.smnz.de',
+    'https://sh.itjust.works',
+    'https://piped-api.garudalinux.org'
   ];
 
   for (String proxy in proxies) {
     try {
-      final req = await HttpClient().headUrl(Uri.parse(proxy));
-      final res = await req.close();
-      // Si el servidor responde 200 (OK) o 302 (Redirección al audio), lo usamos.
-      if (res.statusCode == 200 || res.statusCode == 302) {
-        return proxy;
+      final request = await HttpClient().getUrl(Uri.parse('$proxy/streams/$videoId'));
+      // Máscara térmica: engañamos al servidor para que crea que somos un navegador de PC
+      request.headers.set('User-Agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)');
+      final response = await request.close();
+      
+      if (response.statusCode == 200) {
+        final stringData = await response.transform(utf8.decoder).join();
+        final data = jsonDecode(stringData);
+        
+        if (data['error'] == null && data['audioStreams'] != null) {
+          final audioStreams = data['audioStreams'] as List;
+          if (audioStreams.isNotEmpty) {
+            // Forzamos la extracción del formato más ligero y compatible (M4A)
+            final m4a = audioStreams.where((s) => s['format'].toString().toUpperCase() == 'M4A').toList();
+            return m4a.isNotEmpty ? m4a.first['url'] : audioStreams.first['url'];
+          }
+        }
       }
-    } catch (_) {}
+    } catch (_) {
+      continue; // Si un servidor está saturado, salta en milisegundos al siguiente
+    }
   }
-  
-  throw Exception("Todas las rutas de audio están bloqueadas.");
+  throw Exception("Todos los puentes proxy están caídos.");
 }
 
 @override
@@ -210,11 +212,18 @@ Future<void> playMediaItem(MediaItem item) async {
     await _player.stop(); 
     await _player.seek(Duration.zero); 
     
-    // Llamamos al nuevo motor V3
+    // Extracción limpia sin tocar los servidores principales de Google
     final streamUrl = await _getStreamUrl(item.id);
     
-    // Reproductor nativo limpio, sin headers que confundan la redirección
-    final source = AudioSource.uri(Uri.parse(streamUrl), tag: item);
+    // Blindaje final: El reproductor DEBE llevar la misma máscara que usamos para extraer
+    final source = AudioSource.uri(
+      Uri.parse(streamUrl), 
+      tag: item,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
+      }
+    );
+    
     await _player.setAudioSource(source);
     
     if (savedPosition > 0) { await _player.seek(Duration(milliseconds: savedPosition)); } 
