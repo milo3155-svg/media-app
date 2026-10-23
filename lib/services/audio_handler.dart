@@ -225,20 +225,23 @@ Future<void> playMediaItem(MediaItem item) async {
     await _player.stop(); 
     await _player.seek(Duration.zero); 
     
-    // Llamada doble para asegurar la metadata y el stream libre
-    var video = await _yt.videos.get(item.id); 
-    final streamUrl = await _getPipedStreamUrl(item.id);
+    // ELIMINADA la llamada a _yt.videos.get que causaba el bloqueo.
     
-    final updatedItem = item.copyWith(
-      duration: video.duration, 
-      title: video.title,       
-    );
-    mediaItem.add(updatedItem);
-
-    // Usamos AudioSource directo sin caché bloqueante
+    String streamUrl = "";
+    try {
+       streamUrl = await _getPipedStreamUrl(item.id);
+    } catch (e) {
+       // Último recurso absoluto: Invidious Proxy directo a M4A
+       streamUrl = "https://invidious.jing.rocks/latest_version?id=${item.id}&itag=140";
+    }
+    
+    // Enmascaramos el reproductor como un iPhone nativo
     final source = AudioSource.uri(
       Uri.parse(streamUrl),
-      tag: updatedItem,
+      tag: item,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1'
+      }
     );
     
     await _player.setAudioSource(source);
@@ -250,7 +253,6 @@ Future<void> playMediaItem(MediaItem item) async {
     playbackState.add(playbackState.value.copyWith(processingState: AudioProcessingState.error, playing: false)); 
   }
 }
-
 @override Future<void> updateQueue(List<MediaItem> newQueue) async { queue.add(newQueue); }
 void shuffleQueue() { final currentQueue = queue.value.toList()..shuffle(); queue.add(currentQueue); }
 
