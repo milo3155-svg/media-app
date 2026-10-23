@@ -256,12 +256,3 @@ void removeFromQueue(MediaItem item) {
   updateQueue(currentQueue);
 }
 }
-Future<void> globalPlay(MediaItem item, MyAudioHandler handler) async {
-await handler.updateQueue([item]); 
-await handler.playMediaItem(item);
-}
-
-Future<void> globalPlayQueue(List<MediaItem> items, int startIndex, MyAudioHandler handler) async {
-await handler.updateQueue(items);
-await handler.playMediaItem(items[startIndex]);
-}
