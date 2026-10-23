@@ -155,25 +155,47 @@ Future<void> skipToNextBase() async {
 
 // --- MOTOR PIPED API PARA BURLAR EL BLOQUEO (OPCIÓN A) ---
 Future<String> _getPipedStreamUrl(String videoId) async {
+  // 1. Primer intento: YouTube nativo usando la firma de iOS (Evade el bloqueo actual)
   try {
-    final request = await HttpClient().getUrl(Uri.parse('https://pipedapi.kavin.rocks/streams/$videoId'));
-    final response = await request.close();
-    final stringData = await response.transform(utf8.decoder).join();
-    final data = jsonDecode(stringData);
-    
-    if (data['error'] != null) throw Exception(data['error']);
-    
-    final audioStreams = data['audioStreams'] as List;
-    if (audioStreams.isEmpty) throw Exception("No audio streams");
-    
-    // Intentamos obtener M4A, si no, el primer audio disponible
-    final m4aStreams = audioStreams.where((s) => s['format'] == 'M4A').toList();
-    if (m4aStreams.isNotEmpty) return m4aStreams.first['url'];
-    return audioStreams.first['url'];
+    var manifest = await _yt.videos.streamsClient.getManifest(videoId, ytClients: [YoutubeApiClient.ios]);
+    if (manifest.audioOnly.isNotEmpty) {
+      return manifest.audioOnly.withHighestBitrate().url.toString();
+    } else if (manifest.muxed.isNotEmpty) {
+      return manifest.muxed.withHighestBitrate().url.toString();
+    }
   } catch (e) {
-    print("Piped API Error: $e");
-    rethrow;
+    print("YT Explode (iOS) falló, saltando a Piped: $e");
   }
+
+  // 2. Segundo intento: Batería de servidores Piped alternativos (Si uno cae, salta al siguiente)
+  final instances = [
+    'https://sh.itjust.works',
+    'https://pipedapi.smnz.de',
+    'https://pipedapi.kavin.rocks'
+  ];
+
+  for (String instance in instances) {
+    try {
+      final request = await HttpClient().getUrl(Uri.parse('$instance/streams/$videoId'));
+      final response = await request.close();
+      if (response.statusCode != 200) continue;
+      
+      final stringData = await response.transform(utf8.decoder).join();
+      final data = jsonDecode(stringData);
+      
+      if (data['error'] != null) continue;
+      
+      final audioStreams = data['audioStreams'] as List;
+      if (audioStreams.isEmpty) continue;
+      
+      final m4aStreams = audioStreams.where((s) => s['format'] == 'M4A').toList();
+      if (m4aStreams.isNotEmpty) return m4aStreams.first['url'];
+      return audioStreams.first['url'];
+    } catch (e) {
+      print("Fallo Piped en $instance: $e");
+    }
+  }
+  throw Exception("Motor de extracción bloqueado en todas las rutas.");
 }
 
 @override
