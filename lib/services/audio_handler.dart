@@ -154,48 +154,40 @@ Future<void> skipToNextBase() async {
 }
 
 // --- MOTOR PIPED API PARA BURLAR EL BLOQUEO (OPCIÓN A) ---
-Future<String> _getPipedStreamUrl(String videoId) async {
-  // 1. Primer intento: YouTube nativo usando la firma de iOS (Evade el bloqueo actual)
+// --- MOTOR V3: IP-MATCH & TÚNELES PROXY ---
+Future<String> _getStreamUrl(String videoId) async {
+  // 1. Extracción Local: Genera la URL con la IP de tu teléfono para que Google no la bloquee.
   try {
-    var manifest = await _yt.videos.streamsClient.getManifest(videoId, ytClients: [YoutubeApiClient.ios]);
+    var manifest = await _yt.videos.streamsClient.getManifest(
+      videoId, 
+      ytClients: [YoutubeApiClient.ios]
+    );
     if (manifest.audioOnly.isNotEmpty) {
       return manifest.audioOnly.withHighestBitrate().url.toString();
-    } else if (manifest.muxed.isNotEmpty) {
-      return manifest.muxed.withHighestBitrate().url.toString();
     }
   } catch (e) {
-    print("YT Explode (iOS) falló, saltando a Piped: $e");
+    print("Extracción local falló: $e");
   }
 
-  // 2. Segundo intento: Batería de servidores Piped alternativos (Si uno cae, salta al siguiente)
-  final instances = [
-    'https://sh.itjust.works',
-    'https://pipedapi.smnz.de',
-    'https://pipedapi.kavin.rocks'
+  // 2. Túneles Proxy: Si falla lo local, pasamos el audio a través de servidores puente directos
+  final proxies = [
+    "https://inv.tux.pizza/latest_version?id=$videoId&itag=140",
+    "https://invidious.nerdvpn.de/latest_version?id=$videoId&itag=140",
+    "https://invidious.jing.rocks/latest_version?id=$videoId&itag=140"
   ];
 
-  for (String instance in instances) {
+  for (String proxy in proxies) {
     try {
-      final request = await HttpClient().getUrl(Uri.parse('$instance/streams/$videoId'));
-      final response = await request.close();
-      if (response.statusCode != 200) continue;
-      
-      final stringData = await response.transform(utf8.decoder).join();
-      final data = jsonDecode(stringData);
-      
-      if (data['error'] != null) continue;
-      
-      final audioStreams = data['audioStreams'] as List;
-      if (audioStreams.isEmpty) continue;
-      
-      final m4aStreams = audioStreams.where((s) => s['format'] == 'M4A').toList();
-      if (m4aStreams.isNotEmpty) return m4aStreams.first['url'];
-      return audioStreams.first['url'];
-    } catch (e) {
-      print("Fallo Piped en $instance: $e");
-    }
+      final req = await HttpClient().headUrl(Uri.parse(proxy));
+      final res = await req.close();
+      // Si el servidor responde 200 (OK) o 302 (Redirección al audio), lo usamos.
+      if (res.statusCode == 200 || res.statusCode == 302) {
+        return proxy;
+      }
+    } catch (_) {}
   }
-  throw Exception("Motor de extracción bloqueado en todas las rutas.");
+  
+  throw Exception("Todas las rutas de audio están bloqueadas.");
 }
 
 @override
@@ -210,14 +202,7 @@ Future<void> playMediaItem(MediaItem item) async {
     savedPosition = existingItem['savedPosition'] ?? 0; 
   }
   historyBox.put(item.id, {
-    'id': item.id, 
-    'title': item.title, 
-    'artist': item.artist, 
-    'artUri': item.artUri?.toString() ?? '', 
-    'duration': item.duration?.inMilliseconds ?? 0, 
-    'timestamp': DateTime.now().millisecondsSinceEpoch, 
-    'playCount': playCount, 
-    'savedPosition': 0
+    'id': item.id, 'title': item.title, 'artist': item.artist, 'artUri': item.artUri?.toString() ?? '', 'duration': item.duration?.inMilliseconds ?? 0, 'timestamp': DateTime.now().millisecondsSinceEpoch, 'playCount': playCount, 'savedPosition': 0
   });
 
   try {
@@ -225,25 +210,11 @@ Future<void> playMediaItem(MediaItem item) async {
     await _player.stop(); 
     await _player.seek(Duration.zero); 
     
-    // ELIMINADA la llamada a _yt.videos.get que causaba el bloqueo.
+    // Llamamos al nuevo motor V3
+    final streamUrl = await _getStreamUrl(item.id);
     
-    String streamUrl = "";
-    try {
-       streamUrl = await _getPipedStreamUrl(item.id);
-    } catch (e) {
-       // Último recurso absoluto: Invidious Proxy directo a M4A
-       streamUrl = "https://invidious.jing.rocks/latest_version?id=${item.id}&itag=140";
-    }
-    
-    // Enmascaramos el reproductor como un iPhone nativo
-    final source = AudioSource.uri(
-      Uri.parse(streamUrl),
-      tag: item,
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1'
-      }
-    );
-    
+    // Reproductor nativo limpio, sin headers que confundan la redirección
+    final source = AudioSource.uri(Uri.parse(streamUrl), tag: item);
     await _player.setAudioSource(source);
     
     if (savedPosition > 0) { await _player.seek(Duration(milliseconds: savedPosition)); } 
@@ -253,7 +224,7 @@ Future<void> playMediaItem(MediaItem item) async {
     playbackState.add(playbackState.value.copyWith(processingState: AudioProcessingState.error, playing: false)); 
   }
 }
-@override Future<void> updateQueue(List<MediaItem> newQueue) async { queue.add(newQueue); }
+  @override Future<void> updateQueue(List<MediaItem> newQueue) async { queue.add(newQueue); }
 void shuffleQueue() { final currentQueue = queue.value.toList()..shuffle(); queue.add(currentQueue); }
 
 void insertNextInQueue(MediaItem item) {
