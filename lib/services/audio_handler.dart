@@ -152,44 +152,34 @@ Future<void> skipToNextBase() async {
     await playMediaItem(queueList[index]);
   }
 }
-
-// --- MOTOR PIPED API PARA BURLAR EL BLOQUEO (OPCIÓN A) ---
-// --- MOTOR V3: IP-MATCH & TÚNELES PROXY ---
-// --- MOTOR V4: BYPASS ABSOLUTO (SIN YOUTUBE EXPLODE) ---
+// --- MOTOR V5: TÚNEL PROXY FORZADO (ANTI IP-MISMATCH) ---
 Future<String> _getStreamUrl(String videoId) async {
-  // Lista de servidores descentralizados que ya tienen el PO Token resuelto
+  // El parámetro clave aquí es "&local=true". Esto obliga al servidor a descargar
+  // el audio y retransmitirlo, evitando que Google vea tu IP real y bloquee el flujo.
   final proxies = [
-    'https://pipedapi.kavin.rocks',
-    'https://pipedapi.smnz.de',
-    'https://sh.itjust.works',
-    'https://piped-api.garudalinux.org'
+    'https://inv.tux.pizza/latest_version?id=$videoId&itag=140&local=true',
+    'https://invidious.jing.rocks/latest_version?id=$videoId&itag=140&local=true',
+    'https://invidious.nerdvpn.de/latest_version?id=$videoId&itag=140&local=true',
+    'https://inv.nadeko.net/latest_version?id=$videoId&itag=140&local=true'
   ];
 
-  for (String proxy in proxies) {
+  for (String url in proxies) {
     try {
-      final request = await HttpClient().getUrl(Uri.parse('$proxy/streams/$videoId'));
-      // Máscara térmica: engañamos al servidor para que crea que somos un navegador de PC
-      request.headers.set('User-Agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)');
+      // Ping rápido de 3 segundos para no dejar la app colgada si un servidor cae
+      final client = HttpClient();
+      client.connectionTimeout = const Duration(seconds: 3);
+      final request = await client.headUrl(Uri.parse(url));
       final response = await request.close();
       
-      if (response.statusCode == 200) {
-        final stringData = await response.transform(utf8.decoder).join();
-        final data = jsonDecode(stringData);
-        
-        if (data['error'] == null && data['audioStreams'] != null) {
-          final audioStreams = data['audioStreams'] as List;
-          if (audioStreams.isNotEmpty) {
-            // Forzamos la extracción del formato más ligero y compatible (M4A)
-            final m4a = audioStreams.where((s) => s['format'].toString().toUpperCase() == 'M4A').toList();
-            return m4a.isNotEmpty ? m4a.first['url'] : audioStreams.first['url'];
-          }
-        }
+      // 200 (OK), 206 (Contenido parcial) o 302 (Redirección exitosa)
+      if (response.statusCode == 200 || response.statusCode == 206 || response.statusCode == 302) {
+        return url; 
       }
     } catch (_) {
-      continue; // Si un servidor está saturado, salta en milisegundos al siguiente
+      continue; // Si este servidor está saturado, salta al siguiente
     }
   }
-  throw Exception("Todos los puentes proxy están caídos.");
+  return proxies.first; // Si todo falla, forzamos el primero
 }
 
 @override
@@ -212,17 +202,11 @@ Future<void> playMediaItem(MediaItem item) async {
     await _player.stop(); 
     await _player.seek(Duration.zero); 
     
-    // Extracción limpia sin tocar los servidores principales de Google
+    // Llamamos al túnel proxy
     final streamUrl = await _getStreamUrl(item.id);
     
-    // Blindaje final: El reproductor DEBE llevar la misma máscara que usamos para extraer
-    final source = AudioSource.uri(
-      Uri.parse(streamUrl), 
-      tag: item,
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
-      }
-    );
+    // Conectamos el reproductor directamente al túnel
+    final source = AudioSource.uri(Uri.parse(streamUrl), tag: item);
     
     await _player.setAudioSource(source);
     
@@ -233,6 +217,7 @@ Future<void> playMediaItem(MediaItem item) async {
     playbackState.add(playbackState.value.copyWith(processingState: AudioProcessingState.error, playing: false)); 
   }
 }
+
   @override Future<void> updateQueue(List<MediaItem> newQueue) async { queue.add(newQueue); }
 void shuffleQueue() { final currentQueue = queue.value.toList()..shuffle(); queue.add(currentQueue); }
 
