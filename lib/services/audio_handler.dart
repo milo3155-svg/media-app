@@ -153,33 +153,23 @@ Future<void> skipToNextBase() async {
   }
 }
 // --- MOTOR V5: TÚNEL PROXY FORZADO (ANTI IP-MISMATCH) ---
+// --- MOTOR V6: EXTRACCIÓN LOCAL + MÁSCARA IOS ESTRICTA ---
 Future<String> _getStreamUrl(String videoId) async {
-  // El parámetro clave aquí es "&local=true". Esto obliga al servidor a descargar
-  // el audio y retransmitirlo, evitando que Google vea tu IP real y bloquee el flujo.
-  final proxies = [
-    'https://inv.tux.pizza/latest_version?id=$videoId&itag=140&local=true',
-    'https://invidious.jing.rocks/latest_version?id=$videoId&itag=140&local=true',
-    'https://invidious.nerdvpn.de/latest_version?id=$videoId&itag=140&local=true',
-    'https://inv.nadeko.net/latest_version?id=$videoId&itag=140&local=true'
-  ];
-
-  for (String url in proxies) {
-    try {
-      // Ping rápido de 3 segundos para no dejar la app colgada si un servidor cae
-      final client = HttpClient();
-      client.connectionTimeout = const Duration(seconds: 3);
-      final request = await client.headUrl(Uri.parse(url));
-      final response = await request.close();
-      
-      // 200 (OK), 206 (Contenido parcial) o 302 (Redirección exitosa)
-      if (response.statusCode == 200 || response.statusCode == 206 || response.statusCode == 302) {
-        return url; 
-      }
-    } catch (_) {
-      continue; // Si este servidor está saturado, salta al siguiente
-    }
+  final yt = YoutubeExplode();
+  try {
+    // 1. Engañamos al servidor usando la firma nativa de Apple para evadir el PO Token
+    final manifest = await yt.videos.streamsClient.getManifest(
+      videoId,
+      ytClients: [YoutubeApiClient.ios] 
+    );
+    yt.close();
+    
+    // Forzamos la extracción del formato de audio más ligero
+    return manifest.audioOnly.withHighestBitrate().url.toString();
+  } catch (e) {
+    yt.close();
+    throw Exception("Fallo en extracción local: $e");
   }
-  return proxies.first; // Si todo falla, forzamos el primero
 }
 
 @override
@@ -202,11 +192,17 @@ Future<void> playMediaItem(MediaItem item) async {
     await _player.stop(); 
     await _player.seek(Duration.zero); 
     
-    // Llamamos al túnel proxy
+    // Extraemos el enlace con tu misma IP
     final streamUrl = await _getStreamUrl(item.id);
     
-    // Conectamos el reproductor directamente al túnel
-    final source = AudioSource.uri(Uri.parse(streamUrl), tag: item);
+    // 2. EL BLINDAJE: Si no enviamos este header exacto, Google detecta a Android y lanza Error 403.
+    final source = AudioSource.uri(
+      Uri.parse(streamUrl), 
+      tag: item,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1'
+      }
+    );
     
     await _player.setAudioSource(source);
     
@@ -217,7 +213,6 @@ Future<void> playMediaItem(MediaItem item) async {
     playbackState.add(playbackState.value.copyWith(processingState: AudioProcessingState.error, playing: false)); 
   }
 }
-
   @override Future<void> updateQueue(List<MediaItem> newQueue) async { queue.add(newQueue); }
 void shuffleQueue() { final currentQueue = queue.value.toList()..shuffle(); queue.add(currentQueue); }
 
