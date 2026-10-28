@@ -252,28 +252,56 @@ Drawer _buildVIPDrawer(BuildContext context) {
 // ============================================================================
 // === SEARCH SCREEN: RADAR CON OJO PIRATA DE FONDO ===
 // ============================================================================
-class SearchScreen extends StatefulWidget { const SearchScreen({super.key}); @override State<SearchScreen> createState() => _SearchScreenState(); }
 class _SearchScreenState extends State<SearchScreen> {
   final searchController = TextEditingController();
-  late final YoutubeExplode yt;
-  List<Video> videos = [];
+  List<Map<String, dynamic>> videos = [];
   bool isLoading = false;
 
-
-  @override void initState() { super.initState(); yt = YoutubeExplode(); }
   @override void dispose() { searchController.dispose(); super.dispose(); }
-
 
   void searchVideos(String query) async {
     if (query.trim().isEmpty) return;
     FocusScope.of(context).unfocus();
     setState(() { isLoading = true; videos.clear(); });
+    
     try {
-      final results = await yt.search.search(query);
-      if (mounted) { setState(() { videos = results.toList(); isLoading = false; }); }
-    } catch (e) { if (mounted) { setState(() { isLoading = false; }); } }
+      // Red de servidores descentralizados (Evaden PO Token y bloqueo geográfico)
+      final proxies = ['https://pipedapi.kavin.rocks', 'https://pipedapi.smnz.de'];
+      bool success = false;
+      
+      for (String proxy in proxies) {
+        try {
+          final request = await HttpClient().getUrl(Uri.parse('$proxy/search?q=${Uri.encodeComponent(query)}&filter=music_songs'));
+          final response = await request.close();
+          
+          if (response.statusCode == 200) {
+            final stringData = await response.transform(utf8.decoder).join();
+            final data = jsonDecode(stringData);
+            final items = data['items'] as List;
+            
+            if (mounted) {
+              setState(() {
+                // Transformamos el JSON crudo a un formato compatible con tu UI
+                videos = items.where((i) => i['type'] == 'stream').map((i) => {
+                  'id': i['url'].toString().replaceAll('/watch?v=', ''),
+                  'title': i['title'] ?? 'Desconocido',
+                  'author': i['uploaderName'] ?? 'Desconocido',
+                  'duration': Duration(seconds: i['duration'] ?? 0),
+                  'thumbnail': i['thumbnail'] ?? ''
+                }).toList();
+                isLoading = false;
+              });
+            }
+            success = true;
+            break; // Si el servidor respondió, salimos del bucle
+          }
+        } catch (_) { continue; } // Si un servidor cae, intentamos el siguiente
+      }
+      if (!success && mounted) setState(() => isLoading = false);
+    } catch (e) { 
+      if (mounted) setState(() => isLoading = false); 
+    }
   }
-
 
   @override Widget build(BuildContext context) {
     return Scaffold(
@@ -289,7 +317,7 @@ class _SearchScreenState extends State<SearchScreen> {
             padding: const EdgeInsets.all(16.0),
             child: TextField(
               controller: searchController,
-              style: TextStyle(color: appColor.value), // Eliminamos GoogleFonts por seguridad local
+              style: TextStyle(color: appColor.value),
               decoration: InputDecoration(
                 hintText: 'Ingresar frecuencia a interceptar...', hintStyle: const TextStyle(color: Colors.grey),
                 border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
@@ -308,14 +336,14 @@ class _SearchScreenState extends State<SearchScreen> {
                 return ListView.builder(
                   padding: const EdgeInsets.only(bottom: 100), itemCount: videos.length,
                   itemBuilder: (context, index) {
-                    final video = videos[index]; final isPlaying = currentId == video.id.value;
+                    final video = videos[index]; final isPlaying = currentId == video['id'];
                     return ListTile(
-                      leading: ClipRRect(borderRadius: BorderRadius.circular(8), child: CachedNetworkImage(imageUrl: video.thumbnails.mediumResUrl, width: 80, height: 50, fit: BoxFit.cover)),
-                      title: Text(video.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white)),
-                      subtitle: Text(video.author, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.grey)),
+                      leading: ClipRRect(borderRadius: BorderRadius.circular(8), child: CachedNetworkImage(imageUrl: video['thumbnail'], width: 80, height: 50, fit: BoxFit.cover)),
+                      title: Text(video['title'], maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white)),
+                      subtitle: Text(video['author'], maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.grey)),
                       trailing: isPlaying ? Icon(Icons.equalizer, color: appColor.value) : const Icon(Icons.play_arrow, color: Colors.grey),
                       onTap: () async {
-                        final queueItems = videos.map((vid) => MediaItem(id: vid.id.value, title: vid.title, artist: vid.author, duration: vid.duration, artUri: Uri.parse(vid.thumbnails.highResUrl))).toList();
+                        final queueItems = videos.map((vid) => MediaItem(id: vid['id'], title: vid['title'], artist: vid['author'], duration: vid['duration'], artUri: Uri.parse(vid['thumbnail']))).toList();
                         await globalPlayQueue(queueItems, index);
                       },
                     );
@@ -329,7 +357,6 @@ class _SearchScreenState extends State<SearchScreen> {
     );
   }
 }
-
 
 // ============================================================================
 // === VAULT SCREEN: LA BÓVEDA LOCAL ===
