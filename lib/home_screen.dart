@@ -9,8 +9,8 @@ import 'package:audio_service/audio_service.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:google_fonts/google_fonts.dart';
-
-
+import 'dart:io';
+import 'dart:convert';
 import 'main.dart'; // Para acceso a globals (audioHandler, appColor)
 
 
