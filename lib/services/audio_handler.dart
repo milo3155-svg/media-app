@@ -8,6 +8,7 @@ import 'package:audio_service/audio_service.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 
+
 // Funciones globales de reproducción
 Future<void> globalPlay(MediaItem item, MyAudioHandler handler) async {
 await handler.updateQueue([item]); 
@@ -154,22 +155,41 @@ Future<void> skipToNextBase() async {
 }
 // --- MOTOR V5: TÚNEL PROXY FORZADO (ANTI IP-MISMATCH) ---
 // --- MOTOR V6: EXTRACCIÓN LOCAL + MÁSCARA IOS ESTRICTA ---
+// --- MOTOR V7: CLIENTE SMART TV + PIPED BACKUP ---
 Future<String> _getStreamUrl(String videoId) async {
-  final yt = YoutubeExplode();
+  // 1. Asalto principal: Fingimos ser una Smart TV (Android TV). 
+  // Las TVs no tienen el sistema BotGuard avanzado, por lo que evadimos el PO Token.
   try {
-    // 1. Engañamos al servidor usando la firma nativa de Apple para evadir el PO Token
+    final yt = YoutubeExplode();
     final manifest = await yt.videos.streamsClient.getManifest(
       videoId,
-      ytClients: [YoutubeApiClient.ios] 
+      ytClients: [YoutubeApiClient.tv] 
     );
     yt.close();
-    
-    // Forzamos la extracción del formato de audio más ligero
     return manifest.audioOnly.withHighestBitrate().url.toString();
   } catch (e) {
-    yt.close();
-    throw Exception("Fallo en extracción local: $e");
+    print("Fallo en cliente TV, activando respaldo Piped: $e");
   }
+
+  // 2. Respaldo definitivo: Si Google bloquea la TV, usamos los proxys de Piped
+  // que ya confirmamos que funcionan perfectamente en tu buscador.
+  final proxies = ['https://pipedapi.kavin.rocks', 'https://pipedapi.smnz.de', 'https://sh.itjust.works'];
+  for (String proxy in proxies) {
+    try {
+      final request = await HttpClient().getUrl(Uri.parse('$proxy/streams/$videoId'));
+      final response = await request.close();
+      if (response.statusCode == 200) {
+        final stringData = await response.transform(utf8.decoder).join();
+        final data = jsonDecode(stringData);
+        final audioStreams = data['audioStreams'] as List;
+        if (audioStreams.isNotEmpty) {
+          // Tomamos la URL proxy que oculta tu IP
+          return audioStreams.first['url'];
+        }
+      }
+    } catch (_) { continue; }
+  }
+  throw Exception("Todos los túneles de audio están bloqueados.");
 }
 
 @override
@@ -192,17 +212,10 @@ Future<void> playMediaItem(MediaItem item) async {
     await _player.stop(); 
     await _player.seek(Duration.zero); 
     
-    // Extraemos el enlace con tu misma IP
     final streamUrl = await _getStreamUrl(item.id);
     
-    // 2. EL BLINDAJE: Si no enviamos este header exacto, Google detecta a Android y lanza Error 403.
-    final source = AudioSource.uri(
-      Uri.parse(streamUrl), 
-      tag: item,
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1'
-      }
-    );
+    // Reproductor limpio. Dejamos que el sistema negocie la conexión nativamente sin máscaras sospechosas.
+    final source = AudioSource.uri(Uri.parse(streamUrl), tag: item);
     
     await _player.setAudioSource(source);
     
