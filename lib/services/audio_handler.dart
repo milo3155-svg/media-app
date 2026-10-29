@@ -151,18 +151,10 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
     }
   }
 
-  // --- MOTOR ORIGINAL EXITOSO (FUSIÓN) ---
+// --- PRUEBA DE ÁCIDO: AISLAMIENTO DE FALLAS ---
   Future<String> _getStreamUrl(String videoId) async {
-    final yt = YoutubeExplode();
-    try {
-      // El HttpOverrides global de main.dart protegerá esta conexión
-      final manifest = await yt.videos.streamsClient.getManifest(videoId);
-      yt.close();
-      return manifest.audioOnly.withHighestBitrate().url.toString();
-    } catch (e) {
-      yt.close();
-      throw Exception("Fallo extracción original: $e");
-    }
+    // Ignoramos YouTube por completo. Inyectamos una pista pública inbloqueable.
+    return 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3';
   }
 
   @override
