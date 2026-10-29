@@ -151,7 +151,7 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
     }
   }
 
-// --- MOTOR DEFINITIVO: BYPASS DE FIRMA IOS ESTRICTA ---
+  // --- MOTOR DEFINITIVO: BYPASS DE FIRMA IOS ESTRICTA ---
   Future<String> _getStreamUrl(String videoId) async {
     final yt = YoutubeExplode();
     try {
@@ -198,48 +198,6 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
         headers: {
           'User-Agent': 'com.google.ios.youtube/19.29.1 (iPhone16,2; U; CPU iOS 17_5_1 like Mac OS X;)',
           'Accept': '*/*'
-        }
-      );
-      
-      await _player.setAudioSource(source);
-      
-      if (savedPosition > 0) { await _player.seek(Duration(milliseconds: savedPosition)); } 
-      await _player.play();
-    } catch (e) { 
-      print("Playback Error: $e");
-      playbackState.add(playbackState.value.copyWith(processingState: AudioProcessingState.error, playing: false)); 
-    }
-  }
-
-  @override
-  Future<void> playMediaItem(MediaItem item) async {
-    mediaItem.add(item); 
-    final historyBox = Hive.box('history'); 
-    int playCount = 1; int savedPosition = 0; 
-    
-    if (historyBox.containsKey(item.id)) { 
-      final existingItem = historyBox.get(item.id); 
-      playCount = (existingItem['playCount'] ?? 0) + 1; 
-      savedPosition = existingItem['savedPosition'] ?? 0; 
-    }
-    historyBox.put(item.id, {
-      'id': item.id, 'title': item.title, 'artist': item.artist, 'artUri': item.artUri?.toString() ?? '', 'duration': item.duration?.inMilliseconds ?? 0, 'timestamp': DateTime.now().millisecondsSinceEpoch, 'playCount': playCount, 'savedPosition': 0
-    });
-
-    try {
-      playbackState.add(playbackState.value.copyWith(processingState: AudioProcessingState.loading, playing: true));
-      await _player.stop(); 
-      await _player.seek(Duration.zero); 
-      
-      final streamUrl = await _getStreamUrl(item.id);
-      
-      // Le pasamos exactamente la misma firma de Windows Chrome al ExoPlayer
-      // para que Google no note el cambio de manos
-      final source = AudioSource.uri(
-        Uri.parse(streamUrl), 
-        tag: item,
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36'
         }
       );
       
