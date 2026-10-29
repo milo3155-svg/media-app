@@ -153,34 +153,52 @@ Future<void> skipToNextBase() async {
     await playMediaItem(queueList[index]);
   }
 }
-// --- MOTOR V8: TÚNEL PROXY DEFINITIVO (ANTI 403 & IP-MISMATCH) ---
+// --- MOTOR V9: DESCARGA FANTASMA (CACHÉ LOCAL) ---
 Future<String> _getStreamUrl(String videoId) async {
-  // El parámetro mágico "&local=true" obliga al servidor a descargar los bytes 
-  // y enviártelos directamente. Tu teléfono jamás toca los servidores de Google.
-  final proxies = [
-    'https://inv.tux.pizza/latest_version?id=$videoId&itag=140&local=true',
-    'https://invidious.nerdvpn.de/latest_version?id=$videoId&itag=140&local=true',
-    'https://iv.ggtyler.dev/latest_version?id=$videoId&itag=140&local=true',
-    'https://invidious.jing.rocks/latest_version?id=$videoId&itag=140&local=true'
-  ];
-
-  for (String url in proxies) {
-    try {
-      // Petición de 3 segundos para confirmar que el servidor está vivo y retransmitiendo
-      final client = HttpClient();
-      client.connectionTimeout = const Duration(seconds: 3);
-      final request = await client.getUrl(Uri.parse(url));
-      final response = await request.close();
-      
-      // Si el proxy responde con éxito o contenido parcial, enviamos esa URL al reproductor
-      if (response.statusCode == 200 || response.statusCode == 206) {
-        return url; 
-      }
-    } catch (_) {
-      continue; // Si el servidor está lleno, saltamos al siguiente inmediatamente
+  String targetUrl = '';
+  
+  // 1. Obtenemos el enlace puro usando la red Piped (que sabemos que no falla)
+  try {
+    final proxies = ['https://pipedapi.kavin.rocks', 'https://pipedapi.smnz.de'];
+    for (String proxy in proxies) {
+      try {
+        final request = await HttpClient().getUrl(Uri.parse('$proxy/streams/$videoId'));
+        final response = await request.close();
+        if (response.statusCode == 200) {
+          final stringData = await response.transform(utf8.decoder).join();
+          final data = jsonDecode(stringData);
+          if (data['audioStreams'] != null && data['audioStreams'].isNotEmpty) {
+            targetUrl = data['audioStreams'].first['url'];
+            break;
+          }
+        }
+      } catch (_) { continue; }
     }
+  } catch (e) {
+    print("Fallo en Piped: $e");
   }
-  return proxies.first; // Respaldo extremo si todos tardan en responder
+
+  // Respaldo de TV si Piped colapsa
+  if (targetUrl.isEmpty) {
+    final yt = YoutubeExplode();
+    final manifest = await yt.videos.streamsClient.getManifest(videoId, ytClients: [YoutubeApiClient.tv]);
+    targetUrl = manifest.audioOnly.withHighestBitrate().url.toString();
+    yt.close();
+  }
+
+  // 2. EL BLINDAJE: Descargamos el archivo a la memoria temporal del celular
+  final tempDir = Directory.systemTemp;
+  final file = File('${tempDir.path}/$videoId.m4a');
+  
+  // Si no está descargada, la bajamos haciéndonos pasar por Chrome
+  if (!await file.exists()) {
+    final request = await HttpClient().getUrl(Uri.parse(targetUrl));
+    request.headers.set('User-Agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36');
+    final response = await request.close();
+    await response.pipe(file.openWrite());
+  }
+  
+  return file.path; // Retornamos la ruta física, NO una URL de internet
 }
 
 @override
@@ -203,11 +221,11 @@ Future<void> playMediaItem(MediaItem item) async {
     await _player.stop(); 
     await _player.seek(Duration.zero); 
     
-    // Obtenemos la URL del túnel proxy
-    final streamUrl = await _getStreamUrl(item.id);
+    // Obtenemos la ruta del disco duro (tomará unos segundos la primera vez)
+    final localPath = await _getStreamUrl(item.id);
     
-    // Conectamos el reproductor directamente al túnel seguro, sin máscaras.
-    final source = AudioSource.uri(Uri.parse(streamUrl), tag: item);
+    // 3. REPRODUCCIÓN LOCAL: Enganchamos el reproductor al archivo offline
+    final source = AudioSource.uri(Uri.file(localPath), tag: item);
     
     await _player.setAudioSource(source);
     
@@ -218,7 +236,8 @@ Future<void> playMediaItem(MediaItem item) async {
     playbackState.add(playbackState.value.copyWith(processingState: AudioProcessingState.error, playing: false)); 
   }
 }
-  @override Future<void> updateQueue(List<MediaItem> newQueue) async { queue.add(newQueue); }
+  //Hasta aqui termina
+    @override Future<void> updateQueue(List<MediaItem> newQueue) async { queue.add(newQueue); }
 void shuffleQueue() { final currentQueue = queue.value.toList()..shuffle(); queue.add(currentQueue); }
 
 void insertNextInQueue(MediaItem item) {
