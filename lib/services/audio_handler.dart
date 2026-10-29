@@ -153,52 +153,54 @@ Future<void> skipToNextBase() async {
     await playMediaItem(queueList[index]);
   }
 }
-// --- MOTOR V9: DESCARGA FANTASMA (CACHÉ LOCAL) ---
+
+// --- MOTOR V10: LA BOMBA NUCLEAR (COBALT CDN) ---
 Future<String> _getStreamUrl(String videoId) async {
-  String targetUrl = '';
+  // Red de servidores que extraerán, convertirán a MP3 y alojarán la pista por nosotros.
+  final nodes = [
+    'https://api.cobalt.tools', 
+    'https://cobalt.mrcyjanek.net',
+    'https://cobalt.q-n.app'
+  ];
   
-  // 1. Obtenemos el enlace puro usando la red Piped (que sabemos que no falla)
-  try {
-    final proxies = ['https://pipedapi.kavin.rocks', 'https://pipedapi.smnz.de'];
-    for (String proxy in proxies) {
-      try {
-        final request = await HttpClient().getUrl(Uri.parse('$proxy/streams/$videoId'));
-        final response = await request.close();
-        if (response.statusCode == 200) {
-          final stringData = await response.transform(utf8.decoder).join();
-          final data = jsonDecode(stringData);
-          if (data['audioStreams'] != null && data['audioStreams'].isNotEmpty) {
-            targetUrl = data['audioStreams'].first['url'];
-            break;
-          }
+  for (String node in nodes) {
+    try {
+      final client = HttpClient();
+      client.connectionTimeout = const Duration(seconds: 5);
+      final request = await client.postUrl(Uri.parse('$node/api/json'));
+      
+      // Cabeceras estrictas para evadir el firewall del propio proxy
+      request.headers.set('Accept', 'application/json');
+      request.headers.set('Content-Type', 'application/json');
+      request.headers.set('User-Agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)');
+      request.headers.set('Origin', 'https://cobalt.tools');
+      request.headers.set('Referer', 'https://cobalt.tools/');
+      
+      // Pedimos conversión a MP3 puro.
+      request.write(jsonEncode({
+        "url": "https://www.youtube.com/watch?v=$videoId",
+        "isAudioOnly": true,
+        "aFormat": "mp3" 
+      }));
+      
+      final response = await request.close();
+      if (response.statusCode == 200 || response.statusCode == 202) {
+        final stringData = await response.transform(utf8.decoder).join();
+        final data = jsonDecode(stringData);
+        if (data['url'] != null) {
+          // ¡Victoria! Un MP3 limpio en un servidor independiente. Adiós Google.
+          return data['url']; 
         }
-      } catch (_) { continue; }
-    }
-  } catch (e) {
-    print("Fallo en Piped: $e");
-  }
-
-  // Respaldo de TV si Piped colapsa
-  if (targetUrl.isEmpty) {
-    final yt = YoutubeExplode();
-    final manifest = await yt.videos.streamsClient.getManifest(videoId, ytClients: [YoutubeApiClient.tv]);
-    targetUrl = manifest.audioOnly.withHighestBitrate().url.toString();
-    yt.close();
-  }
-
-  // 2. EL BLINDAJE: Descargamos el archivo a la memoria temporal del celular
-  final tempDir = Directory.systemTemp;
-  final file = File('${tempDir.path}/$videoId.m4a');
-  
-  // Si no está descargada, la bajamos haciéndonos pasar por Chrome
-  if (!await file.exists()) {
-    final request = await HttpClient().getUrl(Uri.parse(targetUrl));
-    request.headers.set('User-Agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36');
-    final response = await request.close();
-    await response.pipe(file.openWrite());
+      }
+    } catch (_) { continue; } // Si un servidor está lleno, saltamos al siguiente
   }
   
-  return file.path; // Retornamos la ruta física, NO una URL de internet
+  // Respaldo extremo local si todo el internet arde
+  final yt = YoutubeExplode();
+  final manifest = await yt.videos.streamsClient.getManifest(videoId, ytClients: [YoutubeApiClient.ios]);
+  final url = manifest.audioOnly.withHighestBitrate().url.toString();
+  yt.close();
+  return url;
 }
 
 @override
@@ -221,11 +223,11 @@ Future<void> playMediaItem(MediaItem item) async {
     await _player.stop(); 
     await _player.seek(Duration.zero); 
     
-    // Obtenemos la ruta del disco duro (tomará unos segundos la primera vez)
-    final localPath = await _getStreamUrl(item.id);
+    // El motor V10 nos devuelve un link directo a un MP3 limpio.
+    final cleanMp3Url = await _getStreamUrl(item.id);
     
-    // 3. REPRODUCCIÓN LOCAL: Enganchamos el reproductor al archivo offline
-    final source = AudioSource.uri(Uri.file(localPath), tag: item);
+    // Conectamos a ExoPlayer. Al ser MP3 puro, no requiere validaciones.
+    final source = AudioSource.uri(Uri.parse(cleanMp3Url), tag: item);
     
     await _player.setAudioSource(source);
     
@@ -236,6 +238,7 @@ Future<void> playMediaItem(MediaItem item) async {
     playbackState.add(playbackState.value.copyWith(processingState: AudioProcessingState.error, playing: false)); 
   }
 }
+  
   //Hasta aqui termina
     @override Future<void> updateQueue(List<MediaItem> newQueue) async { queue.add(newQueue); }
 void shuffleQueue() { final currentQueue = queue.value.toList()..shuffle(); queue.add(currentQueue); }
