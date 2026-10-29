@@ -151,10 +151,64 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
     }
   }
 
-// --- PRUEBA DE ÁCIDO: AISLAMIENTO DE FALLAS ---
+// --- MOTOR DEFINITIVO: BYPASS DE FIRMA IOS ESTRICTA ---
   Future<String> _getStreamUrl(String videoId) async {
-    // Ignoramos YouTube por completo. Inyectamos una pista pública inbloqueable.
-    return 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3';
+    final yt = YoutubeExplode();
+    try {
+      // 1. Abandonamos la puerta Web. Forzamos la API interna de iOS que evade el PO Token.
+      final manifest = await yt.videos.streamsClient.getManifest(
+        videoId, 
+        ytClients: [YoutubeApiClient.ios]
+      );
+      yt.close();
+      return manifest.audioOnly.withHighestBitrate().url.toString();
+    } catch (e) {
+      yt.close();
+      throw Exception("Fallo extracción iOS: $e");
+    }
+  }
+
+  @override
+  Future<void> playMediaItem(MediaItem item) async {
+    mediaItem.add(item); 
+    final historyBox = Hive.box('history'); 
+    int playCount = 1; int savedPosition = 0; 
+    
+    if (historyBox.containsKey(item.id)) { 
+      final existingItem = historyBox.get(item.id); 
+      playCount = (existingItem['playCount'] ?? 0) + 1; 
+      savedPosition = existingItem['savedPosition'] ?? 0; 
+    }
+    historyBox.put(item.id, {
+      'id': item.id, 'title': item.title, 'artist': item.artist, 'artUri': item.artUri?.toString() ?? '', 'duration': item.duration?.inMilliseconds ?? 0, 'timestamp': DateTime.now().millisecondsSinceEpoch, 'playCount': playCount, 'savedPosition': 0
+    });
+
+    try {
+      playbackState.add(playbackState.value.copyWith(processingState: AudioProcessingState.loading, playing: true));
+      await _player.stop(); 
+      await _player.seek(Duration.zero); 
+      
+      final streamUrl = await _getStreamUrl(item.id);
+      
+      // 2. EL BLINDAJE FINAL: Le pasamos a ExoPlayer la huella digital EXACTA de la app de YouTube en iOS.
+      // Si ExoPlayer se presenta como Android o Chrome aquí, Google lanza Error 403.
+      final source = AudioSource.uri(
+        Uri.parse(streamUrl), 
+        tag: item,
+        headers: {
+          'User-Agent': 'com.google.ios.youtube/19.29.1 (iPhone16,2; U; CPU iOS 17_5_1 like Mac OS X;)',
+          'Accept': '*/*'
+        }
+      );
+      
+      await _player.setAudioSource(source);
+      
+      if (savedPosition > 0) { await _player.seek(Duration(milliseconds: savedPosition)); } 
+      await _player.play();
+    } catch (e) { 
+      print("Playback Error: $e");
+      playbackState.add(playbackState.value.copyWith(processingState: AudioProcessingState.error, playing: false)); 
+    }
   }
 
   @override
