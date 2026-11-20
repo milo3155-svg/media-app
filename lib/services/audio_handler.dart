@@ -23,11 +23,13 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
   late final YoutubeExplode _yt;
   Timer? _countdownTimer;
   bool _isTransitioning = false;
+  bool _isExtracting = false;
   final ValueNotifier<int> sleepTimerRemaining = ValueNotifier<int>(0);
 
   MyAudioHandler() {
     _yt = YoutubeExplode();
     _player.playbackEventStream.listen((PlaybackEvent event) {
+      if (_isExtracting) return;
       final playing = _player.playing;
       if (!playing && mediaItem.value != null) {
         _saveResumePosition(mediaItem.value!.id, _player.position.inMilliseconds);
@@ -62,6 +64,11 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
         }
       }
     });
+  }
+
+  String _shortErr(Object e) {
+    final s = e.toString().replaceAll('Exception: ', '').replaceAll('\n', ' ');
+    return s.length > 34 ? s.substring(0, 34) : s;
   }
 
   void _onTrackFinished() {
@@ -178,7 +185,10 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
   }
 
   @override
-  Future<void> play() => _player.play();
+  Future<void> play() async {
+    if (_isExtracting) return;
+    await _player.play();
+  }
 
   @override
   Future<void> pause() => _player.pause();
@@ -224,14 +234,13 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
     }
   }
 
-  // --- OPCIÓN B: DESCARGA HÍBRIDA VALIDADA ---
   Future<bool> _downloadAndValidate(String url, File file) async {
-    final client = HttpClient()..connectionTimeout = const Duration(seconds: 8);
+    final client = HttpClient()..connectionTimeout = const Duration(seconds: 6);
     IOSink? sink;
     try {
       final request = await client.getUrl(Uri.parse(url));
       request.headers.set('User-Agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36');
-      final response = await request.close().timeout(const Duration(seconds: 12));
+      final response = await request.close().timeout(const Duration(seconds: 8));
       final mime = response.headers.contentType?.mimeType ?? '';
 
       if ((response.statusCode != 200 && response.statusCode != 206) || mime.contains('text/html')) {
@@ -239,7 +248,7 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
       }
 
       sink = file.openWrite();
-      await for (final chunk in response) {
+      await for (final chunk in response.timeout(const Duration(seconds: 8))) {
         sink.add(chunk);
       }
       await sink.flush();
@@ -264,7 +273,8 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
     }
   }
 
-  Future<String> _getLocalAudioPath(String videoId) async {
+  Future<String> _getLocalAudioPath(MediaItem item) async {
+    final videoId = item.id;
     final tempDir = Directory.systemTemp;
     final file = File('${tempDir.path}/$videoId.m4a');
 
@@ -275,7 +285,6 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
       await file.delete();
     }
 
-    // 1. Intento vía red Piped con validación estricta de archivo descargado
     final pipedNodes = [
       'https://pipedapi.kavin.rocks',
       'https://pipedapi.adminforge.de',
@@ -283,13 +292,14 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
       'https://pipedapi.smnz.de',
     ];
 
-    for (final node in pipedNodes) {
-      final client = HttpClient()..connectionTimeout = const Duration(seconds: 6);
+    for (int i = 0; i < pipedNodes.length; i++) {
+      mediaItem.add(item.copyWith(artist: '[1/3] Piped ${i + 1}/4...'));
+      final client = HttpClient()..connectionTimeout = const Duration(seconds: 5);
       try {
-        final req = await client.getUrl(Uri.parse('$node/streams/$videoId'));
-        final res = await req.close().timeout(const Duration(seconds: 8));
+        final req = await client.getUrl(Uri.parse('${pipedNodes[i]}/streams/$videoId'));
+        final res = await req.close().timeout(const Duration(seconds: 6));
         if (res.statusCode == 200) {
-          final body = await res.transform(utf8.decoder).join();
+          final body = await res.transform(utf8.decoder).join().timeout(const Duration(seconds: 6));
           final data = jsonDecode(body);
           final streams = data['audioStreams'];
           if (streams is List && streams.isNotEmpty) {
@@ -299,6 +309,7 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
             );
             final audioUrl = mp4Stream['url']?.toString();
             if (audioUrl != null && audioUrl.isNotEmpty) {
+              mediaItem.add(item.copyWith(artist: '[1/3] Bajando Piped ${i + 1}...'));
               if (await _downloadAndValidate(audioUrl, file)) {
                 return file.path;
               }
@@ -311,18 +322,18 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
       }
     }
 
-    // 2. Respaldo: descarga por bloques con el cliente interno de YoutubeExplode
+    mediaItem.add(item.copyWith(artist: '[2/3] YT manifest...'));
     final yt = YoutubeExplode();
     IOSink? sink;
     try {
-      final manifest = await yt.videos.streamsClient.getManifest(
-        videoId,
-        ytClients: [YoutubeApiClient.tv, YoutubeApiClient.ios],
-      );
+      final manifest = await yt.videos.streamsClient
+          .getManifest(videoId, ytClients: [YoutubeApiClient.tv, YoutubeApiClient.ios])
+          .timeout(const Duration(seconds: 10));
       final audioInfo = manifest.audioOnly.withHighestBitrate();
+      mediaItem.add(item.copyWith(artist: '[2/3] Bajando YT...'));
       final byteStream = yt.videos.streamsClient.get(audioInfo);
       sink = file.openWrite();
-      await for (final chunk in byteStream) {
+      await for (final chunk in byteStream.timeout(const Duration(seconds: 8))) {
         sink.add(chunk);
       }
       await sink.flush();
@@ -333,7 +344,7 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
         return file.path;
       }
       if (await file.exists()) await file.delete();
-      throw Exception('Archivo descargado inválido (<100KB)');
+      throw Exception('Archivo <100KB');
     } catch (e) {
       if (sink != null) {
         try { await sink.close(); } catch (_) {}
@@ -341,7 +352,7 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
       if (await file.exists()) {
         try { await file.delete(); } catch (_) {}
       }
-      throw Exception('Piped y YT fallaron: $e');
+      throw Exception('YT: ${_shortErr(e)}');
     } finally {
       yt.close();
     }
@@ -349,7 +360,8 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
 
   @override
   Future<void> playMediaItem(MediaItem item) async {
-    mediaItem.add(item);
+    _isExtracting = true;
+    mediaItem.add(item.copyWith(artist: '[1/3] Iniciando...'));
     final historyBox = Hive.box('history');
     int playCount = 1;
     int savedPosition = 0;
@@ -371,22 +383,27 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
     });
 
     try {
-      playbackState.add(playbackState.value.copyWith(processingState: AudioProcessingState.loading, playing: true));
+      playbackState.add(playbackState.value.copyWith(processingState: AudioProcessingState.loading, playing: false));
       await _player.stop();
       await _player.seek(Duration.zero);
 
-      final localPath = await _getLocalAudioPath(item.id);
-      final source = AudioSource.uri(Uri.file(localPath), tag: item);
+      final localPath = await _getLocalAudioPath(item);
+      mediaItem.add(item.copyWith(artist: '[3/3] Cargando local...'));
 
+      final source = AudioSource.uri(Uri.file(localPath), tag: item);
       await _player.setAudioSource(source);
+
+      mediaItem.add(item);
+      _isExtracting = false;
 
       if (savedPosition > 0) {
         await _player.seek(Duration(milliseconds: savedPosition));
       }
       await _player.play();
     } catch (e) {
+      _isExtracting = false;
       print("Playback Error: $e");
-      mediaItem.add(item.copyWith(artist: "ERR: $e"));
+      mediaItem.add(item.copyWith(artist: "ERR: ${_shortErr(e)}"));
       playbackState.add(playbackState.value.copyWith(processingState: AudioProcessingState.error, playing: false));
     }
   }
