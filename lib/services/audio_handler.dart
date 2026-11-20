@@ -1,6 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
-import 'dart:io';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:just_audio/just_audio.dart';
@@ -66,9 +64,19 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
     });
   }
 
-  String _shortErr(Object e) {
-    final s = e.toString().replaceAll('Exception: ', '').replaceAll('\n', ' ');
-    return s.length > 34 ? s.substring(0, 34) : s;
+  String _shortErr(Object e, String videoId) {
+    final s = e
+        .toString()
+        .replaceAll(videoId, '')
+        .replaceAll('YoutubeExplodeException:', '')
+        .replaceAll('VideoUnplayableException:', '')
+        .replaceAll('YoutubeExplode', '')
+        .replaceAll('Exception:', '')
+        .replaceAll('Video ', '')
+        .replaceAll('\n', ' ')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+    return s.length > 42 ? s.substring(0, 42) : s;
   }
 
   void _onTrackFinished() {
@@ -234,134 +242,10 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
     }
   }
 
-  Future<bool> _downloadAndValidate(String url, File file) async {
-    final client = HttpClient()..connectionTimeout = const Duration(seconds: 6);
-    IOSink? sink;
-    try {
-      final request = await client.getUrl(Uri.parse(url));
-      request.headers.set('User-Agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36');
-      final response = await request.close().timeout(const Duration(seconds: 8));
-      final mime = response.headers.contentType?.mimeType ?? '';
-
-      if ((response.statusCode != 200 && response.statusCode != 206) || mime.contains('text/html')) {
-        return false;
-      }
-
-      sink = file.openWrite();
-      await for (final chunk in response.timeout(const Duration(seconds: 8))) {
-        sink.add(chunk);
-      }
-      await sink.flush();
-      await sink.close();
-      sink = null;
-
-      if (await file.exists() && await file.length() > 100 * 1024) {
-        return true;
-      }
-      if (await file.exists()) await file.delete();
-      return false;
-    } catch (_) {
-      if (sink != null) {
-        try { await sink.close(); } catch (_) {}
-      }
-      if (await file.exists()) {
-        try { await file.delete(); } catch (_) {}
-      }
-      return false;
-    } finally {
-      client.close(force: true);
-    }
-  }
-
-  Future<String> _getLocalAudioPath(MediaItem item) async {
-    final videoId = item.id;
-    final tempDir = Directory.systemTemp;
-    final file = File('${tempDir.path}/$videoId.m4a');
-
-    if (await file.exists() && await file.length() > 100 * 1024) {
-      return file.path;
-    }
-    if (await file.exists()) {
-      await file.delete();
-    }
-
-    final pipedNodes = [
-      'https://pipedapi.kavin.rocks',
-      'https://pipedapi.adminforge.de',
-      'https://api.piped.private.coffee',
-      'https://pipedapi.smnz.de',
-    ];
-
-    for (int i = 0; i < pipedNodes.length; i++) {
-      mediaItem.add(item.copyWith(artist: '[1/3] Piped ${i + 1}/4...'));
-      final client = HttpClient()..connectionTimeout = const Duration(seconds: 5);
-      try {
-        final req = await client.getUrl(Uri.parse('${pipedNodes[i]}/streams/$videoId'));
-        final res = await req.close().timeout(const Duration(seconds: 6));
-        if (res.statusCode == 200) {
-          final body = await res.transform(utf8.decoder).join().timeout(const Duration(seconds: 6));
-          final data = jsonDecode(body);
-          final streams = data['audioStreams'];
-          if (streams is List && streams.isNotEmpty) {
-            final mp4Stream = streams.firstWhere(
-              (s) => (s['mimeType']?.toString() ?? '').contains('mp4') && s['url'] != null,
-              orElse: () => streams.first,
-            );
-            final audioUrl = mp4Stream['url']?.toString();
-            if (audioUrl != null && audioUrl.isNotEmpty) {
-              mediaItem.add(item.copyWith(artist: '[1/3] Bajando Piped ${i + 1}...'));
-              if (await _downloadAndValidate(audioUrl, file)) {
-                return file.path;
-              }
-            }
-          }
-        }
-      } catch (_) {
-      } finally {
-        client.close(force: true);
-      }
-    }
-
-    mediaItem.add(item.copyWith(artist: '[2/3] YT manifest...'));
-    final yt = YoutubeExplode();
-    IOSink? sink;
-    try {
-      final manifest = await yt.videos.streamsClient
-          .getManifest(videoId, ytClients: [YoutubeApiClient.tv, YoutubeApiClient.ios])
-          .timeout(const Duration(seconds: 10));
-      final audioInfo = manifest.audioOnly.withHighestBitrate();
-      mediaItem.add(item.copyWith(artist: '[2/3] Bajando YT...'));
-      final byteStream = yt.videos.streamsClient.get(audioInfo);
-      sink = file.openWrite();
-      await for (final chunk in byteStream.timeout(const Duration(seconds: 8))) {
-        sink.add(chunk);
-      }
-      await sink.flush();
-      await sink.close();
-      sink = null;
-
-      if (await file.exists() && await file.length() > 100 * 1024) {
-        return file.path;
-      }
-      if (await file.exists()) await file.delete();
-      throw Exception('Archivo <100KB');
-    } catch (e) {
-      if (sink != null) {
-        try { await sink.close(); } catch (_) {}
-      }
-      if (await file.exists()) {
-        try { await file.delete(); } catch (_) {}
-      }
-      throw Exception('YT: ${_shortErr(e)}');
-    } finally {
-      yt.close();
-    }
-  }
-
   @override
   Future<void> playMediaItem(MediaItem item) async {
     _isExtracting = true;
-    mediaItem.add(item.copyWith(artist: '[1/3] Iniciando...'));
+    mediaItem.add(item.copyWith(artist: '[1/2] Manifest...'));
     final historyBox = Hive.box('history');
     int playCount = 1;
     int savedPosition = 0;
@@ -382,16 +266,32 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
       'savedPosition': 0,
     });
 
+    final yt = YoutubeExplode();
     try {
       playbackState.add(playbackState.value.copyWith(processingState: AudioProcessingState.loading, playing: false));
       await _player.stop();
       await _player.seek(Duration.zero);
 
-      final localPath = await _getLocalAudioPath(item);
-      mediaItem.add(item.copyWith(artist: '[3/3] Cargando local...'));
+      final manifest = await yt.videos.streamsClient
+          .getManifest(item.id)
+          .timeout(const Duration(seconds: 15));
 
-      final source = AudioSource.uri(Uri.file(localPath), tag: item);
-      await _player.setAudioSource(source);
+      final Uri primaryUrl = manifest.muxed.isNotEmpty
+          ? manifest.muxed.withHighestBitrate().url
+          : manifest.audioOnly.withHighestBitrate().url;
+
+      mediaItem.add(item.copyWith(artist: '[2/2] Cargando...'));
+
+      try {
+        final source = LockCachingAudioSource(primaryUrl, tag: item);
+        await _player.setAudioSource(source).timeout(const Duration(seconds: 15));
+      } catch (_) {
+        final Uri fallbackUrl = manifest.audioOnly.isNotEmpty
+            ? manifest.audioOnly.withHighestBitrate().url
+            : primaryUrl;
+        final fallbackSource = AudioSource.uri(fallbackUrl, tag: item);
+        await _player.setAudioSource(fallbackSource).timeout(const Duration(seconds: 15));
+      }
 
       mediaItem.add(item);
       _isExtracting = false;
@@ -403,8 +303,10 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
     } catch (e) {
       _isExtracting = false;
       print("Playback Error: $e");
-      mediaItem.add(item.copyWith(artist: "ERR: ${_shortErr(e)}"));
+      mediaItem.add(item.copyWith(artist: "ERR: ${_shortErr(e, item.id)}"));
       playbackState.add(playbackState.value.copyWith(processingState: AudioProcessingState.error, playing: false));
+    } finally {
+      yt.close();
     }
   }
 
