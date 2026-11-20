@@ -1,61 +1,44 @@
-import 'dart:ui'; 
-
+import 'dart:io';
+import 'dart:ui';
 import 'package:flutter/material.dart';
-
-import 'package:flutter/services.dart'; 
-
+import 'package:flutter/services.dart';
 import 'package:just_audio/just_audio.dart';
-
 import 'package:audio_session/audio_session.dart';
-
 import 'package:audio_service/audio_service.dart';
-
 import 'package:permission_handler/permission_handler.dart';
-
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
-
 import 'package:hive_flutter/hive_flutter.dart';
-
 import 'package:share_plus/share_plus.dart';
-
 import 'dart:math' as math;
-
-import 'dart:async'; 
-
-
+import 'dart:async';
 
 // 1. IMPORTAMOS NUESTRO MOTOR AISLADO Y BLINDADO
-
 import 'services/audio_handler.dart';
 
-
-
-late MyAudioHandler audioHandler;
-
-final ValueNotifier<bool> isHDMode = ValueNotifier<bool>(true);
-
-final ValueNotifier<Color> appColor = ValueNotifier<Color>(Colors.cyanAccent); 
-
-
-
-String formatGlobalDuration(Duration? d) {
-
-  if (d == null || d == Duration.zero) return "";
-
-  final minutes = d.inMinutes.remainder(60).toString().padLeft(2, '0');
-
-  final seconds = d.inSeconds.remainder(60).toString().padLeft(2, '0');
-
-  return "${d.inHours > 0 ? '${d.inHours}:' : ''}$minutes:$seconds";
-
+class VIPHttpOverrides extends HttpOverrides {
+  @override
+  HttpClient createHttpClient(SecurityContext? context) {
+    return super.createHttpClient(context)
+      ..userAgent =
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36';
+  }
 }
 
+late MyAudioHandler audioHandler;
+final ValueNotifier<bool> isHDMode = ValueNotifier<bool>(true);
+final ValueNotifier<Color> appColor = ValueNotifier<Color>(Colors.cyanAccent);
 
+String formatGlobalDuration(Duration? d) {
+  if (d == null || d == Duration.zero) return "";
+  final minutes = d.inMinutes.remainder(60).toString().padLeft(2, '0');
+  final seconds = d.inSeconds.remainder(60).toString().padLeft(2, '0');
+  return "${d.inHours > 0 ? '${d.inHours}:' : ''}$minutes:$seconds";
+}
 
 Future<void> main() async {
-
   WidgetsFlutterBinding.ensureInitialized();
-
+  HttpOverrides.global = VIPHttpOverrides();
+  
   await Hive.initFlutter();
 
   await Hive.openBox('favorites'); 
