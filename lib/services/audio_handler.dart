@@ -24,6 +24,7 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
   Timer? _countdownTimer;
   bool _isTransitioning = false;
   bool _isExtracting = false;
+  int _playRequestId = 0;
   final ValueNotifier<int> sleepTimerRemaining = ValueNotifier<int>(0);
 
   MyAudioHandler() {
@@ -67,21 +68,6 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
         }
       }
     });
-  }
-
-  String _shortErr(Object e, String videoId) {
-    final s = e
-        .toString()
-        .replaceAll(videoId, '')
-        .replaceAll('YoutubeExplodeException:', '')
-        .replaceAll('VideoUnplayableException:', '')
-        .replaceAll('YoutubeExplode', '')
-        .replaceAll('Exception:', '')
-        .replaceAll('Video ', '')
-        .replaceAll('\n', ' ')
-        .replaceAll(RegExp(r'\s+'), ' ')
-        .trim();
-    return s.length > 42 ? s.substring(0, 42) : s;
   }
 
   String _normalizeText(String text) {
@@ -441,6 +427,8 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
   @override
   Future<void> customAction(String name, [Map<String, dynamic>? extras]) async {
     if (name == 'kill') {
+      _playRequestId++;
+      _isExtracting = false;
       await _player.stop();
       mediaItem.add(null);
       queue.add([]);
@@ -468,6 +456,10 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
   @override
   Future<void> play() async {
     if (_isExtracting) return;
+    if (playbackState.value.processingState == AudioProcessingState.error && mediaItem.value != null) {
+      await playMediaItem(mediaItem.value!);
+      return;
+    }
     if (_player.processingState == ProcessingState.completed) {
       await _player.seek(Duration.zero);
     }
@@ -520,6 +512,7 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
 
   @override
   Future<void> playMediaItem(MediaItem item) async {
+    final requestId = ++_playRequestId;
     _isExtracting = true;
     mediaItem.add(item);
     final historyBox = Hive.box('history');
@@ -542,45 +535,68 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
       'savedPosition': 0,
     });
 
-    final yt = YoutubeExplode();
+    playbackState.add(playbackState.value.copyWith(
+      processingState: AudioProcessingState.loading,
+      playing: false,
+    ));
+
     try {
-      playbackState.add(playbackState.value.copyWith(processingState: AudioProcessingState.loading, playing: false));
       await _player.stop();
       await _player.seek(Duration.zero);
+    } catch (_) {}
 
-      final manifest = await yt.videos.streamsClient
-          .getManifest(item.id)
-          .timeout(const Duration(seconds: 15));
-
-      final Uri primaryUrl = manifest.muxed.isNotEmpty
-          ? manifest.muxed.withHighestBitrate().url
-          : manifest.audioOnly.withHighestBitrate().url;
-
+    Object? lastError;
+    for (int attempt = 0; attempt < 2; attempt++) {
+      if (requestId != _playRequestId) return;
+      final yt = YoutubeExplode();
       try {
-        final source = LockCachingAudioSource(primaryUrl, tag: item);
-        await _player.setAudioSource(source).timeout(const Duration(seconds: 15));
-      } catch (_) {
-        final Uri fallbackUrl = manifest.audioOnly.isNotEmpty
-            ? manifest.audioOnly.withHighestBitrate().url
-            : primaryUrl;
-        final fallbackSource = AudioSource.uri(fallbackUrl, tag: item);
-        await _player.setAudioSource(fallbackSource).timeout(const Duration(seconds: 15));
-      }
+        final manifest = await yt.videos.streamsClient
+            .getManifest(item.id)
+            .timeout(const Duration(seconds: 15));
+        if (requestId != _playRequestId) return;
 
-      _isExtracting = false;
+        final Uri primaryUrl = manifest.muxed.isNotEmpty
+            ? manifest.muxed.withHighestBitrate().url
+            : manifest.audioOnly.withHighestBitrate().url;
 
-      if (savedPosition > 0 && (item.duration == null || savedPosition < item.duration!.inMilliseconds - 5000)) {
-        await _player.seek(Duration(milliseconds: savedPosition));
+        try {
+          final source = LockCachingAudioSource(primaryUrl, tag: item);
+          await _player.setAudioSource(source).timeout(const Duration(seconds: 15));
+        } catch (_) {
+          if (requestId != _playRequestId) return;
+          final Uri fallbackUrl = manifest.audioOnly.isNotEmpty
+              ? manifest.audioOnly.withHighestBitrate().url
+              : primaryUrl;
+          final fallbackSource = AudioSource.uri(fallbackUrl, tag: item);
+          await _player.setAudioSource(fallbackSource).timeout(const Duration(seconds: 15));
+        }
+
+        if (requestId != _playRequestId) return;
+        _isExtracting = false;
+
+        if (savedPosition > 0 && (item.duration == null || savedPosition < item.duration!.inMilliseconds - 5000)) {
+          await _player.seek(Duration(milliseconds: savedPosition));
+        }
+        if (requestId != _playRequestId) return;
+        unawaited(_player.play());
+        return;
+      } catch (e) {
+        lastError = e;
+        if (attempt == 0 && requestId == _playRequestId) {
+          await Future.delayed(const Duration(milliseconds: 700));
+        }
+      } finally {
+        yt.close();
       }
-      unawaited(_player.play());
-    } catch (e) {
-      _isExtracting = false;
-      print("Playback Error: $e");
-      mediaItem.add(item.copyWith(artist: "ERR: ${_shortErr(e, item.id)}"));
-      playbackState.add(playbackState.value.copyWith(processingState: AudioProcessingState.error, playing: false));
-    } finally {
-      yt.close();
     }
+
+    if (requestId != _playRequestId) return;
+    _isExtracting = false;
+    print("Playback Error: $lastError");
+    playbackState.add(playbackState.value.copyWith(
+      processingState: AudioProcessingState.error,
+      playing: false,
+    ));
   }
 
   @override
