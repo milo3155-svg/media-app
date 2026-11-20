@@ -7,6 +7,7 @@ import 'package:just_audio/just_audio.dart';
 import 'package:audio_service/audio_service.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 import 'package:hive_flutter/hive_flutter.dart';
+import 'download_service.dart';
 
 Future<void> globalPlay(MediaItem item, MyAudioHandler handler) async {
   await handler.updateQueue([item]);
@@ -679,6 +680,23 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
       await _player.seek(Duration.zero);
     } catch (_) {}
 
+    final localPath = DownloadService.getLocalPath(item.id);
+    if (localPath != null) {
+      try {
+        await _player.setAudioSource(AudioSource.file(localPath, tag: item));
+        if (requestId != _playRequestId) return;
+        await _player.setSpeed(playbackSpeed.value);
+        await _player.setPitch(playbackPitch.value);
+        _isExtracting = false;
+        if (savedPosition > 0 && (item.duration == null || savedPosition < item.duration!.inMilliseconds - 5000)) {
+          await _player.seek(Duration(milliseconds: savedPosition));
+        }
+        if (requestId != _playRequestId) return;
+        unawaited(_player.play());
+        return;
+      } catch (_) {}
+    }
+    
     Object? lastError;
     for (int attempt = 0; attempt < 2; attempt++) {
       if (requestId != _playRequestId) return;
