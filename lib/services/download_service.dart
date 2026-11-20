@@ -5,8 +5,8 @@ import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 
 class DownloadService {
-  static final ValueNotifier> progressMap =
-      ValueNotifier>({});
+  static final ValueNotifier<dynamic> progressMap =
+      ValueNotifier<dynamic>(<String, double>{});
 
   static String? getLocalPath(String videoId) {
     if (!Hive.isBoxOpen('downloads')) return null;
