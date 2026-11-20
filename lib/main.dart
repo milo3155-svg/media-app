@@ -15,6 +15,7 @@ import 'package:share_plus/share_plus.dart';
 
 // 1. IMPORTAMOS NUESTRO MOTOR AISLADO Y BLINDADO
 import 'services/audio_handler.dart';
+import 'screens/discover_screens.dart';
 
 class VIPHttpOverrides extends HttpOverrides {
   @override
@@ -396,40 +397,162 @@ class MainNavigationScreen extends StatefulWidget {
 }
 
 class _MainNavigationScreenState extends State<MainNavigationScreen> {
-  int _currentIndex = 0;
-  final List<Widget> _screens = const [HomeScreen(), SportsTab(), SearchScreen(), VaultScreen(), SettingsTab()];
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      extendBody: true,
-      body: Stack(
+  String _activeSection = 'discover';
+
+  Widget _buildBody(Color color) {
+    if (_activeSection == 'vault') return const VaultScreen();
+    if (_activeSection == 'history') return const HomeScreen();
+    if (_activeSection == 'sports') return const SportsTab();
+    if (_activeSection == 'settings') return const SettingsTab();
+
+    return DefaultTabController(
+      length: 3,
+      child: Column(
         children: [
-          IndexedStack(index: _currentIndex, children: _screens),
-          const Positioned(left: 0, right: 0, bottom: 65, child: MiniPlayer()),
-        ],
-      ),
-      bottomNavigationBar: ClipRRect(
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 15.0, sigmaY: 15.0),
-          child: Container(
-            decoration: BoxDecoration(
-              color: Colors.black.withOpacity(0.4),
-              border: const Border(top: BorderSide(color: Colors.white10)),
-            ),
-            child: BottomNavigationBar(
-              currentIndex: _currentIndex,
-              onTap: (index) => setState(() => _currentIndex = index),
-              items: const [
-                BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Inicio'),
-                BottomNavigationBarItem(icon: Icon(Icons.sports_soccer), label: 'Deportes'),
-                BottomNavigationBarItem(icon: Icon(Icons.search), label: 'Buscar'),
-                BottomNavigationBarItem(icon: Icon(Icons.folder_special), label: 'Bóveda'),
-                BottomNavigationBarItem(icon: Icon(Icons.settings), label: 'Ajustes'),
+          Material(
+            color: const Color(0xFF0D0D0D),
+            child: TabBar(
+              indicatorColor: color,
+              labelColor: color,
+              unselectedLabelColor: Colors.grey,
+              tabs: const [
+                Tab(icon: Icon(Icons.home_outlined)),
+                Tab(icon: Icon(Icons.music_note)),
+                Tab(icon: Icon(Icons.star_border)),
               ],
             ),
           ),
-        ),
+          Expanded(
+            child: TabBarView(
+              children: [
+                HomeFeedTab(
+                  accentColor: color,
+                  onPlay: (item) => globalPlay(item, audioHandler),
+                  onOptions: (ctx, item) => globalShowOptions(ctx, item, color),
+                ),
+                TrendingTab(
+                  accentColor: color,
+                  onPlay: (item) => globalPlay(item, audioHandler),
+                  onOptions: (ctx, item) => globalShowOptions(ctx, item, color),
+                ),
+                const VaultScreen(),
+              ],
+            ),
+          ),
+        ],
       ),
+    );
+  }
+
+  String _sectionTitle() {
+    switch (_activeSection) {
+      case 'vault':
+        return 'Biblioteca';
+      case 'history':
+        return 'Volver a escuchar';
+      case 'sports':
+        return 'Deportes';
+      case 'settings':
+        return 'Ajustes';
+      default:
+        return 'Inicio';
+    }
+  }
+
+  void _selectSection(String section) {
+    Navigator.pop(context);
+    setState(() => _activeSection = section);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ValueListenableBuilder<Color>(
+      valueListenable: appColor,
+      builder: (context, color, _) {
+        return Scaffold(
+          appBar: AppBar(
+            centerTitle: false,
+            title: Text(_sectionTitle(), style: const TextStyle(fontWeight: FontWeight.bold)),
+            actions: [
+              IconButton(
+                icon: const Icon(Icons.search, color: Colors.white),
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const SearchScreen()),
+                  );
+                },
+              ),
+            ],
+          ),
+          drawer: Drawer(
+            backgroundColor: const Color(0xFF141414),
+            child: ListView(
+              padding: EdgeInsets.zero,
+              children: [
+                DrawerHeader(
+                  decoration: const BoxDecoration(color: Color(0xFF1A1A1A)),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      ConspiracyLogo(size: 52, color: color),
+                      const SizedBox(height: 10),
+                      const Text(
+                        'Spotify Killer VIP',
+                        style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+                      ),
+                      const Text('v1.1.0', style: TextStyle(color: Colors.grey, fontSize: 12)),
+                    ],
+                  ),
+                ),
+                ListTile(
+                  leading: Icon(Icons.explore, color: _activeSection == 'discover' ? color : Colors.white70),
+                  title: Text('Descubrir', style: TextStyle(color: _activeSection == 'discover' ? color : Colors.white)),
+                  selected: _activeSection == 'discover',
+                  selectedTileColor: color.withOpacity(0.12),
+                  onTap: () => _selectSection('discover'),
+                ),
+                ListTile(
+                  leading: Icon(Icons.library_music, color: _activeSection == 'vault' ? color : Colors.white70),
+                  title: Text('Biblioteca', style: TextStyle(color: _activeSection == 'vault' ? color : Colors.white)),
+                  selected: _activeSection == 'vault',
+                  selectedTileColor: color.withOpacity(0.12),
+                  onTap: () => _selectSection('vault'),
+                ),
+                ListTile(
+                  leading: Icon(Icons.history, color: _activeSection == 'history' ? color : Colors.white70),
+                  title: Text('Volver a escuchar', style: TextStyle(color: _activeSection == 'history' ? color : Colors.white)),
+                  selected: _activeSection == 'history',
+                  selectedTileColor: color.withOpacity(0.12),
+                  onTap: () => _selectSection('history'),
+                ),
+                const Divider(color: Colors.white12),
+                ListTile(
+                  leading: Icon(Icons.sports_soccer, color: _activeSection == 'sports' ? color : Colors.white70),
+                  title: Text('Deportes', style: TextStyle(color: _activeSection == 'sports' ? color : Colors.white)),
+                  selected: _activeSection == 'sports',
+                  selectedTileColor: color.withOpacity(0.12),
+                  onTap: () => _selectSection('sports'),
+                ),
+                ListTile(
+                  leading: Icon(Icons.settings, color: _activeSection == 'settings' ? color : Colors.white70),
+                  title: Text('Ajustes', style: TextStyle(color: _activeSection == 'settings' ? color : Colors.white)),
+                  selected: _activeSection == 'settings',
+                  selectedTileColor: color.withOpacity(0.12),
+                  onTap: () => _selectSection('settings'),
+                ),
+              ],
+            ),
+          ),
+          body: Stack(
+            children: [
+              _buildBody(color),
+              const Positioned(left: 0, right: 0, bottom: 8, child: MiniPlayer()),
+            ],
+          ),
+        );
+      },
     );
   }
 }
