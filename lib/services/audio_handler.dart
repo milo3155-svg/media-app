@@ -51,14 +51,16 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
       ));
     });
     _player.processingStateStream.listen((state) {
-      if (state == ProcessingState.completed) {
+      if (state == ProcessingState.completed && !_isExtracting) {
         _onTrackFinished();
       }
     });
     _player.positionStream.listen((pos) {
+      if (_isExtracting || _isTransitioning || !_player.playing) return;
+      if (_player.processingState != ProcessingState.ready) return;
       final dur = _player.duration;
       if (dur != null && dur.inSeconds > 10) {
-        if (dur.inMilliseconds - pos.inMilliseconds <= 800 && !_isTransitioning) {
+        if (dur.inMilliseconds - pos.inMilliseconds <= 800) {
           _onTrackFinished();
         }
       }
@@ -80,21 +82,63 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
     return s.length > 42 ? s.substring(0, 42) : s;
   }
 
+  Set<String> _extractWords(String text, {Set<String> ignore = const {}}) {
+    const noise = {
+      'official', 'video', 'music', 'lyrics', 'lyric', 'audio', 'hd', '4k',
+      'hq', 'live', 'letra', 'version', 'remastered', 'visualizer', 'ft',
+      'feat', 'mv', 'topic', 'vevo', 'clip', 'full', 'song', 'cancion'
+    };
+    final clean = text
+        .toLowerCase()
+        .replaceAll(RegExp(r'[áàäâ]'), 'a')
+        .replaceAll(RegExp(r'[éèëê]'), 'e')
+        .replaceAll(RegExp(r'[íìïî]'), 'i')
+        .replaceAll(RegExp(r'[óòöô]'), 'o')
+        .replaceAll(RegExp(r'[úùüû]'), 'u')
+        .replaceAll(RegExp(r'[^a-z0-9ñ\s]'), ' ');
+    return clean
+        .split(RegExp(r'\s+'))
+        .where((w) => w.length >= 2 && !noise.contains(w) && !ignore.contains(w))
+        .toSet();
+  }
+
+  bool _isCloneOfAny(String candidateTitle, List<Set<String>> playedTitleSets, Set<String> artistWords) {
+    final candWords = _extractWords(candidateTitle, ignore: artistWords);
+    if (candWords.isEmpty) return false;
+    for (final prevWords in playedTitleSets) {
+      if (prevWords.isEmpty) continue;
+      final matches = candWords.intersection(prevWords).length;
+      final similarity = matches / math.min(candWords.length, prevWords.length);
+      if (similarity >= 0.5) return true;
+    }
+    return false;
+  }
+
   void _onTrackFinished() {
     if (_isTransitioning || _isExtracting) return;
     _isTransitioning = true;
     _handleAutoPlayRadio();
   }
 
-  Future<Video?> _searchNextCandidate(String query, Set<String> playedIds, {required bool strictDuration}) async {
+  Future<Video?> _searchNextCandidate(
+    String query,
+    Set<String> playedIds,
+    List<Set<String>> playedTitleSets,
+    Set<String> artistWords, {
+    required bool strictDuration,
+  }) async {
     try {
       final results = await _yt.search.search(query).timeout(const Duration(seconds: 8));
-      final list = results.where((v) {
-        if (playedIds.contains(v.id.value)) return false;
-        if (!strictDuration) return v.duration == null || v.duration!.inSeconds >= 60;
-        return v.duration != null && v.duration!.inMinutes < 10 && v.duration!.inSeconds >= 60;
-      }).toList();
-      if (list.isNotEmpty) return list.first;
+      for (final v in results) {
+        if (playedIds.contains(v.id.value)) continue;
+        if (strictDuration) {
+          if (v.duration == null || v.duration!.inMinutes >= 10 || v.duration!.inSeconds < 60) continue;
+        } else {
+          if (v.duration != null && v.duration!.inSeconds < 60) continue;
+        }
+        if (_isCloneOfAny(v.title, playedTitleSets, artistWords)) continue;
+        return v;
+      }
     } catch (_) {}
     return null;
   }
@@ -115,6 +159,14 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
     }
 
     final playedIds = currentQueue.map((e) => e.id).toSet()..add(currentItem.id);
+    final artistWords = <String>{
+      ..._extractWords(currentItem.artist ?? ''),
+      for (final q in currentQueue) ..._extractWords(q.artist ?? ''),
+    };
+    final playedTitleSets = <Set<String>>[
+      _extractWords(currentItem.title, ignore: artistWords),
+      for (final q in currentQueue) _extractWords(q.title, ignore: artistWords),
+    ];
 
     try {
       Video? nextVideo;
@@ -122,29 +174,40 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
         var currentVideo = await _yt.videos.get(currentItem.id).timeout(const Duration(seconds: 8));
         var relatedVideos = await _yt.videos.getRelatedVideos(currentVideo).timeout(const Duration(seconds: 8));
         if (relatedVideos != null && relatedVideos.isNotEmpty) {
-          String clean1 = currentItem.title.toLowerCase().replaceAll(RegExp(r'[^a-z0-9áéíóúñ\s]'), '');
-          Set<String> words1 = clean1.split(' ').where((w) => w.length > 2).toSet();
           for (var v in relatedVideos) {
             if (playedIds.contains(v.id.value)) continue;
             if (v.duration != null && (v.duration!.inMinutes >= 10 || v.duration!.inSeconds < 60)) continue;
-            bool isClone = false;
-            String clean2 = v.title.toLowerCase().replaceAll(RegExp(r'[^a-z0-9áéíóúñ\s]'), '');
-            Set<String> words2 = clean2.split(' ').where((w) => w.length > 2).toSet();
-            if (words1.isNotEmpty && words2.isNotEmpty) {
-              int matches = words1.intersection(words2).length;
-              double similarity = matches / math.min(words1.length, words2.length);
-              if (similarity >= 0.5) isClone = true;
-            }
-            if (isClone) continue;
+            if (_isCloneOfAny(v.title, playedTitleSets, artistWords)) continue;
             nextVideo = v;
             break;
           }
         }
       } catch (_) {}
 
-      nextVideo ??= await _searchNextCandidate("${currentItem.artist ?? ''} éxitos", playedIds, strictDuration: true);
-      nextVideo ??= await _searchNextCandidate("${currentItem.title} canción", playedIds, strictDuration: true);
-      nextVideo ??= await _searchNextCandidate(currentItem.title, playedIds, strictDuration: false);
+      final seedArtist = (currentItem.artist ?? '').trim();
+      if (nextVideo == null && seedArtist.isNotEmpty) {
+        nextVideo = await _searchNextCandidate(
+          "$seedArtist éxitos",
+          playedIds,
+          playedTitleSets,
+          artistWords,
+          strictDuration: true,
+        );
+      }
+      nextVideo ??= await _searchNextCandidate(
+        "${currentItem.title} mix",
+        playedIds,
+        playedTitleSets,
+        artistWords,
+        strictDuration: true,
+      );
+      nextVideo ??= await _searchNextCandidate(
+        seedArtist.isNotEmpty ? seedArtist : currentItem.title,
+        playedIds,
+        playedTitleSets,
+        artistWords,
+        strictDuration: false,
+      );
 
       if (nextVideo != null) {
         final newItem = MediaItem(
@@ -209,7 +272,7 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
     if (_player.processingState == ProcessingState.completed) {
       await _player.seek(Duration.zero);
     }
-    await _player.play();
+    unawaited(_player.play());
   }
 
   @override
@@ -307,10 +370,10 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
 
       _isExtracting = false;
 
-      if (savedPosition > 0) {
+      if (savedPosition > 0 && (item.duration == null || savedPosition < item.duration!.inMilliseconds - 5000)) {
         await _player.seek(Duration(milliseconds: savedPosition));
       }
-      await _player.play();
+      unawaited(_player.play());
     } catch (e) {
       _isExtracting = false;
       print("Playback Error: $e");
