@@ -16,6 +16,8 @@ import 'package:share_plus/share_plus.dart';
 // 1. IMPORTAMOS NUESTRO MOTOR AISLADO Y BLINDADO
 import 'services/audio_handler.dart';
 import 'screens/discover_screens.dart';
+import 'services/download_service.dart';
+import 'screens/downloads_screen.dart';
 
 class VIPHttpOverrides extends HttpOverrides {
   @override
@@ -69,6 +71,7 @@ Future<void> main() async {
   await Hive.openBox('history');
   await Hive.openBox('search_history');
   await Hive.openBox('playlists');
+  await Hive.openBox('downloads');
 
   final session = await AudioSession.instance;
   await session.configure(const AudioSessionConfiguration.music());
@@ -402,6 +405,12 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
   Widget _buildBody(Color color) {
     if (_activeSection == 'vault') return const VaultScreen();
     if (_activeSection == 'history') return const HomeScreen();
+    if (_activeSection == 'downloads') {
+      return DownloadsScreen(
+        accentColor: color,
+        onPlayQueue: (items, idx) => globalPlayQueue(items, idx, audioHandler),
+      );
+    }
     if (_activeSection == 'sports') return const SportsTab();
     if (_activeSection == 'settings') return const SettingsTab();
 
@@ -450,6 +459,8 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
         return 'Biblioteca';
       case 'history':
         return 'Volver a escuchar';
+        case 'downloads':
+        return 'Gestor de descargas';
       case 'sports':
         return 'Deportes';
       case 'settings':
@@ -526,6 +537,13 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
                   selected: _activeSection == 'history',
                   selectedTileColor: color.withOpacity(0.12),
                   onTap: () => _selectSection('history'),
+                ),
+                ListTile(
+                  leading: Icon(Icons.download, color: _activeSection == 'downloads' ? color : Colors.white70),
+                  title: Text('Gestor de descargas', style: TextStyle(color: _activeSection == 'downloads' ? color : Colors.white)),
+                  selected: _activeSection == 'downloads',
+                  selectedTileColor: color.withOpacity(0.12),
+                  onTap: () => _selectSection('downloads'),
                 ),
                 const Divider(color: Colors.white12),
                 ListTile(
@@ -1734,6 +1752,55 @@ class FullScreenPlayer extends StatelessWidget {
                           onPressed: () => Navigator.pop(context),
                         ),
                         const Spacer(),
+                        ValueListenableBuilder<dynamic>(
+                          valueListenable: DownloadService.progressMap,
+                          builder: (context, rawMap, _) {
+                            final progress = (rawMap is Map) ? rawMap[mediaItem.id] : null;
+                            final downloaded = DownloadService.isDownloaded(mediaItem.id);
+                            if (progress != null) {
+                              return Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 12),
+                                child: SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: CircularProgressIndicator(
+                                    value: (progress as num).toDouble(),
+                                    color: color,
+                                    strokeWidth: 2.2,
+                                  ),
+                                ),
+                              );
+                            }
+                            return IconButton(
+                              tooltip: downloaded ? 'Descargada' : 'Descargar audio',
+                              icon: Icon(
+                                downloaded ? Icons.download_done : Icons.download,
+                                color: downloaded ? color : Colors.white70,
+                              ),
+                              onPressed: () async {
+                                if (downloaded) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(content: Text('Esta pista ya está descargada'), duration: Duration(seconds: 1)),
+                                  );
+                                  return;
+                                }
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(content: Text('Descargando audio...'), duration: Duration(seconds: 1)),
+                                );
+                                final ok = await DownloadService.downloadTrack(mediaItem);
+                                if (context.mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text(ok ? 'Descarga completada' : 'Error al descargar'),
+                                      backgroundColor: ok ? color : Colors.redAccent,
+                                      duration: const Duration(seconds: 2),
+                                    ),
+                                  );
+                                }
+                              },
+                            );
+                          },
+                        ),
                         ValueListenableBuilder<bool>(
                           valueListenable: audioHandler.sponsorBlockEnabled,
                           builder: (context, enabled, _) => IconButton(
