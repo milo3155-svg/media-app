@@ -12,21 +12,21 @@ dependencies:
   flutter_localizations:
     sdk: flutter
 
-  # Dependencias clave para el reproductor VIP y audio en segundo plano
-  just_audio: ^0.9.36
-  just_audio_background: ^0.0.1-beta.12
-  audio_session: ^0.1.18
-  audio_service: ^0.18.13
-  youtube_explode_dart: any
-  hive: ^2.2.3
-  hive_flutter: ^1.1.0
+  # Dependencias clave congeladas para el reproductor VIP y audio en segundo plano
+  just_audio: 0.9.44
+  just_audio_background: 0.0.1-beta.15
+  audio_session: 0.1.25
+  audio_service: 0.18.17
+  youtube_explode_dart: 3.0.0
+  hive: 2.2.3
+  hive_flutter: 1.1.0
   permission_handler: ^11.3.1
   share_plus: ^9.0.0
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
-  flutter_lints: ^3.0.0
+  flutter_lints: 3.0.2
 
 flutter:
   uses-material-design: true
