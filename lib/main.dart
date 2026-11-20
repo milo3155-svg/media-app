@@ -1212,6 +1212,186 @@ class _MiniPlayerState extends State<MiniPlayer> {
 class FullScreenPlayer extends StatelessWidget {
   const FullScreenPlayer({super.key});
 
+  Future<String> _fetchLyrics(MediaItem item) async {
+    final client = HttpClient()..connectionTimeout = const Duration(seconds: 8);
+    try {
+      final cleanTitle = item.title
+          .replaceAll(RegExp(r'\(.*?\)|\[.*?\]'), '')
+          .replaceAll(RegExp(r'(?i)official|video|audio|lyrics|letra|hd|4k|mv'), '')
+          .trim();
+      final query = '${item.artist ?? ''} $cleanTitle'.trim();
+      final uri = Uri.parse('https://lrclib.net/api/search?q=${Uri.encodeQueryComponent(query)}');
+      final req = await client.getUrl(uri);
+      final res = await req.close().timeout(const Duration(seconds: 10));
+      if (res.statusCode != 200) return 'No se encontró la letra para esta pista.';
+      final body = await res.transform(utf8.decoder).join().timeout(const Duration(seconds: 10));
+      final decoded = jsonDecode(body);
+      if (decoded is List && decoded.isNotEmpty) {
+        for (final entry in decoded) {
+          if (entry is Map) {
+            final plain = entry['plainLyrics']?.toString().trim() ?? '';
+            if (plain.isNotEmpty) return plain;
+          }
+        }
+      }
+      return 'No se encontró la letra para esta pista.';
+    } catch (_) {
+      return 'Error de conexión al buscar la letra.';
+    } finally {
+      client.close(force: true);
+    }
+  }
+
+  Future _fetchDetailsAndComments(String videoId) async {
+    final yt = YoutubeExplode();
+    try {
+      final video = await yt.videos.get(videoId).timeout(const Duration(seconds: 10));
+      final commentsList = <dynamic>[];
+      try {
+        final comments = await yt.videos.comments.getComments(video).timeout(const Duration(seconds: 8));
+        if (comments != null) {
+          for (final c in comments.take(15)) {
+            commentsList.add({
+              'author': c.author,
+              'text': c.text,
+              'likes': c.likeCount,
+            });
+          }
+        }
+      } catch (_) {}
+      return {
+        'description': video.description.trim().isEmpty ? 'Sin descripción.' : video.description.trim(),
+        'views': video.engagement.viewCount,
+        'likes': video.engagement.likeCount,
+        'comments': commentsList,
+      };
+    } catch (_) {
+      return {'error': 'No se pudieron cargar los detalles del video.'};
+    } finally {
+      yt.close();
+    }
+  }
+
+  void _showLyricsDialog(BuildContext context, MediaItem item, Color color) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF1A1A1A),
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (context) {
+        return SizedBox(
+          height: MediaQuery.of(context).size.height * 0.75,
+          child: Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Text(
+                  'Letra: ${item.title}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+                ),
+              ),
+              const Divider(color: Colors.white24, height: 1),
+              Expanded(
+                child: FutureBuilder<String>(
+                  future: _fetchLyrics(item),
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState == ConnectionState.waiting) {
+                      return Center(child: CircularProgressIndicator(color: color));
+                    }
+                    return SingleChildScrollView(
+                      padding: const EdgeInsets.all(20),
+                      child: SelectableText(
+                        snapshot.data ?? 'Sin resultados.',
+                        style: const TextStyle(color: Colors.white, fontSize: 15, height: 1.6),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  void _showDetailsAndCommentsDialog(BuildContext context, MediaItem item, Color color) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF1A1A1A),
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (context) {
+        return SizedBox(
+          height: MediaQuery.of(context).size.height * 0.8,
+          child: Column(
+            children: [
+              const Padding(
+                padding: EdgeInsets.all(16),
+                child: Text('Detalles y comentarios', style: TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.bold)),
+              ),
+              const Divider(color: Colors.white24, height: 1),
+              Expanded(
+                child: FutureBuilder(
+                  future: _fetchDetailsAndComments(item.id),
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState == ConnectionState.waiting) {
+                      return Center(child: CircularProgressIndicator(color: color));
+                    }
+                    final data = snapshot.data ?? {};
+                    if (data['error'] != null) {
+                      return Center(child: Text(data['error'].toString(), style: const TextStyle(color: Colors.grey)));
+                    }
+                    final comments = (data['comments'] as List?) ?? [];
+                    return ListView(
+                      padding: const EdgeInsets.all(16),
+                      children: [
+                        Text(item.title, style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+                        const SizedBox(height: 6),
+                        Text(
+                          '${item.artist ?? ''} • ${data['views'] ?? 0} vistas • ${data['likes'] ?? 0} me gusta',
+                          style: TextStyle(color: color, fontSize: 13),
+                        ),
+                        const SizedBox(height: 12),
+                        const Text('Descripción', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                        const SizedBox(height: 6),
+                        Text(data['description']?.toString() ?? '', style: const TextStyle(color: Colors.white70, fontSize: 13)),
+                        const Divider(color: Colors.white24, height: 28),
+                        Text('Comentarios (${comments.length})', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                        const SizedBox(height: 10),
+                        if (comments.isEmpty)
+                          const Text('Sin comentarios disponibles.', style: TextStyle(color: Colors.grey))
+                        else
+                          ...comments.map((c) {
+                            final author = c['author']?.toString() ?? 'Usuario';
+                            final text = c['text']?.toString() ?? '';
+                            final likes = c['likes'] ?? 0;
+                            return Padding(
+                              padding: const EdgeInsets.only(bottom: 14),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text('$author • 👍 $likes', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 13)),
+                                  const SizedBox(height: 4),
+                                  Text(text, style: const TextStyle(color: Colors.white70, fontSize: 13)),
+                                ],
+                              ),
+                            );
+                          }),
+                      ],
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   void _showSaveQueueDialog(BuildContext context, List<MediaItem> queueList, Color color) {
     if (queueList.isEmpty) return;
     final controller = TextEditingController();
@@ -1431,6 +1611,38 @@ class FullScreenPlayer extends StatelessWidget {
                           onPressed: () => Navigator.pop(context),
                         ),
                         const Spacer(),
+                        ValueListenableBuilder<bool>(
+                          valueListenable: audioHandler.sponsorBlockEnabled,
+                          builder: (context, enabled, _) => IconButton(
+                            tooltip: 'SponsorBlock',
+                            icon: Container(
+                              width: 24,
+                              height: 24,
+                              alignment: Alignment.center,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                border: Border.all(color: enabled ? color : Colors.grey, width: 1.8),
+                              ),
+                              child: Text(
+                                'S',
+                                style: TextStyle(
+                                  color: enabled ? color : Colors.grey,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 13,
+                                ),
+                              ),
+                            ),
+                            onPressed: () {
+                              audioHandler.toggleSponsorBlock();
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text(audioHandler.sponsorBlockEnabled.value ? 'SponsorBlock activado' : 'SponsorBlock desactivado'),
+                                  duration: const Duration(seconds: 1),
+                                ),
+                              );
+                            },
+                          ),
+                        ),
                         ValueListenableBuilder<int>(
                           valueListenable: audioHandler.sleepTimerRemaining,
                           builder: (context, remaining, _) => IconButton(
@@ -1443,6 +1655,9 @@ class FullScreenPlayer extends StatelessWidget {
                           color: const Color(0xFF1F1F1F),
                           onSelected: (value) {
                             switch (value) {
+                              case 'details':
+                                _showDetailsAndCommentsDialog(context, mediaItem, color);
+                                break;
                               case 'playlist':
                                 _showPlaylistDialog(context, mediaItem, color);
                                 break;
@@ -1451,6 +1666,9 @@ class FullScreenPlayer extends StatelessWidget {
                                 break;
                               case 'save_queue':
                                 _showSaveQueueDialog(context, audioHandler.queue.value, color);
+                                break;
+                              case 'lyrics':
+                                _showLyricsDialog(context, mediaItem, color);
                                 break;
                               case 'speed':
                                 _showSpeedPitchDialog(context, color);
@@ -1464,9 +1682,11 @@ class FullScreenPlayer extends StatelessWidget {
                             }
                           },
                           itemBuilder: (context) => [
+                            const PopupMenuItem(value: 'details', child: ListTile(dense: true, leading: Icon(Icons.info_outline, color: Colors.white), title: Text('Detalles y comentarios', style: TextStyle(color: Colors.white)))),
                             const PopupMenuItem(value: 'playlist', child: ListTile(dense: true, leading: Icon(Icons.playlist_add, color: Colors.white), title: Text('Añadir a una lista', style: TextStyle(color: Colors.white)))),
                             const PopupMenuItem(value: 'share', child: ListTile(dense: true, leading: Icon(Icons.share, color: Colors.white), title: Text('Compartir', style: TextStyle(color: Colors.white)))),
                             const PopupMenuItem(value: 'save_queue', child: ListTile(dense: true, leading: Icon(Icons.save_alt, color: Colors.white), title: Text('Guardar cola como playlist', style: TextStyle(color: Colors.white)))),
+                            const PopupMenuItem(value: 'lyrics', child: ListTile(dense: true, leading: Icon(Icons.lyrics, color: Colors.white), title: Text('Buscar letra', style: TextStyle(color: Colors.white)))),
                             const PopupMenuDivider(),
                             PopupMenuItem(
                               value: 'speed',
@@ -1763,5 +1983,3 @@ class FullScreenPlayer extends StatelessWidget {
     );
   }
 }
-
-
