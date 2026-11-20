@@ -28,8 +28,9 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
     _yt = YoutubeExplode();
     _player.playbackEventStream.listen((PlaybackEvent event) {
       if (_isExtracting) return;
-      final playing = _player.playing;
-      if (!playing && mediaItem.value != null) {
+      final completed = _player.processingState == ProcessingState.completed;
+      final playing = _player.playing && !completed;
+      if (!playing && mediaItem.value != null && !completed) {
         _saveResumePosition(mediaItem.value!.id, _player.position.inMilliseconds);
       }
       playbackState.add(playbackState.value.copyWith(
@@ -80,9 +81,22 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
   }
 
   void _onTrackFinished() {
-    if (_isTransitioning) return;
+    if (_isTransitioning || _isExtracting) return;
     _isTransitioning = true;
     _handleAutoPlayRadio();
+  }
+
+  Future<Video?> _searchNextCandidate(String query, Set<String> playedIds, {required bool strictDuration}) async {
+    try {
+      final results = await _yt.search.search(query).timeout(const Duration(seconds: 8));
+      final list = results.where((v) {
+        if (playedIds.contains(v.id.value)) return false;
+        if (!strictDuration) return v.duration == null || v.duration!.inSeconds >= 60;
+        return v.duration != null && v.duration!.inMinutes < 10 && v.duration!.inSeconds >= 60;
+      }).toList();
+      if (list.isNotEmpty) return list.first;
+    } catch (_) {}
+    return null;
   }
 
   Future<void> _handleAutoPlayRadio() async {
@@ -100,16 +114,19 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
       return;
     }
 
+    final playedIds = currentQueue.map((e) => e.id).toSet()..add(currentItem.id);
+
     try {
       Video? nextVideo;
       try {
-        var currentVideo = await _yt.videos.get(currentItem.id);
-        var relatedVideos = await _yt.videos.getRelatedVideos(currentVideo);
+        var currentVideo = await _yt.videos.get(currentItem.id).timeout(const Duration(seconds: 8));
+        var relatedVideos = await _yt.videos.getRelatedVideos(currentVideo).timeout(const Duration(seconds: 8));
         if (relatedVideos != null && relatedVideos.isNotEmpty) {
           String clean1 = currentItem.title.toLowerCase().replaceAll(RegExp(r'[^a-z0-9áéíóúñ\s]'), '');
           Set<String> words1 = clean1.split(' ').where((w) => w.length > 2).toSet();
           for (var v in relatedVideos) {
-            if (v.duration != null && (v.duration!.inMinutes >= 15 || v.duration!.inSeconds < 60)) continue;
+            if (playedIds.contains(v.id.value)) continue;
+            if (v.duration != null && (v.duration!.inMinutes >= 10 || v.duration!.inSeconds < 60)) continue;
             bool isClone = false;
             String clean2 = v.title.toLowerCase().replaceAll(RegExp(r'[^a-z0-9áéíóúñ\s]'), '');
             Set<String> words2 = clean2.split(' ').where((w) => w.length > 2).toSet();
@@ -125,18 +142,9 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
         }
       } catch (_) {}
 
-      if (nextVideo == null) {
-        final query = "${currentItem.artist} éxitos";
-        final searchResults = await _yt.search.search(query);
-        final list = searchResults
-            .where((v) =>
-                v.id.value != currentItem.id &&
-                v.duration != null &&
-                v.duration!.inMinutes < 15 &&
-                v.duration!.inSeconds >= 60)
-            .toList();
-        if (list.isNotEmpty) nextVideo = list.first;
-      }
+      nextVideo ??= await _searchNextCandidate("${currentItem.artist ?? ''} éxitos", playedIds, strictDuration: true);
+      nextVideo ??= await _searchNextCandidate("${currentItem.title} canción", playedIds, strictDuration: true);
+      nextVideo ??= await _searchNextCandidate(currentItem.title, playedIds, strictDuration: false);
 
       if (nextVideo != null) {
         final newItem = MediaItem(
@@ -149,8 +157,11 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
         final newQueue = List<MediaItem>.from(currentQueue)..add(newItem);
         await updateQueue(newQueue);
         await playMediaItem(newItem);
+      } else {
+        await _player.pause();
       }
-    } catch (e) {
+    } catch (_) {
+      await _player.pause();
     } finally {
       _isTransitioning = false;
     }
@@ -195,6 +206,9 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
   @override
   Future<void> play() async {
     if (_isExtracting) return;
+    if (_player.processingState == ProcessingState.completed) {
+      await _player.seek(Duration.zero);
+    }
     await _player.play();
   }
 
@@ -245,7 +259,7 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
   @override
   Future<void> playMediaItem(MediaItem item) async {
     _isExtracting = true;
-    mediaItem.add(item.copyWith(artist: '[1/2] Manifest...'));
+    mediaItem.add(item);
     final historyBox = Hive.box('history');
     int playCount = 1;
     int savedPosition = 0;
@@ -280,8 +294,6 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
           ? manifest.muxed.withHighestBitrate().url
           : manifest.audioOnly.withHighestBitrate().url;
 
-      mediaItem.add(item.copyWith(artist: '[2/2] Cargando...'));
-
       try {
         final source = LockCachingAudioSource(primaryUrl, tag: item);
         await _player.setAudioSource(source).timeout(const Duration(seconds: 15));
@@ -293,7 +305,6 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
         await _player.setAudioSource(fallbackSource).timeout(const Duration(seconds: 15));
       }
 
-      mediaItem.add(item);
       _isExtracting = false;
 
       if (savedPosition > 0) {
