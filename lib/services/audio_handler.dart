@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:just_audio/just_audio.dart';
@@ -82,27 +84,41 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
     return s.length > 42 ? s.substring(0, 42) : s;
   }
 
-  Set<String> _extractWords(String text, {Set<String> ignore = const {}}) {
-    const noise = {
-      'official', 'video', 'music', 'lyrics', 'lyric', 'audio', 'hd', '4k',
-      'hq', 'live', 'letra', 'version', 'remastered', 'visualizer', 'ft',
-      'feat', 'mv', 'topic', 'vevo', 'clip', 'full', 'song', 'cancion'
-    };
-    final clean = text
+  String _normalizeText(String text) {
+    return text
         .toLowerCase()
         .replaceAll(RegExp(r'[áàäâ]'), 'a')
         .replaceAll(RegExp(r'[éèëê]'), 'e')
         .replaceAll(RegExp(r'[íìïî]'), 'i')
         .replaceAll(RegExp(r'[óòöô]'), 'o')
         .replaceAll(RegExp(r'[úùüû]'), 'u')
-        .replaceAll(RegExp(r'[^a-z0-9ñ\s]'), ' ');
-    return clean
-        .split(RegExp(r'\s+'))
+        .replaceAll(RegExp(r'[^a-z0-9ñ\s]'), ' ')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+  }
+
+  Set<String> _extractWords(String text, {Set<String> ignore = const {}}) {
+    const noise = {
+      'official', 'video', 'music', 'lyrics', 'lyric', 'audio', 'hd', '4k',
+      'hq', 'live', 'letra', 'version', 'remastered', 'visualizer', 'ft',
+      'feat', 'mv', 'topic', 'vevo', 'clip', 'full', 'song', 'cancion'
+    };
+    return _normalizeText(text)
+        .split(' ')
         .where((w) => w.length >= 2 && !noise.contains(w) && !ignore.contains(w))
         .toSet();
   }
 
-  bool _isCloneOfAny(String candidateTitle, List<Set<String>> playedTitleSets, Set<String> artistWords) {
+  bool _isCloneOfAny(
+    String candidateTitle,
+    List<Set<String>> playedTitleSets,
+    Set<String> artistWords,
+    Set<String> playedNormalizedTitles, {
+    required bool isLongTrack,
+  }) {
+    final norm = _normalizeText(candidateTitle);
+    if (playedNormalizedTitles.contains(norm)) return true;
+    if (isLongTrack) return false;
     final candWords = _extractWords(candidateTitle, ignore: artistWords);
     if (candWords.isEmpty) return false;
     for (final prevWords in playedTitleSets) {
@@ -114,33 +130,142 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
     return false;
   }
 
+  bool _isValidDuration(Duration? d, {required bool isLongTrack, required bool strict}) {
+    if (isLongTrack) {
+      if (d == null) return !strict;
+      return strict ? d.inMinutes >= 5 : d.inSeconds >= 60;
+    }
+    if (strict) {
+      return d != null && d.inMinutes < 10 && d.inSeconds >= 60;
+    }
+    return d == null || d.inSeconds >= 60;
+  }
+
+  String _extractText(dynamic obj) {
+    if (obj is Map) {
+      if (obj['simpleText'] is String) return obj['simpleText'] as String;
+      if (obj['runs'] is List) {
+        return (obj['runs'] as List).whereType().map((r) => r['text']?.toString() ?? '').join();
+      }
+    }
+    return '';
+  }
+
+  Duration? _parseDuration(String? text) {
+    if (text == null || text.trim().isEmpty) return null;
+    final parts = text.trim().split(':').map((p) => int.tryParse(p.trim())).toList();
+    if (parts.any((p) => p == null)) return null;
+    if (parts.length == 3) {
+      return Duration(hours: parts[0]!, minutes: parts[1]!, seconds: parts[2]!);
+    } else if (parts.length == 2) {
+      return Duration(minutes: parts[0]!, seconds: parts[1]!);
+    } else if (parts.length == 1) {
+      return Duration(seconds: parts[0]!);
+    }
+    return null;
+  }
+
+  void _collectVideos(dynamic node, List<MediaItem> out, Set<String> seen) {
+    if (node is Map) {
+      final vr = node['videoRenderer'];
+      if (vr is Map) {
+        final videoId = vr['videoId']?.toString() ?? '';
+        if (videoId.isNotEmpty && seen.add(videoId)) {
+          final title = _extractText(vr['title']).trim();
+          String author = _extractText(vr['ownerText']).trim();
+          if (author.isEmpty) author = _extractText(vr['longBylineText']).trim();
+          if (author.isEmpty) author = _extractText(vr['shortBylineText']).trim();
+          if (author.isEmpty) author = 'YouTube';
+          final duration = _parseDuration(_extractText(vr['lengthText']));
+          if (title.isNotEmpty) {
+            out.add(MediaItem(
+              id: videoId,
+              title: title,
+              artist: author,
+              duration: duration,
+              artUri: Uri.parse('https://i.ytimg.com/vi/$videoId/hqdefault.jpg'),
+            ));
+          }
+        }
+      }
+      for (final value in node.values) {
+        _collectVideos(value, out, seen);
+      }
+    } else if (node is List) {
+      for (final item in node) {
+        _collectVideos(item, out, seen);
+      }
+    }
+  }
+
+  Future<List<MediaItem>> _searchYoutubeDirect(String query) async {
+    final client = HttpClient()..connectionTimeout = const Duration(seconds: 6);
+    try {
+      final req = await client.postUrl(
+        Uri.parse('https://www.youtube.com/youtubei/v1/search?prettyPrint=false'),
+      );
+      req.headers.set(HttpHeaders.contentTypeHeader, 'application/json; charset=utf-8');
+      req.headers.set('Accept-Language', 'es-MX,es;q=0.9');
+      final payload = jsonEncode({
+        'context': {
+          'client': {
+            'clientName': 'WEB',
+            'clientVersion': '2.20241120.00.00',
+            'hl': 'es',
+            'gl': 'MX',
+          },
+        },
+        'query': query,
+      });
+      req.add(utf8.encode(payload));
+      final res = await req.close().timeout(const Duration(seconds: 8));
+      if (res.statusCode != 200) return [];
+      final body = await res.transform(utf8.decoder).join().timeout(const Duration(seconds: 8));
+      final data = jsonDecode(body);
+      final items = <MediaItem>[];
+      final seen = <String>{};
+      _collectVideos(data, items, seen);
+      return items;
+    } catch (_) {
+      return [];
+    } finally {
+      client.close(force: true);
+    }
+  }
+
   void _onTrackFinished() {
     if (_isTransitioning || _isExtracting) return;
     _isTransitioning = true;
     _handleAutoPlayRadio();
   }
 
-  Future<Video?> _searchNextCandidate(
+  Future<MediaItem?> _searchNextCandidate(
     String query,
     Set<String> playedIds,
     List<Set<String>> playedTitleSets,
-    Set<String> artistWords, {
+    Set<String> artistWords,
+    Set<String> playedNormalizedTitles, {
+    required bool isLongTrack,
     required bool strictDuration,
   }) async {
-    try {
-      final results = await _yt.search.search(query).timeout(const Duration(seconds: 8));
-      for (final v in results) {
-        if (playedIds.contains(v.id.value)) continue;
-        if (strictDuration) {
-          if (v.duration == null || v.duration!.inMinutes >= 10 || v.duration!.inSeconds < 60) continue;
-        } else {
-          if (v.duration != null && v.duration!.inSeconds < 60) continue;
-        }
-        if (_isCloneOfAny(v.title, playedTitleSets, artistWords)) continue;
-        return v;
+    final trimmed = query.trim();
+    if (trimmed.isEmpty) return null;
+    final results = await _searchYoutubeDirect(trimmed);
+    for (final item in results) {
+      if (playedIds.contains(item.id)) continue;
+      if (!_isValidDuration(item.duration, isLongTrack: isLongTrack, strict: strictDuration)) continue;
+      if (_isCloneOfAny(item.title, playedTitleSets, artistWords, playedNormalizedTitles, isLongTrack: isLongTrack)) {
+        continue;
       }
-    } catch (_) {}
+      return item;
+    }
     return null;
+  }
+
+  String _extractShowPrefix(String title) {
+    final parts = title.split(RegExp(r'[:|\-]'));
+    final first = parts.isNotEmpty ? parts.first.trim() : '';
+    return first.length >= 4 ? first : title.trim();
   }
 
   Future<void> _handleAutoPlayRadio() async {
@@ -158,7 +283,12 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
       return;
     }
 
+    final bool isLongTrack = (currentItem.duration?.inMinutes ?? 0) >= 12;
     final playedIds = currentQueue.map((e) => e.id).toSet()..add(currentItem.id);
+    final playedNormalizedTitles = <String>{
+      _normalizeText(currentItem.title),
+      for (final q in currentQueue) _normalizeText(q.title),
+    };
     final artistWords = <String>{
       ..._extractWords(currentItem.artist ?? ''),
       for (final q in currentQueue) ..._extractWords(q.artist ?? ''),
@@ -169,57 +299,98 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
     ];
 
     try {
-      Video? nextVideo;
+      MediaItem? nextItem;
       try {
-        var currentVideo = await _yt.videos.get(currentItem.id).timeout(const Duration(seconds: 8));
-        var relatedVideos = await _yt.videos.getRelatedVideos(currentVideo).timeout(const Duration(seconds: 8));
+        var currentVideo = await _yt.videos.get(currentItem.id).timeout(const Duration(seconds: 6));
+        var relatedVideos = await _yt.videos.getRelatedVideos(currentVideo).timeout(const Duration(seconds: 6));
         if (relatedVideos != null && relatedVideos.isNotEmpty) {
           for (var v in relatedVideos) {
             if (playedIds.contains(v.id.value)) continue;
-            if (v.duration != null && (v.duration!.inMinutes >= 10 || v.duration!.inSeconds < 60)) continue;
-            if (_isCloneOfAny(v.title, playedTitleSets, artistWords)) continue;
-            nextVideo = v;
+            if (!_isValidDuration(v.duration, isLongTrack: isLongTrack, strict: true)) continue;
+            if (_isCloneOfAny(v.title, playedTitleSets, artistWords, playedNormalizedTitles, isLongTrack: isLongTrack)) {
+              continue;
+            }
+            nextItem = MediaItem(
+              id: v.id.value,
+              title: v.title,
+              artist: v.author,
+              duration: v.duration,
+              artUri: Uri.parse(v.thumbnails.highResUrl),
+            );
             break;
           }
         }
       } catch (_) {}
 
       final seedArtist = (currentItem.artist ?? '').trim();
-      if (nextVideo == null && seedArtist.isNotEmpty) {
-        nextVideo = await _searchNextCandidate(
-          "$seedArtist éxitos",
+
+      if (isLongTrack) {
+        final showPrefix = _extractShowPrefix(currentItem.title);
+        nextItem ??= await _searchNextCandidate(
+          showPrefix,
           playedIds,
           playedTitleSets,
           artistWords,
+          playedNormalizedTitles,
+          isLongTrack: true,
           strictDuration: true,
         );
-      }
-      nextVideo ??= await _searchNextCandidate(
-        "${currentItem.title} mix",
-        playedIds,
-        playedTitleSets,
-        artistWords,
-        strictDuration: true,
-      );
-      nextVideo ??= await _searchNextCandidate(
-        seedArtist.isNotEmpty ? seedArtist : currentItem.title,
-        playedIds,
-        playedTitleSets,
-        artistWords,
-        strictDuration: false,
-      );
-
-      if (nextVideo != null) {
-        final newItem = MediaItem(
-          id: nextVideo.id.value,
-          title: nextVideo.title,
-          artist: nextVideo.author,
-          duration: nextVideo.duration,
-          artUri: Uri.parse(nextVideo.thumbnails.highResUrl),
+        if (nextItem == null && seedArtist.isNotEmpty) {
+          nextItem = await _searchNextCandidate(
+            seedArtist,
+            playedIds,
+            playedTitleSets,
+            artistWords,
+            playedNormalizedTitles,
+            isLongTrack: true,
+            strictDuration: true,
+          );
+        }
+        nextItem ??= await _searchNextCandidate(
+          currentItem.title,
+          playedIds,
+          playedTitleSets,
+          artistWords,
+          playedNormalizedTitles,
+          isLongTrack: true,
+          strictDuration: false,
         );
-        final newQueue = List<MediaItem>.from(currentQueue)..add(newItem);
+      } else {
+        if (nextItem == null && seedArtist.isNotEmpty) {
+          nextItem = await _searchNextCandidate(
+            "$seedArtist éxitos",
+            playedIds,
+            playedTitleSets,
+            artistWords,
+            playedNormalizedTitles,
+            isLongTrack: false,
+            strictDuration: true,
+          );
+        }
+        nextItem ??= await _searchNextCandidate(
+          "${currentItem.title} mix",
+          playedIds,
+          playedTitleSets,
+          artistWords,
+          playedNormalizedTitles,
+          isLongTrack: false,
+          strictDuration: true,
+        );
+        nextItem ??= await _searchNextCandidate(
+          seedArtist.isNotEmpty ? seedArtist : currentItem.title,
+          playedIds,
+          playedTitleSets,
+          artistWords,
+          playedNormalizedTitles,
+          isLongTrack: false,
+          strictDuration: false,
+        );
+      }
+
+      if (nextItem != null) {
+        final newQueue = List<MediaItem>.from(currentQueue)..add(nextItem);
         await updateQueue(newQueue);
-        await playMediaItem(newItem);
+        await playMediaItem(nextItem);
       } else {
         await _player.pause();
       }
