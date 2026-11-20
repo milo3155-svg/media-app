@@ -133,12 +133,25 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
   bool _isValidDuration(Duration? d, {required bool isLongTrack, required bool strict}) {
     if (isLongTrack) {
       if (d == null) return !strict;
-      return strict ? d.inMinutes >= 5 : d.inSeconds >= 60;
+      return strict ? d.inMinutes >= 12 : d.inMinutes >= 8;
     }
     if (strict) {
       return d != null && d.inMinutes < 10 && d.inSeconds >= 60;
     }
     return d == null || d.inSeconds >= 60;
+  }
+
+  bool _matchesPodcastContext(MediaItem candidate, MediaItem current) {
+    final candArtist = _normalizeText(candidate.artist ?? '');
+    final currArtist = _normalizeText(current.artist ?? '');
+    if (currArtist.isNotEmpty && currArtist != 'youtube' && candArtist == currArtist) {
+      return true;
+    }
+    final showPrefix = _normalizeText(_extractShowPrefix(current.title));
+    if (showPrefix.length >= 4 && _normalizeText(candidate.title).contains(showPrefix)) {
+      return true;
+    }
+    return false;
   }
 
   String _extractText(dynamic obj) {
@@ -247,6 +260,7 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
     Set<String> playedNormalizedTitles, {
     required bool isLongTrack,
     required bool strictDuration,
+    bool Function(MediaItem)? predicate,
   }) async {
     final trimmed = query.trim();
     if (trimmed.isEmpty) return null;
@@ -254,6 +268,7 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
     for (final item in results) {
       if (playedIds.contains(item.id)) continue;
       if (!_isValidDuration(item.duration, isLongTrack: isLongTrack, strict: strictDuration)) continue;
+      if (predicate != null && !predicate(item)) continue;
       if (_isCloneOfAny(item.title, playedTitleSets, artistWords, playedNormalizedTitles, isLongTrack: isLongTrack)) {
         continue;
       }
@@ -310,13 +325,15 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
             if (_isCloneOfAny(v.title, playedTitleSets, artistWords, playedNormalizedTitles, isLongTrack: isLongTrack)) {
               continue;
             }
-            nextItem = MediaItem(
+            final candidate = MediaItem(
               id: v.id.value,
               title: v.title,
               artist: v.author,
               duration: v.duration,
               artUri: Uri.parse(v.thumbnails.highResUrl),
             );
+            if (isLongTrack && !_matchesPodcastContext(candidate, currentItem)) continue;
+            nextItem = candidate;
             break;
           }
         }
@@ -334,6 +351,7 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
           playedNormalizedTitles,
           isLongTrack: true,
           strictDuration: true,
+          predicate: (cand) => _matchesPodcastContext(cand, currentItem),
         );
         if (nextItem == null && seedArtist.isNotEmpty) {
           nextItem = await _searchNextCandidate(
@@ -344,10 +362,20 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
             playedNormalizedTitles,
             isLongTrack: true,
             strictDuration: true,
+            predicate: (cand) => _matchesPodcastContext(cand, currentItem),
           );
         }
         nextItem ??= await _searchNextCandidate(
-          currentItem.title,
+          showPrefix,
+          playedIds,
+          playedTitleSets,
+          artistWords,
+          playedNormalizedTitles,
+          isLongTrack: true,
+          strictDuration: true,
+        );
+        nextItem ??= await _searchNextCandidate(
+          seedArtist.isNotEmpty ? seedArtist : currentItem.title,
           playedIds,
           playedTitleSets,
           artistWords,
