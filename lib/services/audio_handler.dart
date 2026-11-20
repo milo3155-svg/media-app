@@ -27,10 +27,14 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
   bool _isExtracting = false;
   int _playRequestId = 0;
 
+  List> _sponsorSegments = [];
+  DateTime _lastSponsorSkip = DateTime.fromMillisecondsSinceEpoch(0);
+
   final ValueNotifier<int> sleepTimerRemaining = ValueNotifier<int>(0);
   final ValueNotifier<double> playbackSpeed = ValueNotifier<double>(1.0);
   final ValueNotifier<double> playbackPitch = ValueNotifier<double>(1.0);
   final ValueNotifier<LoopMode> loopMode = ValueNotifier<LoopMode>(LoopMode.off);
+  final ValueNotifier<bool> sponsorBlockEnabled = ValueNotifier<bool>(true);
 
   MyAudioHandler() {
     _player = AudioPlayer(
@@ -71,6 +75,22 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
     _player.positionStream.listen((pos) {
       if (_isExtracting || _isTransitioning || !_player.playing) return;
       if (_player.processingState != ProcessingState.ready) return;
+
+      if (sponsorBlockEnabled.value && _sponsorSegments.isNotEmpty) {
+        final posSec = pos.inMilliseconds / 1000.0;
+        if (DateTime.now().difference(_lastSponsorSkip).inMilliseconds >= 1500) {
+          for (final seg in _sponsorSegments) {
+            final start = seg['start'] ?? 0.0;
+            final end = seg['end'] ?? 0.0;
+            if (posSec >= start && posSec < end - 0.5) {
+              _lastSponsorSkip = DateTime.now();
+              unawaited(_player.seek(Duration(milliseconds: (end * 1000).round())));
+              return;
+            }
+          }
+        }
+      }
+
       final dur = _player.duration;
       if (dur != null && dur.inSeconds > 10) {
         if (dur.inMilliseconds - pos.inMilliseconds <= 800) {
@@ -78,6 +98,41 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
         }
       }
     });
+  }
+
+  void toggleSponsorBlock() {
+    sponsorBlockEnabled.value = !sponsorBlockEnabled.value;
+  }
+
+  Future<void> _fetchSponsorSegments(String videoId, int requestId) async {
+    final client = HttpClient()..connectionTimeout = const Duration(seconds: 5);
+    try {
+      final uri = Uri.parse(
+        'https://sponsor.ajay.app/api/skipSegments?videoID=$videoId&categories=["sponsor","selfpromo","interaction"]',
+      );
+      final req = await client.getUrl(uri);
+      final res = await req.close().timeout(const Duration(seconds: 6));
+      if (res.statusCode != 200 || requestId != _playRequestId) return;
+      final body = await res.transform(utf8.decoder).join().timeout(const Duration(seconds: 6));
+      final decoded = jsonDecode(body);
+      if (decoded is List && requestId == _playRequestId) {
+        final parsed = >[];
+        for (final entry in decoded) {
+          if (entry is Map && entry['segment'] is List && (entry['segment'] as List).length >= 2) {
+            final seg = entry['segment'] as List;
+            final start = (seg[0] as num).toDouble();
+            final end = (seg[1] as num).toDouble();
+            if (end > start + 1.0) {
+              parsed.add({'start': start, 'end': end});
+            }
+          }
+        }
+        _sponsorSegments = parsed;
+      }
+    } catch (_) {
+    } finally {
+      client.close(force: true);
+    }
   }
 
   String _normalizeText(String text) {
@@ -501,6 +556,7 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
     if (name == 'kill') {
       _playRequestId++;
       _isExtracting = false;
+      _sponsorSegments = [];
       await _player.stop();
       mediaItem.add(null);
       queue.add([]);
@@ -586,7 +642,13 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
   Future<void> playMediaItem(MediaItem item) async {
     final requestId = ++_playRequestId;
     _isExtracting = true;
+    _sponsorSegments = [];
     mediaItem.add(item);
+
+    if (sponsorBlockEnabled.value) {
+      unawaited(_fetchSponsorSegments(item.id, requestId));
+    }
+
     final historyBox = Hive.box('history');
     int playCount = 1;
     int savedPosition = 0;
