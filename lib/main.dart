@@ -1212,46 +1212,195 @@ class _MiniPlayerState extends State<MiniPlayer> {
 class FullScreenPlayer extends StatelessWidget {
   const FullScreenPlayer({super.key});
 
-  void _showQueueBottomSheet(BuildContext context, List<MediaItem> queueList, int currentIndex, Color color) {
+  void _showSaveQueueDialog(BuildContext context, List<MediaItem> queueList, Color color) {
+    if (queueList.isEmpty) return;
+    final controller = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: const Color(0xFF1A1A1A),
+        title: const Text("Guardar cola como playlist", style: TextStyle(color: Colors.white)),
+        content: TextField(
+          controller: controller,
+          style: const TextStyle(color: Colors.white),
+          decoration: InputDecoration(
+            hintText: "Nombre de la playlist",
+            hintStyle: const TextStyle(color: Colors.grey),
+            enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: color)),
+            focusedBorder: UnderlineInputBorder(borderSide: BorderSide(color: color)),
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text("Cancelar", style: TextStyle(color: Colors.grey))),
+          TextButton(
+            onPressed: () {
+              final name = controller.text.trim();
+              if (name.isNotEmpty) {
+                final tracks = queueList
+                    .map((e) => {
+                          'id': e.id,
+                          'title': e.title,
+                          'artist': e.artist ?? '',
+                          'artUri': e.artUri?.toString() ?? '',
+                          'duration': e.duration?.inMilliseconds ?? 0,
+                        })
+                    .toList();
+                Hive.box('playlists').put(name, tracks);
+                Navigator.pop(context);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('Cola guardada en "$name"'), backgroundColor: color),
+                );
+              }
+            },
+            child: Text("Guardar", style: TextStyle(color: color, fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showSpeedPitchDialog(BuildContext context, Color color) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF1A1A1A),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (context) {
+        return Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text("Velocidad y tono", style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+                  TextButton(
+                    onPressed: () {
+                      audioHandler.setSpeed(1.0);
+                      audioHandler.setPitch(1.0);
+                    },
+                    child: Text("Restablecer", style: TextStyle(color: color)),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              ValueListenableBuilder<double>(
+                valueListenable: audioHandler.playbackSpeed,
+                builder: (context, speed, _) {
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text("Velocidad: ${speed.toStringAsFixed(2)}x", style: const TextStyle(color: Colors.white70)),
+                      Slider(
+                        value: speed,
+                        min: 0.5,
+                        max: 2.0,
+                        divisions: 30,
+                        activeColor: color,
+                        onChanged: (v) => audioHandler.setSpeed(v),
+                      ),
+                    ],
+                  );
+                },
+              ),
+              ValueListenableBuilder<double>(
+                valueListenable: audioHandler.playbackPitch,
+                builder: (context, pitch, _) {
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text("Tono: ${pitch.toStringAsFixed(2)}x", style: const TextStyle(color: Colors.white70)),
+                      Slider(
+                        value: pitch,
+                        min: 0.5,
+                        max: 2.0,
+                        divisions: 30,
+                        activeColor: color,
+                        onChanged: (v) => audioHandler.setPitch(v),
+                      ),
+                    ],
+                  );
+                },
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  void _showEqualizerDialog(BuildContext context, Color color) {
     showModalBottomSheet(
       context: context,
       backgroundColor: const Color(0xFF1A1A1A),
       isScrollControlled: true,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (context) {
-        return Container(
-          height: MediaQuery.of(context).size.height * 0.6,
-          padding: const EdgeInsets.only(top: 16),
-          child: Column(
-            children: [
-              const Text("Cola de Reproducción", style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
-              const Divider(color: Colors.white24),
-              Expanded(
-                child: ListView.builder(
-                  itemCount: queueList.length,
-                  itemBuilder: (context, index) {
-                    final item = queueList[index];
-                    final isPlaying = index == currentIndex;
-                    return ListTile(
-                      leading: isPlaying ? Icon(Icons.volume_up, color: color) : Text('${index + 1}', style: const TextStyle(color: Colors.grey, fontSize: 16)),
-                      title: Text(item.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: isPlaying ? color : Colors.white)),
-                      subtitle: Text(item.artist ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.grey)),
-                      trailing: IconButton(
-                        icon: const Icon(Icons.close, color: Colors.grey),
-                        onPressed: () {
-                          audioHandler.removeFromQueue(item);
-                          Navigator.pop(context);
+        return Padding(
+          padding: const EdgeInsets.all(20),
+          child: FutureBuilder<AndroidEqualizerParameters>(
+            future: audioHandler.equalizer.parameters,
+            builder: (context, snapshot) {
+              if (!snapshot.hasData) {
+                return const SizedBox(
+                  height: 140,
+                  child: Center(child: Text("Reproduce una pista para activar el ecualizador.", style: TextStyle(color: Colors.grey))),
+                );
+              }
+              final params = snapshot.data!;
+              return Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text("Ecualizador", style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+                      StreamBuilder<bool>(
+                        stream: audioHandler.equalizer.enabledStream,
+                        builder: (context, enabledSnap) {
+                          final enabled = enabledSnap.data ?? false;
+                          return Switch(
+                            value: enabled,
+                            activeColor: color,
+                            onChanged: (v) => audioHandler.equalizer.setEnabled(v),
+                          );
                         },
                       ),
-                      onTap: () {
-                        Navigator.pop(context);
-                        audioHandler.skipToQueueItem(index);
+                    ],
+                  ),
+                  const Divider(color: Colors.white24),
+                  ...params.bands.map((band) {
+                    return StreamBuilder<double>(
+                      stream: band.gainStream,
+                      builder: (context, gainSnap) {
+                        final gain = (gainSnap.data ?? band.gain).clamp(params.minDecibels, params.maxDecibels);
+                        final freq = band.centerFrequency >= 1000
+                            ? "${(band.centerFrequency / 1000).toStringAsFixed(1)} kHz"
+                            : "${band.centerFrequency.round()} Hz";
+                        return Row(
+                          children: [
+                            SizedBox(width: 68, child: Text(freq, style: const TextStyle(color: Colors.white70, fontSize: 12))),
+                            Expanded(
+                              child: Slider(
+                                value: gain,
+                                min: params.minDecibels,
+                                max: params.maxDecibels,
+                                activeColor: color,
+                                onChanged: (v) => band.setGain(v),
+                              ),
+                            ),
+                            SizedBox(
+                              width: 44,
+                              child: Text("${gain.toStringAsFixed(1)} dB", style: const TextStyle(color: Colors.grey, fontSize: 11)),
+                            ),
+                          ],
+                        );
                       },
                     );
-                  },
-                ),
-              ),
-            ],
+                  }),
+                ],
+              );
+            },
           ),
         );
       },
@@ -1262,92 +1411,140 @@ class FullScreenPlayer extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       height: MediaQuery.of(context).size.height * 0.95,
-      decoration: const BoxDecoration(color: Color(0xFF0D0D0D), borderRadius: BorderRadius.vertical(top: Radius.circular(30))),
+      decoration: const BoxDecoration(color: Color(0xFF0D0D0D), borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
       child: StreamBuilder<MediaItem?>(
         stream: audioHandler.mediaItem,
         builder: (context, snapshot) {
           final mediaItem = snapshot.data;
           if (mediaItem == null) return const SizedBox.shrink();
-          return Column(
-            children: [
-              const SizedBox(height: 10),
-              Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(2))),
-              const SizedBox(height: 30),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 30),
-                child: ValueListenableBuilder<Color>(
-                  valueListenable: appColor,
-                  builder: (context, color, _) {
-                    return Container(
-                      decoration: BoxDecoration(boxShadow: [BoxShadow(color: color.withOpacity(0.15), blurRadius: 40, spreadRadius: 10)]),
-                      child: buildSafeThumb(mediaItem.artUri?.toString(), width: double.infinity, height: 320, radius: 20),
-                    );
-                  },
-                ),
-              ),
-              const SizedBox(height: 40),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 30),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(mediaItem.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
-                          const SizedBox(height: 4),
-                          Text(mediaItem.artist ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 16, color: Colors.grey)),
-                        ],
-                      ),
-                    ),
-                    ValueListenableBuilder(
-                      valueListenable: Hive.box('favorites').listenable(),
-                      builder: (context, Box box, _) {
-                        final isFav = box.containsKey(mediaItem.id);
-                        return IconButton(
-                          icon: Icon(isFav ? Icons.favorite : Icons.favorite_border, color: isFav ? Colors.redAccent : Colors.white),
-                          onPressed: () {
-                            if (isFav) {
-                              box.delete(mediaItem.id);
-                            } else {
-                              box.put(mediaItem.id, {
-                                'id': mediaItem.id,
-                                'title': mediaItem.title,
-                                'artist': mediaItem.artist,
-                                'artUri': mediaItem.artUri.toString(),
-                                'duration': mediaItem.duration?.inMilliseconds ?? 0,
-                              });
+          return ValueListenableBuilder<Color>(
+            valueListenable: appColor,
+            builder: (context, color, _) {
+              return Column(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    child: Row(
+                      children: [
+                        IconButton(
+                          icon: const Icon(Icons.keyboard_arrow_down, color: Colors.white, size: 28),
+                          onPressed: () => Navigator.pop(context),
+                        ),
+                        const Spacer(),
+                        ValueListenableBuilder<int>(
+                          valueListenable: audioHandler.sleepTimerRemaining,
+                          builder: (context, remaining, _) => IconButton(
+                            icon: Icon(Icons.timer, color: remaining > 0 ? color : Colors.white70),
+                            onPressed: () => _showSleepTimerDialog(context),
+                          ),
+                        ),
+                        PopupMenuButton<String>(
+                          icon: const Icon(Icons.more_vert, color: Colors.white),
+                          color: const Color(0xFF1F1F1F),
+                          onSelected: (value) {
+                            switch (value) {
+                              case 'playlist':
+                                _showPlaylistDialog(context, mediaItem, color);
+                                break;
+                              case 'share':
+                                Share.share('${mediaItem.title}\nhttps://youtu.be/${mediaItem.id}');
+                                break;
+                              case 'save_queue':
+                                _showSaveQueueDialog(context, audioHandler.queue.value, color);
+                                break;
+                              case 'speed':
+                                _showSpeedPitchDialog(context, color);
+                                break;
+                              case 'eq':
+                                _showEqualizerDialog(context, color);
+                                break;
+                              case 'reload':
+                                audioHandler.reloadCurrentTrack();
+                                break;
                             }
                           },
-                        );
-                      },
+                          itemBuilder: (context) => [
+                            const PopupMenuItem(value: 'playlist', child: ListTile(dense: true, leading: Icon(Icons.playlist_add, color: Colors.white), title: Text('Añadir a una lista', style: TextStyle(color: Colors.white)))),
+                            const PopupMenuItem(value: 'share', child: ListTile(dense: true, leading: Icon(Icons.share, color: Colors.white), title: Text('Compartir', style: TextStyle(color: Colors.white)))),
+                            const PopupMenuItem(value: 'save_queue', child: ListTile(dense: true, leading: Icon(Icons.save_alt, color: Colors.white), title: Text('Guardar cola como playlist', style: TextStyle(color: Colors.white)))),
+                            const PopupMenuDivider(),
+                            PopupMenuItem(
+                              value: 'speed',
+                              child: ListTile(
+                                dense: true,
+                                leading: const Icon(Icons.speed, color: Colors.white),
+                                title: const Text('Velocidad y tono', style: TextStyle(color: Colors.white)),
+                                trailing: Text('${audioHandler.playbackSpeed.value.toStringAsFixed(1)}x', style: const TextStyle(color: Colors.grey)),
+                              ),
+                            ),
+                            const PopupMenuItem(value: 'eq', child: ListTile(dense: true, leading: Icon(Icons.equalizer, color: Colors.white), title: Text('Ecualizador', style: TextStyle(color: Colors.white)))),
+                            const PopupMenuDivider(),
+                            const PopupMenuItem(value: 'reload', child: ListTile(dense: true, leading: Icon(Icons.refresh, color: Colors.white), title: Text('Reload player', style: TextStyle(color: Colors.white)))),
+                          ],
+                        ),
+                      ],
                     ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 20),
-              StreamBuilder<Duration>(
-                stream: AudioService.position,
-                builder: (context, snapshotPosition) {
-                  final pos = snapshotPosition.data ?? Duration.zero;
-                  return StreamBuilder<PlaybackState>(
-                    stream: audioHandler.playbackState,
-                    builder: (context, snapshot) {
-                      final state = snapshot.data;
-                      final isLoading = state?.processingState == AudioProcessingState.loading ||
-                          state?.processingState == AudioProcessingState.buffering;
-                      final dur = mediaItem.duration ?? Duration.zero;
-                      final buffered = state?.bufferedPosition ?? Duration.zero;
-                      final maxDur = dur.inMilliseconds.toDouble() > 0 ? dur.inMilliseconds.toDouble() : 1.0;
-                      return Column(
-                        children: [
-                          Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 30),
-                            child: ValueListenableBuilder<Color>(
-                              valueListenable: appColor,
-                              builder: (context, color, _) {
-                                return SliderTheme(
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    child: Row(
+                      children: [
+                        buildSafeThumb(mediaItem.artUri?.toString(), width: 100, height: 100, radius: 14),
+                        const SizedBox(width: 14),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(mediaItem.title, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: Colors.white)),
+                              const SizedBox(height: 6),
+                              Text(mediaItem.artist ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 14, color: Colors.grey)),
+                            ],
+                          ),
+                        ),
+                        ValueListenableBuilder(
+                          valueListenable: Hive.box('favorites').listenable(),
+                          builder: (context, Box box, _) {
+                            final isFav = box.containsKey(mediaItem.id);
+                            return IconButton(
+                              icon: Icon(isFav ? Icons.favorite : Icons.favorite_border, color: isFav ? Colors.redAccent : Colors.white),
+                              onPressed: () {
+                                if (isFav) {
+                                  box.delete(mediaItem.id);
+                                } else {
+                                  box.put(mediaItem.id, {
+                                    'id': mediaItem.id,
+                                    'title': mediaItem.title,
+                                    'artist': mediaItem.artist,
+                                    'artUri': mediaItem.artUri.toString(),
+                                    'duration': mediaItem.duration?.inMilliseconds ?? 0,
+                                  });
+                                }
+                              },
+                            );
+                          },
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  StreamBuilder<Duration>(
+                    stream: AudioService.position,
+                    builder: (context, snapshotPosition) {
+                      final pos = snapshotPosition.data ?? Duration.zero;
+                      return StreamBuilder<PlaybackState>(
+                        stream: audioHandler.playbackState,
+                        builder: (context, snapshot) {
+                          final state = snapshot.data;
+                          final isLoading = state?.processingState == AudioProcessingState.loading ||
+                              state?.processingState == AudioProcessingState.buffering;
+                          final dur = mediaItem.duration ?? Duration.zero;
+                          final buffered = state?.bufferedPosition ?? Duration.zero;
+                          final maxDur = dur.inMilliseconds.toDouble() > 0 ? dur.inMilliseconds.toDouble() : 1.0;
+                          return Column(
+                            children: [
+                              Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 20),
+                                child: SliderTheme(
                                   data: SliderTheme.of(context).copyWith(
                                     trackHeight: 4,
                                     activeTrackColor: color,
@@ -1365,64 +1562,57 @@ class FullScreenPlayer extends StatelessWidget {
                                       if (!isLoading) audioHandler.seek(Duration(milliseconds: v.round()));
                                     },
                                   ),
-                                );
-                              },
-                            ),
-                          ),
-                          Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 30),
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Text(formatGlobalDuration(pos), style: const TextStyle(color: Colors.grey, fontSize: 12)),
-                                Text(formatGlobalDuration(mediaItem.duration), style: const TextStyle(color: Colors.grey, fontSize: 12)),
-                              ],
-                            ),
-                          ),
-                        ],
+                                ),
+                              ),
+                              Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 24),
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Text(formatGlobalDuration(pos), style: const TextStyle(color: Colors.grey, fontSize: 12)),
+                                    Text(formatGlobalDuration(mediaItem.duration), style: const TextStyle(color: Colors.grey, fontSize: 12)),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          );
+                        },
                       );
                     },
-                  );
-                },
-              ),
-              const Spacer(),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 30),
-                child: StreamBuilder<PlaybackState>(
-                  stream: audioHandler.playbackState,
-                  builder: (context, snapshot) {
-                    final state = snapshot.data;
-                    final playing = state?.playing ?? false;
-                    final isLoading = state?.processingState == AudioProcessingState.loading ||
-                        state?.processingState == AudioProcessingState.buffering;
-                    return Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                      children: [
-                        ValueListenableBuilder<int>(
-                          valueListenable: audioHandler.sleepTimerRemaining,
-                          builder: (context, remaining, _) {
-                            return IconButton(
-                              icon: Icon(Icons.timer, color: remaining > 0 ? appColor.value : Colors.grey),
-                              onPressed: () => _showSleepTimerDialog(context),
-                            );
-                          },
-                        ),
-                        IconButton(icon: const Icon(Icons.skip_previous, color: Colors.white, size: 36), onPressed: () => audioHandler.skipToPrevious()),
-                        ValueListenableBuilder<Color>(
-                          valueListenable: appColor,
-                          builder: (context, color, _) {
-                            return Container(
-                              width: 70,
-                              height: 70,
+                  ),
+                  const SizedBox(height: 8),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: StreamBuilder<PlaybackState>(
+                      stream: audioHandler.playbackState,
+                      builder: (context, snapshot) {
+                        final state = snapshot.data;
+                        final playing = state?.playing ?? false;
+                        final isLoading = state?.processingState == AudioProcessingState.loading ||
+                            state?.processingState == AudioProcessingState.buffering;
+                        return Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                          children: [
+                            IconButton(
+                              icon: const Icon(Icons.fast_rewind, color: Colors.white, size: 28),
+                              onPressed: () => audioHandler.seekRelative(const Duration(seconds: -10)),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.skip_previous, color: Colors.white, size: 32),
+                              onPressed: () => audioHandler.skipToPrevious(),
+                            ),
+                            Container(
+                              width: 64,
+                              height: 64,
                               decoration: BoxDecoration(
                                 shape: BoxShape.circle,
                                 color: color,
-                                boxShadow: [BoxShadow(color: color.withOpacity(0.4), blurRadius: 20, spreadRadius: 5)],
+                                boxShadow: [BoxShadow(color: color.withOpacity(0.35), blurRadius: 16, spreadRadius: 2)],
                               ),
                               child: IconButton(
                                 icon: isLoading
-                                    ? const CircularProgressIndicator(color: Colors.black)
-                                    : Icon(playing ? Icons.pause : Icons.play_arrow, color: Colors.black, size: 36),
+                                    ? const CircularProgressIndicator(color: Colors.black, strokeWidth: 2.5)
+                                    : Icon(playing ? Icons.pause : Icons.play_arrow, color: Colors.black, size: 34),
                                 onPressed: () {
                                   if (playing) {
                                     audioHandler.pause();
@@ -1431,49 +1621,114 @@ class FullScreenPlayer extends StatelessWidget {
                                   }
                                 },
                               ),
-                            );
-                          },
-                        ),
-                        IconButton(icon: const Icon(Icons.skip_next, color: Colors.white, size: 36), onPressed: () => audioHandler.skipToNext()),
-                        IconButton(
-                          icon: const Icon(Icons.shuffle, color: Colors.white),
-                          onPressed: () {
-                            audioHandler.shuffleQueue();
-                            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Cola mezclada'), duration: Duration(seconds: 1)));
-                          },
-                        ),
-                      ],
-                    );
-                  },
-                ),
-              ),
-              const Spacer(),
-              StreamBuilder<List<MediaItem>>(
-                stream: audioHandler.queue,
-                builder: (context, queueSnapshot) {
-                  final queueList = queueSnapshot.data ?? [];
-                  if (queueList.isEmpty) return const SizedBox.shrink();
-                  final currentIndex = queueList.indexWhere((i) => i.id == mediaItem.id);
-                  return GestureDetector(
-                    onTap: () => _showQueueBottomSheet(context, queueList, currentIndex, appColor.value),
-                    onVerticalDragEnd: (details) {
-                      if (details.primaryVelocity != null && details.primaryVelocity! < 0) {
-                        _showQueueBottomSheet(context, queueList, currentIndex, appColor.value);
-                      }
-                    },
-                    child: Padding(
-                      padding: const EdgeInsets.only(bottom: 24),
-                      child: Column(
-                        children: [
-                          const Icon(Icons.keyboard_arrow_up, color: Colors.grey),
-                          Text('Siguiente: ${currentIndex + 1} de ${queueList.length}', style: const TextStyle(color: Colors.grey, fontWeight: FontWeight.bold)),
-                        ],
-                      ),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.skip_next, color: Colors.white, size: 32),
+                              onPressed: () => audioHandler.skipToNext(),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.fast_forward, color: Colors.white, size: 28),
+                              onPressed: () => audioHandler.seekRelative(const Duration(seconds: 10)),
+                            ),
+                          ],
+                        );
+                      },
                     ),
-                  );
-                },
-              ),
-            ],
+                  ),
+                  const SizedBox(height: 10),
+                  const Divider(color: Colors.white12, height: 1),
+                  Expanded(
+                    child: StreamBuilder<List<MediaItem>>(
+                      stream: audioHandler.queue,
+                      builder: (context, queueSnapshot) {
+                        final queueList = queueSnapshot.data ?? [];
+                        final currentIndex = queueList.indexWhere((i) => i.id == mediaItem.id);
+                        return Column(
+                          children: [
+                            Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                              child: Row(
+                                children: [
+                                  Text(
+                                    'A continuación  ${currentIndex >= 0 ? currentIndex + 1 : 0} / ${queueList.length}',
+                                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14),
+                                  ),
+                                  const Spacer(),
+                                  ValueListenableBuilder<LoopMode>(
+                                    valueListenable: audioHandler.loopMode,
+                                    builder: (context, mode, _) {
+                                      final icon = mode == LoopMode.one ? Icons.repeat_one : Icons.repeat;
+                                      return IconButton(
+                                        icon: Icon(icon, color: mode == LoopMode.off ? Colors.grey : color, size: 22),
+                                        onPressed: () => audioHandler.cycleLoopMode(),
+                                      );
+                                    },
+                                  ),
+                                  IconButton(
+                                    icon: const Icon(Icons.shuffle, color: Colors.white70, size: 22),
+                                    onPressed: () {
+                                      audioHandler.shuffleQueue();
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        const SnackBar(content: Text('Cola mezclada'), duration: Duration(seconds: 1)),
+                                      );
+                                    },
+                                  ),
+                                ],
+                              ),
+                            ),
+                            Expanded(
+                              child: queueList.isEmpty
+                                  ? const Center(child: Text("Cola vacía", style: TextStyle(color: Colors.grey)))
+                                  : ReorderableListView.builder(
+                                      padding: const EdgeInsets.only(bottom: 24),
+                                      itemCount: queueList.length,
+                                      onReorder: (oldIndex, newIndex) => audioHandler.reorderQueue(oldIndex, newIndex),
+                                      itemBuilder: (context, index) {
+                                        final item = queueList[index];
+                                        final isPlaying = index == currentIndex;
+                                        return Container(
+                                          key: ValueKey('${item.id}_$index'),
+                                          color: isPlaying ? color.withOpacity(0.12) : Colors.transparent,
+                                          child: ListTile(
+                                            dense: true,
+                                            leading: Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                const Icon(Icons.drag_handle, color: Colors.grey, size: 20),
+                                                const SizedBox(width: 8),
+                                                buildSafeThumb(item.artUri?.toString(), width: 42, height: 42, radius: 6),
+                                              ],
+                                            ),
+                                            title: Text(
+                                              item.title,
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: TextStyle(color: isPlaying ? color : Colors.white, fontWeight: isPlaying ? FontWeight.bold : FontWeight.normal),
+                                            ),
+                                            subtitle: Text(
+                                              "${formatGlobalDuration(item.duration).isNotEmpty ? '${formatGlobalDuration(item.duration)} • ' : ''}${item.artist ?? ''}",
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: const TextStyle(color: Colors.grey, fontSize: 12),
+                                            ),
+                                            trailing: IconButton(
+                                              icon: const Icon(Icons.close, color: Colors.grey, size: 18),
+                                              onPressed: () => audioHandler.removeFromQueue(item),
+                                            ),
+                                            onTap: () => audioHandler.skipToQueueItem(index),
+                                          ),
+                                        );
+                                      },
+                                    ),
+                            ),
+                          ],
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              );
+            },
           );
         },
       ),
@@ -1508,3 +1763,5 @@ class FullScreenPlayer extends StatelessWidget {
     );
   }
 }
+
+
