@@ -36,6 +36,29 @@ String formatGlobalDuration(Duration? d) {
   return "${d.inHours > 0 ? '${d.inHours}:' : ''}$minutes:$seconds";
 }
 
+Widget buildSafeThumb(String? url, {double? width, required double height, double radius = 8}) {
+  final cleanUrl = (url ?? '').trim();
+  final placeholder = Container(
+    width: width,
+    height: height,
+    color: const Color(0xFF1F1F1F),
+    alignment: Alignment.center,
+    child: Icon(Icons.music_note, color: Colors.white38, size: height >= 120 ? 48 : 22),
+  );
+  return ClipRRect(
+    borderRadius: BorderRadius.circular(radius),
+    child: cleanUrl.isEmpty
+        ? placeholder
+        : Image.network(
+            cleanUrl,
+            width: width,
+            height: height,
+            fit: BoxFit.cover,
+            errorBuilder: (_, __, ___) => placeholder,
+          ),
+  );
+}
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   HttpOverrides.global = VIPHttpOverrides();
@@ -153,10 +176,7 @@ void globalShowOptions(BuildContext context, MediaItem item, Color color) {
           mainAxisSize: MainAxisSize.min,
           children: [
             ListTile(
-              leading: ClipRRect(
-                borderRadius: BorderRadius.circular(4),
-                child: Image.network(item.artUri?.toString() ?? '', width: 40, height: 40, fit: BoxFit.cover),
-              ),
+              leading: buildSafeThumb(item.artUri?.toString(), width: 40, height: 40, radius: 4),
               title: Text(item.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white)),
               subtitle: Text(
                 durText.isNotEmpty ? "${item.artist ?? ''} • $durText" : (item.artist ?? ''),
@@ -442,10 +462,7 @@ class HomeScreen extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(8),
-                    child: Image.network(item['artUri'], width: 140, height: 140, fit: BoxFit.cover),
-                  ),
+                  buildSafeThumb(item['artUri']?.toString(), width: 140, height: 140, radius: 8),
                   const SizedBox(height: 8),
                   Text(item['title'], maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
                   Text(item['artist'], maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.grey, fontSize: 12)),
@@ -538,7 +555,7 @@ class _SearchScreenState extends State<SearchScreen> {
   List<String> searchSuggestions = [];
   bool isLoading = false;
   bool hasSearched = false;
-  String? searchError;
+  bool hasSearchError = false;
   Timer? _debounce;
   int _suggestRequestId = 0;
   String _lastQuery = "";
@@ -584,7 +601,7 @@ class _SearchScreenState extends State<SearchScreen> {
         searchSuggestions = [];
         videos = [];
         hasSearched = false;
-        searchError = null;
+        hasSearchError = false;
       });
       return;
     }
@@ -701,7 +718,7 @@ class _SearchScreenState extends State<SearchScreen> {
     setState(() {
       isLoading = true;
       hasSearched = true;
-      searchError = null;
+      hasSearchError = false;
       videos = [];
       searchSuggestions = [];
       _lastQuery = trimmed;
@@ -729,10 +746,10 @@ class _SearchScreenState extends State<SearchScreen> {
       setState(() {
         videos = results;
       });
-    } catch (e) {
+    } catch (_) {
       if (!mounted) return;
       setState(() {
-        searchError = e.toString();
+        hasSearchError = true;
       });
     } finally {
       if (mounted) setState(() => isLoading = false);
@@ -818,7 +835,7 @@ class _SearchScreenState extends State<SearchScreen> {
                       searchSuggestions.clear();
                       _lastQuery = "";
                       hasSearched = false;
-                      searchError = null;
+                      hasSearchError = false;
                     });
                   },
                 ),
@@ -893,20 +910,30 @@ class _SearchScreenState extends State<SearchScreen> {
                 ),
               ),
             )
-          else if (searchError != null)
+          else if (hasSearchError)
             Expanded(
-              child: Padding(
-                padding: const EdgeInsets.all(24.0),
-                child: SingleChildScrollView(
+              child: Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(24.0),
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      const Icon(Icons.error_outline, color: Colors.redAccent, size: 40),
+                      const Icon(Icons.wifi_off, color: Colors.grey, size: 42),
                       const SizedBox(height: 12),
                       Text(
-                        "Error al buscar '$_lastQuery':\n$searchError",
+                        "No se pudieron cargar los resultados para '$_lastQuery'.",
                         textAlign: TextAlign.center,
-                        style: const TextStyle(color: Colors.redAccent, fontSize: 13),
+                        style: const TextStyle(color: Colors.white70, fontSize: 14),
+                      ),
+                      const SizedBox(height: 16),
+                      ValueListenableBuilder<Color>(
+                        valueListenable: appColor,
+                        builder: (context, color, _) => ElevatedButton.icon(
+                          style: ElevatedButton.styleFrom(backgroundColor: color, foregroundColor: Colors.black),
+                          icon: const Icon(Icons.refresh),
+                          label: const Text("Reintentar"),
+                          onPressed: () => searchVideos(_lastQuery),
+                        ),
                       ),
                     ],
                   ),
@@ -938,10 +965,7 @@ class _SearchScreenState extends State<SearchScreen> {
                   final durText = formatGlobalDuration(item.duration);
                   return ListTile(
                     contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                    leading: ClipRRect(
-                      borderRadius: BorderRadius.circular(8),
-                      child: Image.network(item.artUri?.toString() ?? '', width: 60, height: 60, fit: BoxFit.cover),
-                    ),
+                    leading: buildSafeThumb(item.artUri?.toString(), width: 60, height: 60, radius: 8),
                     title: Text(item.title, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w600)),
                     subtitle: Text(
                       durText.isNotEmpty ? "${item.artist ?? ''} • $durText" : (item.artist ?? ''),
@@ -991,10 +1015,7 @@ class VaultScreen extends StatelessWidget {
                   itemBuilder: (context, index) {
                     final item = items[index];
                     return ListTile(
-                      leading: ClipRRect(
-                        borderRadius: BorderRadius.circular(4),
-                        child: Image.network(item['artUri'], width: 50, height: 50, fit: BoxFit.cover),
-                      ),
+                      leading: buildSafeThumb(item['artUri']?.toString(), width: 50, height: 50, radius: 4),
                       title: Text(item['title'], maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.bold)),
                       trailing: IconButton(icon: const Icon(Icons.close, color: Colors.grey, size: 20), onPressed: () => box.delete(item['id'])),
                       onTap: () async {
@@ -1023,10 +1044,7 @@ class VaultScreen extends StatelessWidget {
                   itemBuilder: (context, index) {
                     final item = items[index];
                     return ListTile(
-                      leading: ClipRRect(
-                        borderRadius: BorderRadius.circular(4),
-                        child: Image.network(item['artUri'], width: 50, height: 50, fit: BoxFit.cover),
-                      ),
+                      leading: buildSafeThumb(item['artUri']?.toString(), width: 50, height: 50, radius: 4),
                       title: Text(item['title'], maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.bold)),
                       trailing: IconButton(icon: const Icon(Icons.favorite, color: Colors.redAccent), onPressed: () => box.delete(item['id'])),
                       onTap: () async {
@@ -1069,10 +1087,7 @@ class VaultScreen extends StatelessWidget {
                         final item = entry.value as Map;
                         return ListTile(
                           contentPadding: const EdgeInsets.only(left: 40, right: 16),
-                          leading: ClipRRect(
-                            borderRadius: BorderRadius.circular(4),
-                            child: Image.network(item['artUri'], width: 40, height: 40, fit: BoxFit.cover),
-                          ),
+                          leading: buildSafeThumb(item['artUri']?.toString(), width: 40, height: 40, radius: 4),
                           title: Text(item['title'], maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 14)),
                           trailing: IconButton(
                             icon: const Icon(Icons.remove_circle_outline, color: Colors.grey, size: 20),
@@ -1147,10 +1162,7 @@ class _MiniPlayerState extends State<MiniPlayer> {
                       padding: const EdgeInsets.all(8.0),
                       child: Row(
                         children: [
-                          ClipRRect(
-                            borderRadius: BorderRadius.circular(10),
-                            child: Image.network(mediaItem.artUri.toString(), width: 45, height: 45, fit: BoxFit.cover),
-                          ),
+                          buildSafeThumb(mediaItem.artUri?.toString(), width: 45, height: 45, radius: 10),
                           const SizedBox(width: 12),
                           Expanded(
                             child: Column(
@@ -1268,10 +1280,7 @@ class FullScreenPlayer extends StatelessWidget {
                   builder: (context, color, _) {
                     return Container(
                       decoration: BoxDecoration(boxShadow: [BoxShadow(color: color.withOpacity(0.15), blurRadius: 40, spreadRadius: 10)]),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(20),
-                        child: Image.network(mediaItem.artUri.toString(), width: double.infinity, height: 320, fit: BoxFit.cover),
-                      ),
+                      child: buildSafeThumb(mediaItem.artUri?.toString(), width: double.infinity, height: 320, radius: 20),
                     );
                   },
                 ),
