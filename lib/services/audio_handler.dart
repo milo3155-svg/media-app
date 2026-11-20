@@ -27,7 +27,7 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
   bool _isExtracting = false;
   int _playRequestId = 0;
 
-  List> _sponsorSegments = [];
+  List<dynamic> _sponsorSegments = [];
   DateTime _lastSponsorSkip = DateTime.fromMillisecondsSinceEpoch(0);
 
   final ValueNotifier<int> sleepTimerRemaining = ValueNotifier<int>(0);
@@ -116,7 +116,7 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
       final body = await res.transform(utf8.decoder).join().timeout(const Duration(seconds: 6));
       final decoded = jsonDecode(body);
       if (decoded is List && requestId == _playRequestId) {
-        final parsed = >[];
+        final parsed = <dynamic>[];
         for (final entry in decoded) {
           if (entry is Map && entry['segment'] is List && (entry['segment'] as List).length >= 2) {
             final seg = entry['segment'] as List;
@@ -209,7 +209,7 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
     if (obj is Map) {
       if (obj['simpleText'] is String) return obj['simpleText'] as String;
       if (obj['runs'] is List) {
-        return (obj['runs'] as List).whereType().map((r) => r['text']?.toString() ?? '').join();
+        return (obj['runs'] as List).where((r) => r is Map).map((r) => r['text']?.toString() ?? '').join();
       }
     }
     return '';
