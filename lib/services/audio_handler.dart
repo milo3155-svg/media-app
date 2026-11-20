@@ -19,15 +19,25 @@ Future<void> globalPlayQueue(List<MediaItem> items, int startIndex, MyAudioHandl
 }
 
 class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
-  final _player = AudioPlayer();
+  final AndroidEqualizer equalizer = AndroidEqualizer();
+  late final AudioPlayer _player;
   late final YoutubeExplode _yt;
   Timer? _countdownTimer;
   bool _isTransitioning = false;
   bool _isExtracting = false;
   int _playRequestId = 0;
+
   final ValueNotifier<int> sleepTimerRemaining = ValueNotifier<int>(0);
+  final ValueNotifier<double> playbackSpeed = ValueNotifier<double>(1.0);
+  final ValueNotifier<double> playbackPitch = ValueNotifier<double>(1.0);
+  final ValueNotifier<LoopMode> loopMode = ValueNotifier<LoopMode>(LoopMode.off);
 
   MyAudioHandler() {
+    _player = AudioPlayer(
+      audioPipeline: AudioPipeline(
+        androidAudioEffects: [if (Platform.isAndroid) equalizer],
+      ),
+    );
     _yt = YoutubeExplode();
     _player.playbackEventStream.listen((PlaybackEvent event) {
       if (_isExtracting) return;
@@ -234,6 +244,15 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
 
   void _onTrackFinished() {
     if (_isTransitioning || _isExtracting) return;
+    if (loopMode.value == LoopMode.one) {
+      _isTransitioning = true;
+      _player.seek(Duration.zero).then((_) {
+        unawaited(_player.play());
+      }).whenComplete(() {
+        Future.delayed(const Duration(milliseconds: 500), () => _isTransitioning = false);
+      });
+      return;
+    }
     _isTransitioning = true;
     _handleAutoPlayRadio();
   }
@@ -280,6 +299,12 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
     final currentIndex = currentQueue.indexWhere((item) => item.id == currentItem.id);
     if (currentIndex != -1 && currentIndex < currentQueue.length - 1) {
       await skipToNextBase();
+      _isTransitioning = false;
+      return;
+    }
+
+    if (loopMode.value == LoopMode.all && currentQueue.length > 1) {
+      await playMediaItem(currentQueue.first);
       _isTransitioning = false;
       return;
     }
@@ -422,6 +447,53 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
       item['savedPosition'] = milliseconds;
       historyBox.put(id, item);
     }
+  }
+
+  @override
+  Future<void> setSpeed(double speed) async {
+    final clamped = speed.clamp(0.5, 2.0);
+    playbackSpeed.value = clamped;
+    await _player.setSpeed(clamped);
+  }
+
+  Future<void> setPitch(double pitch) async {
+    final clamped = pitch.clamp(0.5, 2.0);
+    playbackPitch.value = clamped;
+    await _player.setPitch(clamped);
+  }
+
+  Future<void> cycleLoopMode() async {
+    final next = switch (loopMode.value) {
+      LoopMode.off => LoopMode.all,
+      LoopMode.all => LoopMode.one,
+      LoopMode.one => LoopMode.off,
+    };
+    loopMode.value = next;
+  }
+
+  Future<void> seekRelative(Duration offset) async {
+    final dur = _player.duration ?? mediaItem.value?.duration;
+    final targetMs = _player.position.inMilliseconds + offset.inMilliseconds;
+    final maxMs = dur?.inMilliseconds ?? targetMs;
+    final clampedMs = targetMs.clamp(0, maxMs > 0 ? maxMs : 0);
+    await _player.seek(Duration(milliseconds: clampedMs));
+  }
+
+  Future<void> reloadCurrentTrack() async {
+    final current = mediaItem.value;
+    if (current == null) return;
+    _saveResumePosition(current.id, _player.position.inMilliseconds);
+    await playMediaItem(current);
+  }
+
+  void reorderQueue(int oldIndex, int newIndex) {
+    final currentQueue = List<MediaItem>.from(queue.value);
+    if (oldIndex < 0 || oldIndex >= currentQueue.length) return;
+    if (newIndex > oldIndex) newIndex -= 1;
+    if (newIndex < 0 || newIndex >= currentQueue.length) return;
+    final moved = currentQueue.removeAt(oldIndex);
+    currentQueue.insert(newIndex, moved);
+    updateQueue(currentQueue);
   }
 
   @override
@@ -572,6 +644,8 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
         }
 
         if (requestId != _playRequestId) return;
+        await _player.setSpeed(playbackSpeed.value);
+        await _player.setPitch(playbackPitch.value);
         _isExtracting = false;
 
         if (savedPosition > 0 && (item.duration == null || savedPosition < item.duration!.inMilliseconds - 5000)) {
