@@ -540,323 +540,328 @@ class SettingsTab extends StatelessWidget {
 class SearchScreen extends StatefulWidget { const SearchScreen({super.key}); @override State<SearchScreen> createState() => _SearchScreenState(); }
 
 class _SearchScreenState extends State<SearchScreen> {
-
-  final searchController = TextEditingController(); late final YoutubeExplode _yt;
-
-  List<Video> videos = []; List<String> searchSuggestions = []; bool isLoading = false;
-
+  final searchController = TextEditingController();
+  late final YoutubeExplode _yt;
+  List<Video> videos = [];
+  List<String> searchSuggestions = [];
+  bool isLoading = false;
+  bool hasSearched = false;
+  String? searchError;
   Timer? _debounce;
-
   String _lastQuery = "";
 
-  
+  final Map<String, String> _categories = {
+    "Tendencias": "Tendencias musica en español",
+    "Podcasts": "Podcasts en español",
+    "Electrónica": "Electronic music mix",
+    "Rock": "Rock clasico en español",
+    "Relajación": "Musica relajante lofi"
+  };
 
-  final Map<String, String> _categories = {"Tendencias": "Tendencias musica en español", "Podcasts": "Podcasts en español", "Electrónica": "Electronic music mix", "Rock": "Rock clasico en español", "Relajación": "Musica relajante lofi"};
+  @override
+  void initState() {
+    super.initState();
+    _yt = YoutubeExplode();
+    Permission.notification.request();
+  }
 
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    _yt.close();
+    searchController.dispose();
+    super.dispose();
+  }
 
-
-  @override void initState() { super.initState(); _yt = YoutubeExplode(); Permission.notification.request(); }
-
-  @override void dispose() { _debounce?.cancel(); searchController.dispose(); super.dispose(); }
-
-
-
-  void _saveSearchHistory(String query) { if (query.trim().isEmpty) return; final box = Hive.box('search_history'); List history = box.get('history') ?? []; history.remove(query); history.insert(0, query); if (history.length > 10) history = history.sublist(0, 10); box.put('history', history); }
-
-  
+  void _saveSearchHistory(String query) {
+    if (query.trim().isEmpty) return;
+    final box = Hive.box('search_history');
+    List history = box.get('history') ?? [];
+    history.remove(query);
+    history.insert(0, query);
+    if (history.length > 10) history = history.sublist(0, 10);
+    box.put('history', history);
+  }
 
   void _onSearchChanged(String query) {
-
     if (_debounce?.isActive ?? false) _debounce!.cancel();
-
     if (query.trim().isEmpty) {
-
-      setState(() { searchSuggestions = []; videos = []; });
-
+      setState(() {
+        searchSuggestions = [];
+        videos = [];
+        hasSearched = false;
+        searchError = null;
+      });
       return;
-
     }
-
     _debounce = Timer(const Duration(milliseconds: 350), () async {
-
       try {
-
         final suggestions = await _yt.search.getQuerySuggestions(query);
-
         if (mounted) setState(() { searchSuggestions = suggestions.take(6).toList(); });
-
       } catch (_) {}
-
     });
-
   }
 
-
-
-  void searchVideos(String query) async { 
-
-    if (query.isEmpty) return; 
-
-    FocusScope.of(context).unfocus(); 
-
-    _saveSearchHistory(query); 
-
-    setState(() { isLoading = true; searchSuggestions = []; _lastQuery = query; }); 
-
-    try { 
-
-      final results = await _yt.search.search(query); 
-
-      setState(() { videos = results.toList(); }); 
-
-    } catch (e) { } finally { 
-
-      setState(() => isLoading = false); 
-
-    } 
-
+  void searchVideos(String query) async {
+    final trimmed = query.trim();
+    if (trimmed.isEmpty) return;
+    _debounce?.cancel();
+    FocusScope.of(context).unfocus();
+    _saveSearchHistory(trimmed);
+    setState(() {
+      isLoading = true;
+      hasSearched = true;
+      searchError = null;
+      videos = [];
+      searchSuggestions = [];
+      _lastQuery = trimmed;
+    });
+    try {
+      final results = await _yt.search.search(trimmed).timeout(const Duration(seconds: 12));
+      if (!mounted) return;
+      setState(() {
+        videos = results.toList();
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        searchError = e.toString();
+      });
+    } finally {
+      if (mounted) setState(() => isLoading = false);
+    }
   }
-
-
 
   Widget _buildSearchHistory() {
-
     return Column(
-
       children: [
-
         ValueListenableBuilder(
-
           valueListenable: Hive.box('search_history').listenable(),
-
           builder: (context, Box box, _) {
-
             if (box.isEmpty) return const SizedBox.shrink();
-
             final history = box.get('history') ?? [];
-
             return Column(
-
               children: history.map<Widget>((query) {
-
                 return ListTile(
-
-                  leading: const Icon(Icons.history, color: Colors.grey), 
-
-                  title: Text(query, style: const TextStyle(color: Colors.white)), 
-
-                  trailing: IconButton(icon: const Icon(Icons.north_west, color: Colors.grey, size: 18), onPressed: () { searchController.text = query; _onSearchChanged(query); }),
-
-                  onTap: () { searchController.text = query; searchVideos(query); }
-
-                );
-
-              }).toList()
-
-            );
-
-          }
-
-        ),
-
-        const Padding(padding: EdgeInsets.symmetric(horizontal: 16, vertical: 10), child: Text("Explorar Categorías", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Colors.white))),
-
-        Wrap(
-
-          spacing: 10, runSpacing: 10,
-
-          children: _categories.entries.map((e) => ActionChip(label: Text(e.key), backgroundColor: const Color(0xFF1A1A1A), onPressed: () { searchController.text = e.key; searchVideos(e.value); })).toList(),
-
-        )
-
-      ]
-
-    );
-
-  }
-
-
-
-  @override Widget build(BuildContext context) {
-
-    return Scaffold(
-
-      appBar: AppBar(title: const Text('Buscador VIP', style: TextStyle(fontWeight: FontWeight.bold)), backgroundColor: Colors.transparent),
-
-      body: Column(
-
-        children: [
-
-          Padding(
-
-            padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0), 
-
-            child: TextField(
-
-              controller: searchController, 
-
-              onChanged: _onSearchChanged,
-
-              decoration: InputDecoration(
-
-                hintText: 'Buscar canciones, artistas, podcasts...', 
-
-                prefixIcon: const Icon(Icons.search, color: Colors.grey), 
-
-                suffixIcon: IconButton(icon: const Icon(Icons.clear, color: Colors.grey), onPressed: () { searchController.clear(); setState(() { videos.clear(); searchSuggestions.clear(); _lastQuery = ""; }); }), 
-
-                filled: true, 
-
-                fillColor: const Color(0xFF1A1A1A), 
-
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(30.0), borderSide: BorderSide.none)
-
-              ), 
-
-              onSubmitted: searchVideos
-
-            )
-
-          ),
-
-          if (searchSuggestions.isNotEmpty)
-
-            Container(
-
-              color: const Color(0xFF141414),
-
-              constraints: const BoxConstraints(maxHeight: 220),
-
-              child: ListView.builder(
-
-                shrinkWrap: true,
-
-                itemCount: searchSuggestions.length,
-
-                itemBuilder: (context, index) {
-
-                  final suggestion = searchSuggestions[index];
-
-                  return ListTile(
-
-                    dense: true,
-
-                    leading: const Icon(Icons.search, color: Colors.cyanAccent, size: 18),
-
-                    title: Text(suggestion, style: const TextStyle(color: Colors.white)),
-
-                    trailing: IconButton(
-
-                      icon: const Icon(Icons.north_west, color: Colors.grey, size: 18),
-
-                      onPressed: () {
-
-                        searchController.text = suggestion;
-
-                        searchController.selection = TextSelection.fromPosition(TextPosition(offset: suggestion.length));
-
-                        _onSearchChanged(suggestion);
-
-                      },
-
-                    ),
-
-                    onTap: () {
-
-                      searchController.text = suggestion;
-
-                      searchVideos(suggestion);
-
-                    },
-
-                  );
-
-                },
-
-              ),
-
-            ),
-
-          if (_lastQuery.isNotEmpty && videos.isNotEmpty)
-
-            SingleChildScrollView(
-
-              scrollDirection: Axis.horizontal,
-
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-
-              child: Row(
-
-                children: [
-
-                  ActionChip(label: const Text("🔥 Lo más sonado"), backgroundColor: const Color(0xFF1A1A1A), onPressed: () => searchVideos("$_lastQuery exitos mas escuchados")),
-
-                  const SizedBox(width: 8),
-
-                  ActionChip(label: const Text("🆕 Lo más nuevo"), backgroundColor: const Color(0xFF1A1A1A), onPressed: () => searchVideos("$_lastQuery nuevo 2026")),
-
-                  const SizedBox(width: 8),
-
-                  ActionChip(label: const Text("📻 Radio / Mix"), backgroundColor: const Color(0xFF1A1A1A), onPressed: () => searchVideos("$_lastQuery mix oficial")),
-
-                ],
-
-              ),
-
-            ),
-
-          if (isLoading) Expanded(child: Center(child: ValueListenableBuilder<Color>(valueListenable: appColor, builder: (context, color, _) => CircularProgressIndicator(color: color))))
-
-          else if (videos.isEmpty) Expanded(child: SingleChildScrollView(child: _buildSearchHistory()))
-
-          else Expanded(
-
-            child: ListView.builder(
-
-              padding: const EdgeInsets.only(bottom: 100),
-
-              itemCount: videos.length, itemBuilder: (context, index) {
-
-                final video = videos[index];
-
-                final durText = formatGlobalDuration(video.duration);
-
-                return ListTile(
-
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-
-                  leading: ClipRRect(borderRadius: BorderRadius.circular(8), child: Image.network(video.thumbnails.lowResUrl, width: 60, height: 60, fit: BoxFit.cover)),
-
-                  title: Text(video.title, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w600)),
-
-                  subtitle: Text(durText.isNotEmpty ? "${video.author} • $durText" : video.author, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.grey)),
-
+                  leading: const Icon(Icons.history, color: Colors.grey),
+                  title: Text(query, style: const TextStyle(color: Colors.white)),
                   trailing: IconButton(
-
-                    icon: const Icon(Icons.more_vert, color: Colors.grey), 
-
-                    onPressed: () => globalShowOptions(context, video, appColor.value),
-
+                    icon: const Icon(Icons.north_west, color: Colors.grey, size: 18),
+                    onPressed: () {
+                      searchController.text = query;
+                      _onSearchChanged(query);
+                    },
                   ),
-
-                  onTap: () async { final newItem = MediaItem(id: video.id.value, title: video.title, artist: video.author, duration: video.duration, artUri: Uri.parse(video.thumbnails.highResUrl)); await globalPlay(newItem, audioHandler); }
-
+                  onTap: () {
+                    searchController.text = query;
+                    searchVideos(query);
+                  },
                 );
-
-              }
-
-            )
-
-          )
-
-        ]
-
-      )
-
+              }).toList(),
+            );
+          },
+        ),
+        const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          child: Text("Explorar Categorías", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Colors.white)),
+        ),
+        Wrap(
+          spacing: 10,
+          runSpacing: 10,
+          children: _categories.entries
+              .map((e) => ActionChip(
+                    label: Text(e.key),
+                    backgroundColor: const Color(0xFF1A1A1A),
+                    onPressed: () {
+                      searchController.text = e.key;
+                      searchVideos(e.value);
+                    },
+                  ))
+              .toList(),
+        )
+      ],
     );
-
   }
 
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Buscador VIP', style: TextStyle(fontWeight: FontWeight.bold)),
+        backgroundColor: Colors.transparent,
+      ),
+      body: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+            child: TextField(
+              controller: searchController,
+              onChanged: _onSearchChanged,
+              decoration: InputDecoration(
+                hintText: 'Buscar canciones, artistas, podcasts...',
+                prefixIcon: const Icon(Icons.search, color: Colors.grey),
+                suffixIcon: IconButton(
+                  icon: const Icon(Icons.clear, color: Colors.grey),
+                  onPressed: () {
+                    searchController.clear();
+                    setState(() {
+                      videos.clear();
+                      searchSuggestions.clear();
+                      _lastQuery = "";
+                      hasSearched = false;
+                      searchError = null;
+                    });
+                  },
+                ),
+                filled: true,
+                fillColor: const Color(0xFF1A1A1A),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(30.0), borderSide: BorderSide.none),
+              ),
+              onSubmitted: searchVideos,
+            ),
+          ),
+          if (searchSuggestions.isNotEmpty)
+            Container(
+              color: const Color(0xFF141414),
+              constraints: const BoxConstraints(maxHeight: 220),
+              child: ListView.builder(
+                shrinkWrap: true,
+                itemCount: searchSuggestions.length,
+                itemBuilder: (context, index) {
+                  final suggestion = searchSuggestions[index];
+                  return ListTile(
+                    dense: true,
+                    leading: const Icon(Icons.search, color: Colors.cyanAccent, size: 18),
+                    title: Text(suggestion, style: const TextStyle(color: Colors.white)),
+                    trailing: IconButton(
+                      icon: const Icon(Icons.north_west, color: Colors.grey, size: 18),
+                      onPressed: () {
+                        searchController.text = suggestion;
+                        searchController.selection = TextSelection.fromPosition(TextPosition(offset: suggestion.length));
+                        _onSearchChanged(suggestion);
+                      },
+                    ),
+                    onTap: () {
+                      searchController.text = suggestion;
+                      searchVideos(suggestion);
+                    },
+                  );
+                },
+              ),
+            ),
+          if (_lastQuery.isNotEmpty && videos.isNotEmpty)
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+              child: Row(
+                children: [
+                  ActionChip(
+                    label: const Text("🔥 Lo más sonado"),
+                    backgroundColor: const Color(0xFF1A1A1A),
+                    onPressed: () => searchVideos("$_lastQuery exitos mas escuchados"),
+                  ),
+                  const SizedBox(width: 8),
+                  ActionChip(
+                    label: const Text("🆕 Lo más nuevo"),
+                    backgroundColor: const Color(0xFF1A1A1A),
+                    onPressed: () => searchVideos("$_lastQuery nuevo 2026"),
+                  ),
+                  const SizedBox(width: 8),
+                  ActionChip(
+                    label: const Text("📻 Radio / Mix"),
+                    backgroundColor: const Color(0xFF1A1A1A),
+                    onPressed: () => searchVideos("$_lastQuery mix oficial"),
+                  ),
+                ],
+              ),
+            ),
+          if (isLoading)
+            Expanded(
+              child: Center(
+                child: ValueListenableBuilder<Color>(
+                  valueListenable: appColor,
+                  builder: (context, color, _) => CircularProgressIndicator(color: color),
+                ),
+              ),
+            )
+          else if (searchError != null)
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.all(24.0),
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(Icons.error_outline, color: Colors.redAccent, size: 40),
+                      const SizedBox(height: 12),
+                      Text(
+                        "Error al buscar '$_lastQuery':\n$searchError",
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(color: Colors.redAccent, fontSize: 13),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            )
+          else if (videos.isEmpty && hasSearched)
+            Expanded(
+              child: Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(24.0),
+                  child: Text(
+                    "Sin resultados en YouTube para '$_lastQuery'",
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(color: Colors.grey),
+                  ),
+                ),
+              ),
+            )
+          else if (videos.isEmpty)
+            Expanded(child: SingleChildScrollView(child: _buildSearchHistory()))
+          else
+            Expanded(
+              child: ListView.builder(
+                padding: const EdgeInsets.only(bottom: 100),
+                itemCount: videos.length,
+                itemBuilder: (context, index) {
+                  final video = videos[index];
+                  final durText = formatGlobalDuration(video.duration);
+                  return ListTile(
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                    leading: ClipRRect(
+                      borderRadius: BorderRadius.circular(8),
+                      child: Image.network(video.thumbnails.lowResUrl, width: 60, height: 60, fit: BoxFit.cover),
+                    ),
+                    title: Text(video.title, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w600)),
+                    subtitle: Text(
+                      durText.isNotEmpty ? "${video.author} • $durText" : video.author,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(color: Colors.grey),
+                    ),
+                    trailing: IconButton(
+                      icon: const Icon(Icons.more_vert, color: Colors.grey),
+                      onPressed: () => globalShowOptions(context, video, appColor.value),
+                    ),
+                    onTap: () async {
+                      final newItem = MediaItem(
+                        id: video.id.value,
+                        title: video.title,
+                        artist: video.author,
+                        duration: video.duration,
+                        artUri: Uri.parse(video.thumbnails.highResUrl),
+                      );
+                      await globalPlay(newItem, audioHandler);
+                    },
+                  );
+                },
+              ),
+            )
+        ],
+      ),
+    );
+  }
 }
 
 
