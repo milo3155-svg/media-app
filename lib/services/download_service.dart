@@ -25,7 +25,7 @@ class DownloadService {
   static bool isDownloaded(String videoId) => getLocalPath(videoId) != null;
 
   static void _updateProgress(String videoId, double? value) {
-    final next = Map<String, double>.from(progressMap.value);
+    final next = Map<String, double>.from(progressMap.value as Map);
     if (value == null) {
       next.remove(videoId);
     } else {
@@ -35,11 +35,13 @@ class DownloadService {
   }
 
   static Future<bool> downloadTrack(MediaItem item) async {
-    if (progressMap.value.containsKey(item.id)) return false;
+    final currentMap = progressMap.value as Map;
+    if (currentMap.containsKey(item.id)) return false;
     if (isDownloaded(item.id)) return true;
 
-    _updateProgress(item.id, 0.01);
+    _updateProgress(item.id, 0.02);
     final yt = YoutubeExplode();
+    final client = HttpClient()..connectionTimeout = const Duration(seconds: 15);
     IOSink? sink;
     File? targetFile;
 
@@ -55,19 +57,28 @@ class DownloadService {
           .getManifest(item.id)
           .timeout(const Duration(seconds: 20));
 
-      final streamInfo = manifest.audioOnly.isNotEmpty
-          ? manifest.audioOnly.withHighestBitrate()
-          : manifest.muxed.withHighestBitrate();
+      final streamInfo = manifest.muxed.isNotEmpty
+          ? manifest.muxed.withHighestBitrate()
+          : manifest.audioOnly.withHighestBitrate();
 
       final ext = streamInfo.container.name;
       targetFile = File('${audioDir.path}/${item.id}.$ext');
       sink = targetFile.openWrite();
 
-      final totalBytes = streamInfo.size.totalBytes;
+      final req = await client.getUrl(streamInfo.url);
+      req.headers.set(
+        HttpHeaders.userAgentHeader,
+        'Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
+      );
+      final res = await req.close().timeout(const Duration(seconds: 20));
+      if (res.statusCode < 200 || res.statusCode >= 300) {
+        throw Exception('HTTP ${res.statusCode}');
+      }
+
+      final totalBytes = res.contentLength > 0 ? res.contentLength : streamInfo.size.totalBytes;
       int receivedBytes = 0;
 
-      final stream = yt.videos.streamsClient.get(streamInfo);
-      await for (final chunk in stream) {
+      await for (final chunk in res.timeout(const Duration(seconds: 20))) {
         sink.add(chunk);
         receivedBytes += chunk.length;
         if (totalBytes > 0) {
@@ -103,6 +114,7 @@ class DownloadService {
       _updateProgress(item.id, null);
       return false;
     } finally {
+      client.close(force: true);
       yt.close();
     }
   }
