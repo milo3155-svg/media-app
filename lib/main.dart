@@ -12,12 +12,14 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:firebase_core/firebase_core.dart';
 
 // 1. IMPORTAMOS NUESTRO MOTOR AISLADO Y BLINDADO
 import 'services/audio_handler.dart';
 import 'screens/discover_screens.dart';
 import 'services/download_service.dart';
 import 'screens/downloads_screen.dart';
+import 'screens/token_gate_screen.dart';
 
 class VIPHttpOverrides extends HttpOverrides {
   @override
@@ -64,9 +66,11 @@ Widget buildSafeThumb(String? url, {double? width, required double height, doubl
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await Firebase.initializeApp();
   HttpOverrides.global = VIPHttpOverrides();
 
   await Hive.initFlutter();
+  await Hive.openBox('auth');
   await Hive.openBox('favorites');
   await Hive.openBox('history');
   await Hive.openBox('search_history');
@@ -386,7 +390,7 @@ class MediaApp extends StatelessWidget {
             ),
             appBarTheme: const AppBarTheme(backgroundColor: Color(0xFF0D0D0D), elevation: 0, centerTitle: true),
           ),
-          home: const MainNavigationScreen(),
+          home: const TokenGateScreen(),
         );
       },
     );
