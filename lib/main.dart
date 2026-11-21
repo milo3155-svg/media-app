@@ -64,7 +64,6 @@ Widget buildSafeThumb(String? url, {double? width, required double height, doubl
   );
 }
 
-Future<void> main() async {
  Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   try {
