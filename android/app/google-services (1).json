@@ -1,0 +1,48 @@
+{
+  "project_info": {
+    "project_number": "731299282375",
+    "project_id": "the-apex-a43fc",
+    "storage_bucket": "the-apex-a43fc.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:731299282375:android:b177b660db888235386de2",
+        "android_client_info": {
+          "package_name": "com.example.media_app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyD3I522XUs72uXVfe2qTMRQjE0h3u0AdO0"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:731299282375:android:40dece9a54646af0386de2",
+        "android_client_info": {
+          "package_name": "com.theapex.admin"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyD3I522XUs72uXVfe2qTMRQjE0h3u0AdO0"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
