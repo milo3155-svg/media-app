@@ -30,8 +30,11 @@ jobs:
           flutter clean
           flutter pub get
 
-      - name: Generar iconos de la app
-        run: dart run flutter_launcher_icons
+      - name: Ajustar margen del icono y generar iconos
+        run: |
+          command -v convert >/dev/null 2>&1 || (sudo apt-get update && sudo apt-get install -y imagemagick)
+          convert assets/ojo_pirata.png -resize 660x660 -background black -gravity center -extent 1024x1024 assets/ojo_pirata.png
+          dart run flutter_launcher_icons
 
       - name: Compilar el APK
         run: flutter build apk --release
