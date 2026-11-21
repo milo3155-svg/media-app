@@ -169,7 +169,7 @@ class _TokenGateScreenState extends State<TokenGateScreen> {
           return _buildLoginScreen(color);
         }
 
-        return StreamBuilder<DocumentSnapshot>>(
+        return StreamBuilder(
           stream: FirebaseFirestore.instance.collection('tokens').doc(_savedToken).snapshots(),
           builder: (context, snapshot) {
             if (snapshot.connectionState == ConnectionState.waiting && !snapshot.hasData) {
