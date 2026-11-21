@@ -77,12 +77,12 @@ class HomeFeedTab extends StatefulWidget {
 class _HomeFeedTabState extends State<HomeFeedTab> with AutomaticKeepAliveClientMixin {
   final List<String> _chipLabels = ['Todo', 'Música', 'Pódcasts', 'Mixes', 'Rock', 'Electrónica'];
   final Map<String, String> _chipQueries = {
-    'Todo': 'musica exitos latinoamerica 2026',
-    'Música': 'top canciones populares mexico 2026',
+    'Todo': 'video oficial exitos musica 2026',
+    'Música': 'video oficial canciones populares mexico 2026',
     'Pódcasts': 'podcasts populares en español completos',
     'Mixes': 'music mix playlist 1 hora',
-    'Rock': 'rock en español clasicos exitos',
-    'Electrónica': 'electronic music mix edm house',
+    'Rock': 'rock en español video oficial',
+    'Electrónica': 'electronic music edm official video',
   };
 
   String _selectedChip = 'Todo';
@@ -103,8 +103,25 @@ class _HomeFeedTabState extends State<HomeFeedTab> with AutomaticKeepAliveClient
       _selectedChip = chip;
       _isLoading = true;
     });
-    final query = _chipQueries[chip] ?? 'musica populares';
-    final results = await YoutubeFeedService.fetchByQuery(query, limit: 20);
+    final query = _chipQueries[chip] ?? 'video oficial musica';
+    final isLongContent = chip == 'Pódcasts' || chip == 'Mixes';
+    final rawResults = await YoutubeFeedService.fetchByQuery(
+      query,
+      limit: isLongContent ? 20 : 35,
+    );
+
+    List<MediaItem> results;
+    if (isLongContent) {
+      results = rawResults;
+    } else {
+      final filtered = rawResults.where((item) {
+        final dur = item.duration;
+        if (dur == null) return false;
+        return dur.inSeconds >= 60 && dur.inMinutes <= 9;
+      }).take(20).toList();
+      results = filtered.isNotEmpty ? filtered : rawResults.take(20).toList();
+    }
+
     if (!mounted) return;
     setState(() {
       _items = results;
