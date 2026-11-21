@@ -65,36 +65,55 @@ Widget buildSafeThumb(String? url, {double? width, required double height, doubl
 }
 
 Future<void> main() async {
+ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await Firebase.initializeApp();
-  HttpOverrides.global = VIPHttpOverrides();
+  try {
+    await Firebase.initializeApp();
+    HttpOverrides.global = VIPHttpOverrides();
 
-  await Hive.initFlutter();
-  await Hive.openBox('auth');
-  await Hive.openBox('favorites');
-  await Hive.openBox('history');
-  await Hive.openBox('search_history');
-  await Hive.openBox('playlists');
-  await Hive.openBox('downloads');
+    await Hive.initFlutter();
+    await Hive.openBox('auth');
+    await Hive.openBox('favorites');
+    await Hive.openBox('history');
+    await Hive.openBox('search_history');
+    await Hive.openBox('playlists');
+    await Hive.openBox('downloads');
 
-  final session = await AudioSession.instance;
-  await session.configure(const AudioSessionConfiguration.music());
+    final session = await AudioSession.instance;
+    await session.configure(const AudioSessionConfiguration.music());
 
-  audioHandler = await AudioService.init(
-    builder: () => MyAudioHandler(),
-    config: const AudioServiceConfig(
-      androidNotificationChannelId: 'com.example.media_app.audio_master_v62',
-      androidNotificationChannelName: 'Spotify Killer VIP',
-      androidNotificationOngoing: false,
-      androidShowNotificationBadge: true,
-      androidStopForegroundOnPause: false,
-      androidNotificationIcon: 'drawable/ic_notification',
-    ),
-  ) as MyAudioHandler;
+    audioHandler = await AudioService.init(
+      builder: () => MyAudioHandler(),
+      config: const AudioServiceConfig(
+        androidNotificationChannelId: 'com.example.media_app.audio_master_v62',
+        androidNotificationChannelName: 'Spotify Killer VIP',
+        androidNotificationOngoing: false,
+        androidShowNotificationBadge: true,
+        androidStopForegroundOnPause: false,
+        androidNotificationIcon: 'drawable/ic_notification',
+      ),
+    ) as MyAudioHandler;
 
-  runApp(const MediaApp());
+    runApp(const MediaApp());
+  } catch (e) {
+    runApp(
+      MaterialApp(
+        home: Scaffold(
+          backgroundColor: Colors.black,
+          body: SafeArea(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(16),
+              child: Text(
+                'ERROR INICIO:\n$e',
+                style: const TextStyle(color: Colors.redAccent, fontSize: 15),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
-
 class ConspiracyLogo extends StatelessWidget {
   final double size;
   final Color color;
