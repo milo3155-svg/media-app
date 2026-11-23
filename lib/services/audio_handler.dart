@@ -599,6 +599,17 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
   Future<void> pause() => _player.pause();
 
   @override
+  Future<void> stop() async {
+    _playRequestId++;
+    _isExtracting = false;
+    _sponsorSegments = [];
+    await _player.stop();
+    mediaItem.add(null);
+    queue.add([]);
+    await super.stop();
+  }
+  
+  @override
   Future<void> seek(Duration position) => _player.seek(position);
 
   @override
