@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:hive_flutter/hive_flutter.dart';
@@ -13,6 +14,7 @@ class TokenGateScreen extends StatefulWidget {
 class _TokenGateScreenState extends State<TokenGateScreen> {
   final TextEditingController _controller = TextEditingController();
   final Box _authBox = Hive.box('auth');
+  StreamSubscription<DocumentSnapshot>>? _tokenSub;
   String? _savedToken;
   String? _errorText;
   bool _isValidating = false;
@@ -21,10 +23,39 @@ class _TokenGateScreenState extends State<TokenGateScreen> {
   void initState() {
     super.initState();
     _savedToken = _authBox.get('token')?.toString();
+    if (_savedToken != null && _savedToken!.isNotEmpty) {
+      _listenToToken(_savedToken!);
+    }
+  }
+
+  void _listenToToken(String token) {
+    _tokenSub?.cancel();
+    _tokenSub = FirebaseFirestore.instance
+        .collection('tokens')
+        .doc(token)
+        .snapshots()
+        .listen((doc) {
+      if (!doc.exists) {
+        _tokenSub?.cancel();
+        _logoutToken('Acceso revocado desde la Mesa de Control.');
+        return;
+      }
+      final data = doc.data() ?? {};
+      if (data['musica'] != true) {
+        _tokenSub?.cancel();
+        _logoutToken('Permiso de Música desactivado.');
+        return;
+      }
+      if (_isExpired(data)) {
+        _tokenSub?.cancel();
+        _logoutToken('Tu suscripción ha expirado.');
+      }
+    });
   }
 
   @override
   void dispose() {
+    _tokenSub?.cancel();
     _controller.dispose();
     super.dispose();
   }
@@ -76,13 +107,13 @@ class _TokenGateScreenState extends State<TokenGateScreen> {
       await _authBox.put('token', token);
       if (!mounted) return;
       setState(() => _savedToken = token);
+      _listenToToken(token);
     } catch (_) {
       setState(() => _errorText = 'Error de conexión. Verifica tu internet.');
     } finally {
       if (mounted) setState(() => _isValidating = false);
     }
   }
-
   Future<void> _logoutToken(String reason) async {
     await audioHandler.stop();
     await _authBox.delete('token');
