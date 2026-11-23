@@ -25,6 +25,8 @@
 * [x] Kill Switch en tiempo real expulsa a la pantalla **ACCESO RESTRINGIDO** con mensaje rojo al revocar token o apagar `musica`.
 * [x] App enviada a pruebas UAT (reproducción, segundo plano, radio, favoritos, historial, cola, temporizador, color).
 
-## 4. Pendiente Técnico Activo (Bug Abierto)
-* **Problema:** Al apagar el permiso `musica` o revocar el token en tiempo real, la interfaz sí expulsa al usuario, pero el audio no se corta definitivamente (se traba/adelanta unos segundos y al pulsar pausa/reproducir desde la notificación vuelve a sonar).
-* **Siguiente paso exacto:** Revisar las **líneas 1 a 35** de `media-app/lib/main.dart` para localizar `MyAudioHandler` y corregir su método `stop()` para que detenga y limpie la fuente de audio y la notificación.
+## 4. Historial de Resolución Reciente
+* [x] **Kill Switch en tiempo real completado:** Se agregó `StreamSubscription? _tokenSub` en `lib/screens/token_gate_screen.dart` y el método `@override Future<void> stop()` en `lib/services/audio_handler.dart`. Verificado en dispositivo: al desactivar `musica` en la Mesa de Control, el audio se detiene al instante y expulsa a la pantalla de acceso.
+
+## 5. Estado Actual
+* Sin bugs bloqueantes abiertos. En espera de resultados de pruebas UAT.
