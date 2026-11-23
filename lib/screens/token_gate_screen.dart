@@ -14,7 +14,7 @@ class TokenGateScreen extends StatefulWidget {
 class _TokenGateScreenState extends State<TokenGateScreen> {
   final TextEditingController _controller = TextEditingController();
   final Box _authBox = Hive.box('auth');
-  StreamSubscription<DocumentSnapshot>>? _tokenSub;
+  StreamSubscription? _tokenSub;
   String? _savedToken;
   String? _errorText;
   bool _isValidating = false;
