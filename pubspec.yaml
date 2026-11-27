@@ -16,6 +16,11 @@ dependencies:
   firebase_core: ^3.8.0
   cloud_firestore: ^5.5.0
 
+  # Seguridad, WhatsApp y QR
+  android_id: ^0.4.0
+  url_launcher: ^6.3.1
+  qr_flutter: ^4.1.0
+
   # Dependencias clave congeladas para el reproductor VIP y audio en segundo plano
   just_audio: 0.9.44
   just_audio_background: 0.0.1-beta.15
