@@ -973,10 +973,11 @@ class _SearchScreenState extends State<SearchScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
+    appBar: AppBar(
         title: const Text('Buscador VIP', style: TextStyle(fontWeight: FontWeight.bold)),
         backgroundColor: Colors.transparent,
       ),
+      bottomNavigationBar: const MiniPlayer(),
       body: Column(
         children: [
           Padding(
@@ -1140,7 +1141,14 @@ class _SearchScreenState extends State<SearchScreen> {
                       icon: const Icon(Icons.more_vert, color: Colors.grey),
                       onPressed: () => globalShowOptions(context, item, appColor.value),
                     ),
-                    onTap: () async {
+                   onTap: () async {
+                      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('Cargando: ${item.title}'),
+                          duration: const Duration(seconds: 1),
+                        ),
+                      );
                       await globalPlay(item, audioHandler);
                     },
                   );
