@@ -2,7 +2,19 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:hive_flutter/hive_flutter.dart';
+import 'package:android_id/android_id.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../main.dart';
+
+final ValueNotifier<bool> canDownloadNotifier = ValueNotifier<bool>(false);
+final ValueNotifier<String?> activeTokenNotifier = ValueNotifier<String?>(null);
+final ValueNotifier<String> supportWhatsappNotifier = ValueNotifier<String>('525610338036');
+
+Future<void> openSupportWhatsApp(String message) async {
+  final phone = supportWhatsappNotifier.value.replaceAll(RegExp(r'[^0-9]'), '');
+  final uri = Uri.parse('https://wa.me/$phone?text=${Uri.encodeComponent(message)}');
+  await launchUrl(uri, mode: LaunchMode.externalApplication);
+}
 
 class TokenGateScreen extends StatefulWidget {
   const TokenGateScreen({super.key});
@@ -16,16 +28,42 @@ class _TokenGateScreenState extends State<TokenGateScreen> {
   final Box _authBox = Hive.box('auth');
   StreamSubscription? _tokenSub;
   String? _savedToken;
+  String? _deviceId;
   String? _errorText;
   bool _isValidating = false;
 
   @override
   void initState() {
     super.initState();
-    _savedToken = _authBox.get('token')?.toString();
+    _initGate();
+  }
+
+  Future<void> _initGate() async {
+    _loadWhatsAppConfig();
+    try {
+      _deviceId = await const AndroidId().getId();
+    } catch (_) {
+      _deviceId = null;
+    }
+
+    final stored = _authBox.get('token')?.toString();
+    if (!mounted) return;
+    setState(() => _savedToken = stored);
+    activeTokenNotifier.value = stored;
+
     if (_savedToken != null && _savedToken!.isNotEmpty) {
       _listenToToken(_savedToken!);
     }
+  }
+
+  Future<void> _loadWhatsAppConfig() async {
+    try {
+      final cfg = await FirebaseFirestore.instance.collection('config').doc('app').get();
+      final remotePhone = cfg.data()?['whatsapp']?.toString().trim();
+      if (remotePhone != null && remotePhone.isNotEmpty) {
+        supportWhatsappNotifier.value = remotePhone;
+      }
+    } catch (_) {}
   }
 
   void _listenToToken(String token) {
@@ -49,7 +87,15 @@ class _TokenGateScreenState extends State<TokenGateScreen> {
       if (_isExpired(data)) {
         _tokenSub?.cancel();
         _logoutToken('Tu suscripción ha expirado.');
+        return;
       }
+      final boundDevice = data['deviceId']?.toString().trim() ?? '';
+      if (boundDevice.isNotEmpty && _deviceId != null && boundDevice != _deviceId) {
+        _tokenSub?.cancel();
+        _logoutToken('Este token está vinculado a otro dispositivo.');
+        return;
+      }
+      canDownloadNotifier.value = data['descargas'] == true;
     });
   }
 
@@ -65,6 +111,10 @@ class _TokenGateScreenState extends State<TokenGateScreen> {
   }
 
   bool _isExpired(Map<String, dynamic> data) {
+    final expiraTs = data['expira'];
+    if (expiraTs is Timestamp) {
+      return DateTime.now().isAfter(expiraTs.toDate());
+    }
     final creado = data['creado'];
     final dias = data['dias'];
     if (creado is Timestamp && dias is int && dias > 0) {
@@ -87,7 +137,10 @@ class _TokenGateScreenState extends State<TokenGateScreen> {
     });
 
     try {
-      final doc = await FirebaseFirestore.instance.collection('tokens').doc(token).get();
+      _deviceId ??= await const AndroidId().getId();
+      final docRef = FirebaseFirestore.instance.collection('tokens').doc(token);
+      final doc = await docRef.get();
+
       if (!doc.exists) {
         setState(() => _errorText = 'Token inválido o eliminado.');
         return;
@@ -104,6 +157,18 @@ class _TokenGateScreenState extends State<TokenGateScreen> {
         return;
       }
 
+      final boundDevice = data['deviceId']?.toString().trim() ?? '';
+      if (boundDevice.isNotEmpty && _deviceId != null && boundDevice != _deviceId) {
+        setState(() => _errorText = 'Este token ya está activo en otro dispositivo.');
+        return;
+      }
+
+      if (boundDevice.isEmpty && _deviceId != null && _deviceId!.isNotEmpty) {
+        await docRef.update({'deviceId': _deviceId});
+      }
+
+      canDownloadNotifier.value = data['descargas'] == true;
+      activeTokenNotifier.value = token;
       await _authBox.put('token', token);
       if (!mounted) return;
       setState(() => _savedToken = token);
@@ -114,14 +179,55 @@ class _TokenGateScreenState extends State<TokenGateScreen> {
       if (mounted) setState(() => _isValidating = false);
     }
   }
+
   Future<void> _logoutToken(String reason) async {
     await audioHandler.stop();
     await _authBox.delete('token');
+    canDownloadNotifier.value = false;
+    activeTokenNotifier.value = null;
     if (!mounted) return;
     setState(() {
       _savedToken = null;
       _errorText = reason;
     });
+  }
+
+  void _showReferralDialog(Color color) {
+    final refController = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1A1A1A),
+        title: const Text('Me recomendó un amigo', style: TextStyle(color: Colors.white)),
+        content: TextField(
+          controller: refController,
+          style: const TextStyle(color: Colors.white),
+          decoration: InputDecoration(
+            hintText: 'Token o nombre de tu amigo',
+            hintStyle: const TextStyle(color: Colors.grey),
+            enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: color)),
+            focusedBorder: UnderlineInputBorder(borderSide: BorderSide(color: color)),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancelar', style: TextStyle(color: Colors.grey)),
+          ),
+          TextButton(
+            onPressed: () {
+              final ref = refController.text.trim();
+              Navigator.pop(ctx);
+              final msg = ref.isEmpty
+                  ? 'Hola, vengo recomendado por un amigo y quiero solicitar acceso a la app de Música.'
+                  : 'Hola, vengo recomendado por ($ref) y quiero solicitar acceso a la app de Música.';
+              openSupportWhatsApp(msg);
+            },
+            child: Text('Ir a WhatsApp', style: TextStyle(color: color, fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _buildLoginScreen(Color color) {
@@ -183,6 +289,27 @@ class _TokenGateScreenState extends State<TokenGateScreen> {
                         : const Text('ACTIVAR ACCESO', style: TextStyle(fontWeight: FontWeight.bold)),
                   ),
                 ),
+                const SizedBox(height: 16),
+                SizedBox(
+                  width: double.infinity,
+                  height: 44,
+                  child: OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.white,
+                      side: const BorderSide(color: Colors.white24),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    icon: const Icon(Icons.chat, size: 18, color: Colors.greenAccent),
+                    label: const Text('Solicitar acceso por WhatsApp'),
+                    onPressed: () => openSupportWhatsApp('Hola, quiero solicitar un token de acceso para la app de Música.'),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                TextButton.icon(
+                  icon: Icon(Icons.card_giftcard, size: 18, color: color),
+                  label: Text('Me recomendó un amigo', style: TextStyle(color: color)),
+                  onPressed: () => _showReferralDialog(color),
+                ),
               ],
             ),
           ),
@@ -200,7 +327,7 @@ class _TokenGateScreenState extends State<TokenGateScreen> {
           return _buildLoginScreen(color);
         }
 
-        return StreamBuilder(
+        return StreamBuilder<DocumentSnapshot>>(
           stream: FirebaseFirestore.instance.collection('tokens').doc(_savedToken).snapshots(),
           builder: (context, snapshot) {
             if (snapshot.connectionState == ConnectionState.waiting && !snapshot.hasData) {
@@ -237,6 +364,15 @@ class _TokenGateScreenState extends State<TokenGateScreen> {
               return _buildLoginScreen(color);
             }
 
+            final boundDevice = data['deviceId']?.toString().trim() ?? '';
+            if (boundDevice.isNotEmpty && _deviceId != null && boundDevice != _deviceId) {
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                _logoutToken('Este token está vinculado a otro dispositivo.');
+              });
+              return _buildLoginScreen(color);
+            }
+
+            canDownloadNotifier.value = data['descargas'] == true;
             return const MainNavigationScreen();
           },
         );
