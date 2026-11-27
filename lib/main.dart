@@ -1800,6 +1800,42 @@ class FullScreenPlayer extends StatelessWidget {
                                 color: downloaded ? color : Colors.white70,
                               ),
                               onPressed: () async {
+                                if (!canDownloadNotifier.value) {
+                                  final token = activeTokenNotifier.value ?? 'SIN-TOKEN';
+                                  showDialog(
+                                    context: context,
+                                    builder: (ctx) => AlertDialog(
+                                      backgroundColor: const Color(0xFF1A1A1A),
+                                      title: Row(
+                                        children: [
+                                          Icon(Icons.lock, color: color),
+                                          const SizedBox(width: 8),
+                                          const Text('Descargas Premium', style: TextStyle(color: Colors.white, fontSize: 18)),
+                                        ],
+                                      ),
+                                      content: const Text(
+                                        'Descarga tu música para escuchar sin internet.\n\nActívalo con un pago único y se desbloqueará al instante en tu app.',
+                                        style: TextStyle(color: Colors.white70, fontSize: 14),
+                                      ),
+                                      actions: [
+                                        TextButton(
+                                          onPressed: () => Navigator.pop(ctx),
+                                          child: const Text('Cerrar', style: TextStyle(color: Colors.grey)),
+                                        ),
+                                        ElevatedButton.icon(
+                                          style: ElevatedButton.styleFrom(backgroundColor: color, foregroundColor: Colors.black),
+                                          icon: const Icon(Icons.chat, size: 18),
+                                          label: const Text('Activar por WhatsApp', style: TextStyle(fontWeight: FontWeight.bold)),
+                                          onPressed: () {
+                                            Navigator.pop(ctx);
+                                            openSupportWhatsApp('Hola, quiero activar las Descargas Premium (pago único) para mi token: TKN-$token');
+                                          },
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                  return;
+                                }
                                 if (downloaded) {
                                   ScaffoldMessenger.of(context).showSnackBar(
                                     const SnackBar(content: Text('Esta pista ya está descargada'), duration: Duration(seconds: 1)),
