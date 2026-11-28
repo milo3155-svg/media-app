@@ -13,6 +13,8 @@ import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:qr_flutter/qr_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 // 1. IMPORTAMOS NUESTRO MOTOR AISLADO Y BLINDADO
 import 'services/audio_handler.dart';
@@ -687,20 +689,119 @@ class SportsTab extends StatelessWidget {
 
 class SettingsTab extends StatelessWidget {
   const SettingsTab({super.key});
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('🎨 Ajustes', style: TextStyle(fontWeight: FontWeight.bold)), backgroundColor: Colors.transparent),
-      body: ListView(
-        padding: const EdgeInsets.all(16.0),
-        children: [
-          ListTile(
-            leading: const Icon(Icons.share, color: Colors.white),
-            title: const Text('Compartir App', style: TextStyle(color: Colors.white)),
-            onTap: () => Share.share('¡Prueba mi app multimedia VIP!'),
+
+  static const String _appsCatalogUrl = 'https://milo3155-svg.github.io';
+
+  void _showQrDialog(BuildContext context, String token, Color color) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1A1A1A),
+        title: const Text('Comparte por QR', textAlign: TextAlign.center, style: TextStyle(color: Colors.white)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12)),
+              child: QrImageView(
+                data: _appsCatalogUrl,
+                version: QrVersions.auto,
+                size: 200,
+              ),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              'Tu código de referido: TKN-$token',
+              style: TextStyle(color: color, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 4),
+            const Text(
+              'Si tu amigo activa su plan con tu código, ganas 5 días gratis.',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Colors.grey, fontSize: 12),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text('Cerrar', style: TextStyle(color: color)),
           ),
         ],
       ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ValueListenableBuilder<Color>(
+      valueListenable: appColor,
+      builder: (context, color, _) {
+        final token = activeTokenNotifier.value ?? 'SIN-TOKEN';
+        return Scaffold(
+          appBar: AppBar(title: const Text('🎨 Ajustes', style: TextStyle(fontWeight: FontWeight.bold)), backgroundColor: Colors.transparent),
+          body: ListView(
+            padding: const EdgeInsets.all(16.0),
+            children: [
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF1A1A1A),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: color.withOpacity(0.4)),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.vpn_key, color: color),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text('Tu Token Activo', style: TextStyle(color: Colors.grey, fontSize: 12)),
+                          Text('TKN-$token', style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold, letterSpacing: 1.5)),
+                        ],
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.copy, color: Colors.white70),
+                      onPressed: () {
+                        Clipboard.setData(ClipboardData(text: 'TKN-$token'));
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: const Text('Token copiado'), backgroundColor: color, duration: const Duration(seconds: 1)),
+                        );
+                      },
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+              ListTile(
+                leading: Icon(Icons.qr_code_2, color: color),
+                title: const Text('Compartir por Código QR', style: TextStyle(color: Colors.white)),
+                subtitle: const Text('Muestra el QR para descargar la app', style: TextStyle(color: Colors.grey, fontSize: 12)),
+                onTap: () => _showQrDialog(context, token, color),
+              ),
+              ListTile(
+                leading: const Icon(Icons.card_giftcard, color: Colors.greenAccent),
+                title: const Text('Recomendar a un amigo (+5 días gratis)', style: TextStyle(color: Colors.white)),
+                subtitle: const Text('Envía tu código por WhatsApp o redes', style: TextStyle(color: Colors.grey, fontSize: 12)),
+                onTap: () => Share.share(
+                  '¿Aburrido de pagar de más por música? Prueba esta app sin comerciales y cambios ilimitados desde \$1.20/día.\n\nDescárgala aquí: $_appsCatalogUrl\nUsa mi código de referido al pedir tu acceso: TKN-$token',
+                ),
+              ),
+              const Divider(color: Colors.white12),
+              ListTile(
+                leading: Icon(Icons.apps, color: color),
+                title: const Text('Conoce nuestras apps', style: TextStyle(color: Colors.white)),
+                subtitle: const Text('Videos y catálogo de apps disponibles', style: TextStyle(color: Colors.grey, fontSize: 12)),
+                onTap: () => launchUrl(Uri.parse(_appsCatalogUrl), mode: LaunchMode.externalApplication),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 }
